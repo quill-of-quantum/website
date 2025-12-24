@@ -1291,6 +1291,96 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;100.80344682455637,22.013601254764165;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:36:03.817094",
+      "origin_address": "西双版纳机场",
+      "destination_address": "西双版纳站",
+      "waypoint_addresses": [
+        "西双版纳植物园",
+        "西双版纳景迈山"
+      ],
+      "distance_km": 149.032,
+      "duration_min": 170.13333333333333,
+      "toll": 82,
+      "oil_cost": 109.42,
+      "other": 0,
+      "total_cost": 191.42,
+      "breakdown": {
+        "highway": {
+          "distance": 115.671,
+          "cost": 79.81299000000001
+        },
+        "national": {
+          "distance": 23.753999999999998,
+          "cost": 19.668312
+        },
+        "urban": {
+          "distance": 9.607000000000003,
+          "cost": 9.943245000000003
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;100.80344682455637,22.013601254764165;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:36:30.887648",
+      "origin_address": "西双版纳机场",
+      "destination_address": "西双版纳站",
+      "waypoint_addresses": [
+        "西双版纳植物园",
+        "景迈山"
+      ],
+      "distance_km": 5716.907,
+      "duration_min": 3864.7,
+      "toll": 3334,
+      "oil_cost": 3956.16,
+      "other": 0,
+      "total_cost": 7290.16,
+      "breakdown": {
+        "highway": {
+          "distance": 5666.497000000002,
+          "cost": 3909.8829300000025
+        },
+        "national": {
+          "distance": 28.485,
+          "cost": 23.58558
+        },
+        "urban": {
+          "distance": 21.925,
+          "cost": 22.692375000000006
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;121.14257764256818,30.74705993363859;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:37:08.578165",
+      "origin_address": "西双版纳机场",
+      "destination_address": "西双版纳站",
+      "waypoint_addresses": [
+        "西双版纳植物园",
+        "普洱景迈山茶林文化景区"
+      ],
+      "distance_km": 424.55,
+      "duration_min": 513.5333333333333,
+      "toll": 156,
+      "oil_cost": 336.92,
+      "other": 0,
+      "total_cost": 492.92,
+      "breakdown": {
+        "highway": {
+          "distance": 202.29500000000002,
+          "cost": 139.58355
+        },
+        "national": {
+          "distance": 157.97600000000006,
+          "cost": 130.80412800000002
+        },
+        "urban": {
+          "distance": 64.27899999999998,
+          "cost": 66.52876500000002
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;100.01952426220333,22.196743114644736;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }
