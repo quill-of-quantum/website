@@ -1381,6 +1381,98 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;100.01952426220333,22.196743114644736;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T13:00:36.504297",
+      "origin_address": "成都双流机场",
+      "destination_address": "成都双流机场",
+      "waypoint_addresses": [
+        "都江堰景区",
+        "青城山",
+        "都江堰市虹口深溪沟地震遗迹纪念地",
+        "北川县地震遗址",
+        "三星堆"
+      ],
+      "distance_km": 534.685,
+      "duration_min": 615.8833333333333,
+      "toll": 101,
+      "oil_cost": 429.94,
+      "other": 0,
+      "total_cost": 530.94,
+      "breakdown": {
+        "highway": {
+          "distance": 237.48900000000003,
+          "cost": 163.86741
+        },
+        "national": {
+          "distance": 200.62899999999993,
+          "cost": 166.12081199999997
+        },
+        "urban": {
+          "distance": 96.56700000000002,
+          "cost": 99.946845
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T13:01:26.622418",
+      "origin_address": "北京大兴",
+      "destination_address": "乌鲁木齐",
+      "waypoint_addresses": [
+        "乌鲁木齐",
+        "吐鲁番"
+      ],
+      "distance_km": 3216.573,
+      "duration_min": 2295.25,
+      "toll": 1116,
+      "oil_cost": 2260.75,
+      "other": 0,
+      "total_cost": 3376.75,
+      "breakdown": {
+        "highway": {
+          "distance": 3079.2199999999984,
+          "cost": 2124.6618
+        },
+        "national": {
+          "distance": 29.326999999999995,
+          "cost": 24.282756000000003
+        },
+        "urban": {
+          "distance": 108.02599999999997,
+          "cost": 111.80691000000003
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.348625212231,39.73255523655448;87.41602874517912,43.47708606579323;89.1972972460079,42.95698484877124;87.41602874517912,43.47708606579323&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T13:03:51.809341",
+      "origin_address": "北京大兴",
+      "destination_address": "乌鲁木齐",
+      "waypoint_addresses": [
+        "吐鲁番"
+      ],
+      "distance_km": 2812.672,
+      "duration_min": 2000.65,
+      "toll": 1090,
+      "oil_cost": 1965.31,
+      "other": 0,
+      "total_cost": 3055.31,
+      "breakdown": {
+        "highway": {
+          "distance": 2703.8849999999998,
+          "cost": 1865.6806499999993
+        },
+        "national": {
+          "distance": 62.626000000000005,
+          "cost": 51.854328
+        },
+        "urban": {
+          "distance": 46.161000000000016,
+          "cost": 47.776635000000006
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.348625212231,39.73255523655448;89.1972972460079,42.95698484877124;87.41602874517912,43.47708606579323&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }

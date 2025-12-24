@@ -21,11 +21,68 @@ def bd09_to_wgs84(bd_lat, bd_lng):
     wgs_lat = z * math.sin(theta) - 0.006
     return wgs_lat, wgs_lng
 
+def gcj02_to_wgs84(lat, lng):
+    """
+    将GCJ02(高德/谷歌中国)坐标转换为WGS84坐标
+    """
+    dLat = transformLat(lng - 105.0, lat - 35.0)
+    dLng = transformLng(lng - 105.0, lat - 35.0)
+    radLat = lat / 180.0 * math.pi
+    magic = math.sin(radLat)
+    magic = 1 - 0.00669342162296594323 * magic * magic
+    sqrtMagic = math.sqrt(magic)
+    dLat = (dLat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtMagic) * math.pi)
+    dLng = (dLng * 180.0) / (6378245.0 / sqrtMagic * math.cos(radLat) * math.pi)
+    mgLat = lat - dLat
+    mgLng = lng - dLng
+    return mgLat, mgLng
+
+def transformLat(x, y):
+    ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * math.sqrt(abs(x))
+    ret += (20.0 * math.sin(6.0 * x * math.pi) + 20.0 * math.sin(2.0 * x * math.pi)) * 2.0 / 3.0
+    ret += (20.0 * math.sin(y * math.pi) + 40.0 * math.sin(y / 3.0 * math.pi)) * 2.0 / 3.0
+    ret += (160.0 * math.sin(y / 12.0 * math.pi) + 320 * math.sin(y * math.pi / 30.0)) * 2.0 / 3.0
+    return ret
+
+def transformLng(x, y):
+    ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * math.sqrt(abs(x))
+    ret += (20.0 * math.sin(6.0 * x * math.pi) + 20.0 * math.sin(2.0 * x * math.pi)) * 2.0 / 3.0
+    ret += (20.0 * math.sin(x * math.pi) + 40.0 * math.sin(x / 3.0 * math.pi)) * 2.0 / 3.0
+    ret += (150.0 * math.sin(x / 12.0 * math.pi) + 300.0 * math.sin(x / 30.0 * math.pi)) * 2.0 / 3.0
+    return ret
+
+def wgs84_direct(lat, lng):
+    """
+    直接使用原始坐标（假设已是WGS84）
+    """
+    return lat, lng
+
+def smooth_coords(coords, window_size=3):
+    """
+    对坐标进行移动平均平滑处理，减少离散点的影响
+    """
+    if len(coords) <= window_size:
+        return coords
+    
+    smoothed = []
+    half_window = window_size // 2
+    
+    for i in range(len(coords)):
+        start = max(0, i - half_window)
+        end = min(len(coords), i + half_window + 1)
+        
+        avg_lat = sum(c[0] for c in coords[start:end]) / len(coords[start:end])
+        avg_lng = sum(c[1] for c in coords[start:end]) / len(coords[start:end])
+        
+        smoothed.append([avg_lat, avg_lng])
+    
+    return smoothed
+
 # ================= 配置 =================
 # 支持相对路径和绝对路径
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-INPUT_FILE = os.path.join(SCRIPT_DIR, 'output/response.json')
-OUTPUT_HTML = os.path.join(SCRIPT_DIR, 'output/route_visualization_fixed.html')
+INPUT_FILE = os.path.join(SCRIPT_DIR, './output/route_test.json')
+OUTPUT_HTML = os.path.join(SCRIPT_DIR, './output/route_visualization_fixed.html')
 # =======================================
 
 def visualize_route(file_path):
@@ -61,8 +118,11 @@ def visualize_route(file_path):
         return False
     
     route = routes[0]
-    origin = result.get('origin', {})
-    destination = result.get('destination', {})
+    origin = route.get('origin', {})
+    destination = route.get('destination', {})
+    
+    print(f"DEBUG - Origin: {origin}")
+    print(f"DEBUG - Destination: {destination}")
     
     origin_lat = origin.get('lat')
     origin_lng = origin.get('lng')
@@ -127,97 +187,110 @@ def visualize_route(file_path):
     steps = route.get('steps', [])
     print(f"📊 共 {len(steps)} 个路段\n")
     
-    valid_segments = 0
-    for idx, step in enumerate(steps):
-        try:
-            distance_km = step.get('distance', 0) / 1000
-            duration_min = step.get('duration', 0) / 60
-            road_type = int(step.get('road_type', 6))
-            instruction = step.get('instruction', '').replace('<b>', '').replace('</b>', '')
-            
-            # 使用 path 字段而不是 polyline
-            polyline = step.get('path', '')
-            if not polyline:
-                continue
-            
-            # 解析坐标：格式为 "lng,lat;lng,lat;..."
+    # 定义转换方法
+    conversion_methods = {
+        'BD09': {'func': bd09_to_wgs84, 'color': '#FF0000', 'name': 'BD09转换'},
+        'GCJ02': {'func': gcj02_to_wgs84, 'color': '#0000FF', 'name': 'GCJ02转换'},
+        'WGS84': {'func': wgs84_direct, 'color': '#00AA00', 'name': '原始WGS84'}
+    }
+    
+    for method_name, method_info in conversion_methods.items():
+        print(f"\n🔄 正在绘制 {method_info['name']} 路线...")
+        valid_segments = 0
+        
+        for idx, step in enumerate(steps):
             try:
-                coords = []
-                for point_str in polyline.split(';'):
-                    if point_str.strip():
-                        lng, lat = point_str.split(',')
-                        # 转换百度坐标到 WGS84
-                        wgs_lat, wgs_lng = bd09_to_wgs84(float(lat), float(lng))
-                        coords.append([wgs_lat, wgs_lng])
+                distance_km = step.get('distance', 0) / 1000
+                duration_min = step.get('duration', 0) / 60
+                road_type = int(step.get('road_type', 6))
+                instruction = step.get('instruction', '').replace('<b>', '').replace('</b>', '')
                 
-                if len(coords) < 2:
+                # 使用 path 字段而不是 polyline
+                polyline = step.get('path', '')
+                if not polyline:
                     continue
                 
-                color = road_type_colors.get(road_type, '#666666')
-                road_name = road_type_names.get(road_type, '其他')
-                
-                # 添加路段线条
-                folium.PolyLine(
-                    coords,
-                    color=color,
-                    weight=3,
-                    opacity=0.8,
-                    popup=f"<b>第 {idx + 1} 段 - {road_name}</b><br/>{distance_km:.2f} km | {duration_min:.0f} 分钟<br/>{instruction[:50]}",
-                    tooltip=f"{road_name}: {distance_km:.2f} km"
-                ).add_to(m)
-                
-                valid_segments += 1
-                
-            except ValueError as e:
-                print(f"⚠️ 路段 {idx + 1} 坐标转换失败: {e}")
+                # 解析坐标：格式为 "lng,lat;lng,lat;..."
+                try:
+                    coords = []
+                    for point_str in polyline.split(';'):
+                        if point_str.strip():
+                            lng, lat = point_str.split(',')
+                            # 转换坐标
+                            conv_lat, conv_lng = method_info['func'](float(lat), float(lng))
+                            coords.append([conv_lat, conv_lng])
+                    
+                    if len(coords) < 2:
+                        continue
+                    
+                    # 对坐标进行平滑处理
+                    coords = smooth_coords(coords, window_size=3)
+                    
+                    road_name = road_type_names.get(road_type, '其他')
+                    
+                    # 添加路段线条
+                    folium.PolyLine(
+                        coords,
+                        color=method_info['color'],
+                        weight=2,
+                        opacity=0.7,
+                        popup=f"<b>{method_info['name']} - 第 {idx + 1} 段 - {road_name}</b><br/>{distance_km:.2f} km | {duration_min:.0f} 分钟",
+                        tooltip=f"{method_info['name']}: {road_name}"
+                    ).add_to(m)
+                    
+                    valid_segments += 1
+                    
+                except ValueError as e:
+                    print(f"⚠️ 路段 {idx + 1} 坐标转换失败: {e}")
+                    continue
+            
+            except Exception as e:
+                print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
                 continue
         
+        print(f"✅ {method_info['name']} 成功绘制 {valid_segments} 个路段")
+    
+    # ================= 起点和终点标记 =================
+    marker_colors = {'BD09': 'green', 'GCJ02': 'blue', 'WGS84': 'gray'}
+    
+    for method_name, method_info in conversion_methods.items():
+        try:
+            origin_lat_conv, origin_lng_conv = method_info['func'](origin_lat, origin_lng)
+            dest_lat_conv, dest_lng_conv = method_info['func'](dest_lat, dest_lng)
+            
+            # 起点
+            folium.Marker(
+                location=[origin_lat_conv, origin_lng_conv],
+                popup=f'<b>起点 ({method_info["name"]})</b>',
+                tooltip=f'{method_info["name"]} 起点',
+                icon=folium.Icon(color=marker_colors.get(method_name, 'gray'), icon='play', prefix='fa')
+            ).add_to(m)
+            
+            # 终点
+            folium.Marker(
+                location=[dest_lat_conv, dest_lng_conv],
+                popup=f'<b>终点 ({method_info["name"]})</b>',
+                tooltip=f'{method_info["name"]} 终点',
+                icon=folium.Icon(color=marker_colors.get(method_name, 'gray'), icon='stop', prefix='fa')
+            ).add_to(m)
         except Exception as e:
-            print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
-            continue
+            print(f"⚠️ {method_info['name']} 标记添加失败: {e}")
     
-    print(f"✅ 成功绘制 {valid_segments} 个路段\n")
-    
-    # ================= 起点标记 =================
-    try:
-        folium.Marker(
-            location=[origin_lat, origin_lng],
-            popup='<b>起点</b>',
-            tooltip='出发地',
-            icon=folium.Icon(color='green', icon='play', prefix='fa')
-        ).add_to(m)
-        print("✅ 起点标记已添加")
-    except Exception as e:
-        print(f"⚠️ 起点标记添加失败: {e}")
-    
-    # ================= 终点标记 =================
-    try:
-        folium.Marker(
-            location=[dest_lat, dest_lng],
-            popup='<b>终点</b>',
-            tooltip='目的地',
-            icon=folium.Icon(color='red', icon='stop', prefix='fa')
-        ).add_to(m)
-        print("✅ 终点标记已添加")
-    except Exception as e:
-        print(f"⚠️ 终点标记添加失败: {e}")
+    print("✅ 所有标记已添加")
     
     # ================= 添加图例 =================
     legend_html = '''
     <div style="position: fixed; 
-                bottom: 50px; right: 50px; width: 200px; height: auto;
+                bottom: 50px; right: 50px; width: 280px; height: auto;
                 background-color: white; border:2px solid grey; z-index:9999; 
                 font-size:12px; padding: 10px; border-radius: 5px;
                 box-shadow: 0 0 15px rgba(0,0,0,0.2);">
-    <p style="margin: 0 0 10px 0; font-weight: bold;">🛣️ 路段类型</p>
+    <p style="margin: 0 0 10px 0; font-weight: bold;">🗺️ 坐标格式对比</p>
+    <p style="margin: 5px 0;"><i style="background:#FF0000; width: 15px; height: 2px; display: inline-block; margin-right: 5px;"></i><b>红色</b>: BD09转换</p>
+    <p style="margin: 5px 0;"><i style="background:#0000FF; width: 15px; height: 2px; display: inline-block; margin-right: 5px;"></i><b>蓝色</b>: GCJ02转换</p>
+    <p style="margin: 5px 0;"><i style="background:#00AA00; width: 15px; height: 2px; display: inline-block; margin-right: 5px;"></i><b>绿色</b>: 原始WGS84</p>
+    </div>
     '''
-    
-    for road_type in sorted(road_type_colors.keys()):
-        color = road_type_colors[road_type]
-        name = road_type_names.get(road_type, '其他')
-        legend_html += f'<p style="margin: 5px 0;"><i style="background:{color}; width: 15px; height: 2px; display: inline-block; margin-right: 5px;"></i>{name}</p>'
-    
-    legend_html += '</div>'
     
     m.get_root().html.add_child(folium.Element(legend_html))
     print("✅ 图例已添加")
@@ -250,11 +323,10 @@ if __name__ == '__main__':
         print("=" * 60)
         print("\n💡 使用说明:")
         print("  • 在浏览器中打开生成的 HTML 文件")
-        print("  • 不同颜色表示不同路段类型")
-        print("  • 绿色标记为起点，红色标记为终点")
+        print("  • 不同颜色表示不同坐标格式转换结果")
+        print("  • 红色线=BD09转换，蓝色线=GCJ02转换，绿色线=原始WGS84")
         print("  • 点击路段可查看详细信息")
-        print("  • 右下角有路段类型图例")
-        print("  • 左上角显示路线统计信息")
+        print("  • 右下角有坐标格式对比图例")
     else:
         print("\n❌ 处理失败，请检查输入文件和错误信息")
         sys.exit(1)
