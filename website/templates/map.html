@@ -832,150 +832,34 @@
 
       .map-container {
         margin-bottom: 12px;
+        width: 100%;
+        overflow: visible;
       }
 
       .map-image {
         border: 2px solid white;
         max-width: 100%;
-      }
-
-      /* 系统配置：竖屏改为两列卡片布局 */
-      .config-layout {
-        max-width: 100%;
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
         width: 100%;
-        overflow-x: hidden;
+        height: auto;
+        display: block;
       }
 
-      .config-section {
-        background: #f8f9fa;
-        padding: 10px;
-        border-radius: 10px;
-        margin-bottom: 0;
-        width: 100%;
-        overflow-x: hidden;
+      /* 手机竖屏地图容器 */
+      #foliumMapContainer {
+        display: block !important;
+        height: 300px !important;
+        width: 100% !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+        border: 3px solid white !important;
+        margin-bottom: 24px !important;
+        margin: 0 !important;
       }
 
-      .config-section h3 {
-        font-size: 0.9em;
-        margin-bottom: 8px;
-      }
-
-      .config-section:nth-child(3) {
-        grid-column: 1 / -1;
-      }
-
-      /* 历史记录：竖屏改为水平滚动卡片 */
-      .history-layout {
-        max-width: 100%;
-        margin: 0 auto;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .history-controls {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-        padding: 10px;
-        margin-bottom: 8px;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .history-controls h3 {
-        margin: 0;
-        font-size: 1em;
-      }
-
-      .history-list {
-        display: flex;
-        flex-direction: column;
-        max-height: none;
-        overflow-y: auto;
-        gap: 8px;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .history-item {
-        padding: 10px;
-        margin-bottom: 0;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .history-item-header {
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .history-item-title {
-        font-size: 0.9em;
-        word-break: break-word;
-      }
-
-      .history-item-time {
-        font-size: 0.75em;
-        margin-left: 0;
-      }
-
-      .history-item-details {
-        font-size: 0.8em;
-      }
-
-      .history-item-stats {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 6px;
-        margin-top: 6px;
-      }
-
-      .history-stat {
-        padding: 4px;
-      }
-
-      .history-stat-value {
-        font-size: 0.9em;
-      }
-
-      .history-stat-label {
-        font-size: 0.7em;
-      }
-
-      /* 分析面板 */
-      .analysis-panel {
-        margin-top: 12px;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .analysis-section {
-        padding: 10px;
-        margin-bottom: 8px;
-        width: 100%;
-        overflow-x: hidden;
-      }
-
-      .analysis-section h3 {
-        font-size: 0.95em;
-        margin-bottom: 10px;
-      }
-
-      .road-type-stat {
-        padding: 6px 0;
-      }
-
-      .road-type-label {
-        flex: 0 0 60px;
-        font-size: 0.8em;
-      }
-
-      .road-type-value {
-        flex: 0 0 90px;
-        font-size: 0.85em;
+      /* 隐藏加载文字 */
+      #mapLoading {
+        display: none !important;
       }
     }
 
@@ -1074,19 +958,37 @@
         font-size: 1.3em;
       }
 
-      .waypoint-item {
-        flex-wrap: wrap;
-        padding: 6px 8px;
+      .map-container {
+        margin-bottom: 8px;
+        width: 100%;
+        overflow: visible;
+        padding: 0;
       }
 
-      .waypoint-name-input {
-        flex: 1 1 100%;
-        order: 3;
-        margin: 4px 0 0 30px;
+      .map-image {
+        border: 2px solid white;
+        max-width: 100%;
+        width: 100%;
+        height: auto;
+        display: block;
       }
 
-      .waypoint-remove-btn {
-        order: 2;
+      /* 手机竖屏地图容器 */
+      #foliumMapContainer {
+        display: block !important;
+        height: 280px !important;
+        width: 100% !important;
+        border-radius: 8px !important;
+        overflow: hidden !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.12) !important;
+        border: 2px solid white !important;
+        margin-bottom: 12px !important;
+        margin: 0 !important;
+      }
+
+      /* 隐藏加载文字 */
+      #mapLoading {
+        display: none !important;
       }
     }
   </style>
@@ -1169,10 +1071,10 @@
             
             <!-- 地图展示 -->
             <div class="map-container">
-              <div id="mapLoading" style="text-align: center; padding: 40px; color: #a0aec0;">
+              <div id="mapLoading" style="text-align: center; padding: 40px; color: #a0aec0; display: none;">
                 加载地图中...
               </div>
-              <div id="foliumMapContainer" style="display: none; height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.15); border: 3px solid white; margin-bottom: 24px;">
+              <div id="foliumMapContainer" style="height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.15); border: 3px solid white; margin-bottom: 24px; width: 100%;">
                 <!-- folium地图将插入这里 -->
               </div>
               <img id="routeMap" class="map-image" alt="路线地图" style="display: none;">
