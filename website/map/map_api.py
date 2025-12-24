@@ -342,7 +342,7 @@ def bd09_to_wgs84(bd_lat, bd_lng):
     wgs_lat = z * math.sin(theta) - 0.006
     return wgs_lat, wgs_lng
 
-def generate_folium_map(route_data, origin, destination):
+def generate_folium_map(route_data, origin, destination, waypoints=None, waypoint_addresses=None):
     """
     使用folium生成交互式地图HTML
     返回: HTML字符串
@@ -454,6 +454,26 @@ def generate_folium_map(route_data, origin, destination):
     except Exception as e:
         print(f"⚠️ 起点标记添加失败: {e}")
     
+    # 添加途径点标记
+    if waypoints:
+        for idx, wp in enumerate(waypoints):
+            try:
+                wp_parts = wp.split(',')
+                wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
+                wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
+                
+                # 获取途径点名称，如果没有提供则使用默认序号
+                wp_name = waypoint_addresses[idx] if waypoint_addresses and idx < len(waypoint_addresses) else f'途径点 {idx + 1}'
+                
+                folium.Marker(
+                    location=[wp_lat, wp_lng],
+                    popup=f'<b>{wp_name}</b>',
+                    tooltip=wp_name,
+                    icon=folium.Icon(color='blue', icon='map-pin', prefix='fa')
+                ).add_to(m)
+            except Exception as e:
+                print(f"⚠️ 途径点 {idx + 1} 标记添加失败: {e}")
+    
     # 添加终点标记
     try:
         folium.Marker(
@@ -465,13 +485,13 @@ def generate_folium_map(route_data, origin, destination):
     except Exception as e:
         print(f"⚠️ 终点标记添加失败: {e}")
     
-    # 添加图例
+    # 添加图例（默认隐藏）
     legend_html = '''
-    <div style="position: fixed; 
+    <div id="mapLegend" style="position: fixed; 
                 bottom: 50px; right: 50px; width: 200px; height: auto;
                 background-color: white; border:2px solid grey; z-index:9999; 
                 font-size:12px; padding: 10px; border-radius: 5px;
-                box-shadow: 0 0 15px rgba(0,0,0,0.2);">
+                box-shadow: 0 0 15px rgba(0,0,0,0.2); display: none;">
     <p style="margin: 0 0 10px 0; font-weight: bold;">🛣️ 路段类型</p>
     '''
     
@@ -484,22 +504,44 @@ def generate_folium_map(route_data, origin, destination):
     
     m.get_root().html.add_child(folium.Element(legend_html))
     
-    # 添加统计信息面板
-    stats_html = f'''
+    # 添加控制面板（显示/隐藏路段类型按钮）
+    control_html = '''
     <div style="position: fixed; 
-                top: 10px; left: 10px; width: 250px; height: auto;
-                background-color: white; border:2px solid #667eea; z-index:9999; 
-                font-size:13px; padding: 15px; border-radius: 5px;
-                box-shadow: 0 0 15px rgba(0,0,0,0.2);">
-    <p style="margin: 0 0 10px 0; font-weight: bold; color: #667eea;">🗺️ 路线统计</p>
-    <p style="margin: 5px 0;"><b>📏 总距离:</b> {route_data.get('distance', 0) / 1000:.2f} km</p>
-    <p style="margin: 5px 0;"><b>⏱️ 耗时:</b> {route_data.get('duration', 0) / 60:.1f} 分钟</p>
-    <p style="margin: 5px 0;"><b>💰 过路费:</b> ¥{route_data.get('toll', 0)}</p>
-    <p style="margin: 5px 0;"><b>🛣️ 路段数:</b> {len(steps)} 段</p>
+                top: 10px; right: 10px; z-index:10000;">
+        <button id="toggleLegend" onclick="toggleMapLegend()" style="
+            padding: 8px 12px;
+            background-color: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            display: block;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        " onmouseover="this.style.background='#764ba2'; this.style.transform='scale(1.05)'" 
+           onmouseout="this.style.background='#667eea'; this.style.transform='scale(1)'">
+            🛣️ 路段类型
+        </button>
     </div>
+    
+    <script>
+    function toggleMapLegend() {
+        const legendDiv = document.getElementById('mapLegend');
+        const btn = document.getElementById('toggleLegend');
+        if (legendDiv.style.display === 'none') {
+            legendDiv.style.display = 'block';
+            btn.style.background = '#38b000';
+        } else {
+            legendDiv.style.display = 'none';
+            btn.style.background = '#667eea';
+        }
+    }
+    </script>
     '''
     
-    m.get_root().html.add_child(folium.Element(stats_html))
+    m.get_root().html.add_child(folium.Element(control_html))
     
     # 返回HTML字符串
     return m._repr_html_()
@@ -561,9 +603,9 @@ def route():
         # 生成地图URL
         map_url = generate_static_map(origin, destination, waypoints)
         
-        # 生成folium交互式地图
+        # 生成folium交互式地图（传入waypoints和waypoint_addresses）
         try:
-            map_html = generate_folium_map(route_data, origin, destination)
+            map_html = generate_folium_map(route_data, origin, destination, waypoints, waypoint_addresses)
         except Exception as e:
             print(f"❌ 生成folium地图失败: {e}")
             map_html = None

@@ -222,24 +222,6 @@ def visualize_route(file_path):
     m.get_root().html.add_child(folium.Element(legend_html))
     print("✅ 图例已添加")
     
-    # ================= 统计信息面板 =================
-    stats_html = f'''
-    <div style="position: fixed; 
-                top: 10px; left: 10px; width: 250px; height: auto;
-                background-color: white; border:2px solid #667eea; z-index:9999; 
-                font-size:13px; padding: 15px; border-radius: 5px;
-                box-shadow: 0 0 15px rgba(0,0,0,0.2);">
-    <p style="margin: 0 0 10px 0; font-weight: bold; color: #667eea;">🗺️ 路线统计</p>
-    <p style="margin: 5px 0;"><b>📏 总距离:</b> {route.get('distance', 0) / 1000:.2f} km</p>
-    <p style="margin: 5px 0;"><b>⏱️ 耗时:</b> {route.get('duration', 0) / 60:.1f} 分钟</p>
-    <p style="margin: 5px 0;"><b>💰 过路费:</b> ¥{route.get('toll', 0)}</p>
-    <p style="margin: 5px 0;"><b>🛣️ 路段数:</b> {len(steps)} 段</p>
-    </div>
-    '''
-    
-    m.get_root().html.add_child(folium.Element(stats_html))
-    print("✅ 统计信息已添加")
-    
     # ================= 保存地图 =================
     output_dir = os.path.dirname(OUTPUT_HTML)
     if output_dir and not os.path.exists(output_dir):
