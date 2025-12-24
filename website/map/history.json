@@ -1141,6 +1141,64 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:13:19.902063",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "大同",
+        "保定白石山景区",
+        "保定"
+      ],
+      "distance_km": 840.873,
+      "duration_min": 691.4333333333333,
+      "toll": 301,
+      "oil_cost": 596.26,
+      "other": 0,
+      "total_cost": 897.26,
+      "breakdown": {
+        "highway": {
+          "distance": 764.9569999999998,
+          "cost": 527.8203299999996
+        },
+        "national": {
+          "distance": 48.94100000000001,
+          "cost": 40.523148
+        },
+        "urban": {
+          "distance": 26.974999999999998,
+          "cost": 27.919125
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;113.37334499999993,40.102784060617616;114.70919519888348,39.2229306452524;115.47146383768579,38.87998776845534;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:13:55.466625",
+      "origin_address": "北京大兴区",
+      "destination_address": "乌鲁木齐",
+      "waypoint_addresses": [],
+      "distance_km": 2800.102,
+      "duration_min": 1964.4,
+      "toll": 1116,
+      "oil_cost": 1944.89,
+      "other": 0,
+      "total_cost": 3060.89,
+      "breakdown": {
+        "highway": {
+          "distance": 2762.5719999999997,
+          "cost": 1906.1746799999996
+        },
+        "national": {
+          "distance": 0.601,
+          "cost": 0.497628
+        },
+        "urban": {
+          "distance": 36.929,
+          "cost": 38.221515000000004
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.348625212231,39.73255523655448;87.41602874517912,43.47708606579323&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }

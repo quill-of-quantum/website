@@ -361,7 +361,7 @@ def generate_folium_map(route_data, origin, destination, waypoints=None, waypoin
     center_lat = (origin_lat + dest_lat) / 2
     center_lng = (origin_lng + dest_lng) / 2
     
-    # 创建地图
+    # 创建地图（先用默认缩放）
     m = folium.Map(
         location=[center_lat, center_lng],
         zoom_start=10,
@@ -484,6 +484,52 @@ def generate_folium_map(route_data, origin, destination, waypoints=None, waypoin
         ).add_to(m)
     except Exception as e:
         print(f"⚠️ 终点标记添加失败: {e}")
+    
+    # 计算所有坐标点的边界（用于自动缩放）
+    all_lats = [origin_lat, dest_lat]
+    all_lngs = [origin_lng, dest_lng]
+    
+    # 添加途径点坐标到边界计算
+    if waypoints:
+        for wp in waypoints:
+            try:
+                wp_parts = wp.split(',')
+                wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
+                wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
+                all_lats.append(wp_lat)
+                all_lngs.append(wp_lng)
+            except:
+                pass
+    
+    # 添加路段上所有的点到边界计算
+    steps = route_data.get('steps', [])
+    for step in steps:
+        try:
+            polyline = step.get('path', '')
+            if polyline:
+                for point_str in polyline.split(';'):
+                    if point_str.strip():
+                        lng, lat = point_str.split(',')
+                        wgs_lat, wgs_lng = bd09_to_wgs84(float(lat), float(lng))
+                        all_lats.append(wgs_lat)
+                        all_lngs.append(wgs_lng)
+        except:
+            pass
+    
+    # 自动调整地图边界以适应所有坐标
+    if all_lats and all_lngs:
+        min_lat, max_lat = min(all_lats), max(all_lats)
+        min_lng, max_lng = min(all_lngs), max(all_lngs)
+        
+        # 添加10%的边距
+        lat_margin = (max_lat - min_lat) * 0.1
+        lng_margin = (max_lng - min_lng) * 0.1
+        
+        # 使用 fit_bounds 自动缩放到合适的视图
+        m.fit_bounds(
+            [[min_lat - lat_margin, min_lng - lng_margin],
+             [max_lat + lat_margin, max_lng + lng_margin]]
+        )
     
     # 添加图例（默认隐藏）
     legend_html = '''
