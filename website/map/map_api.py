@@ -5,7 +5,10 @@ import json
 import requests
 import hashlib
 import urllib.parse
-from flask import Blueprint, request, jsonify
+import math
+import folium
+import io
+from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime
 
 bp = Blueprint('map', __name__, url_prefix='/api/map')
@@ -325,6 +328,183 @@ def analyze_route_types(route_data):
     return result
 
 # ========================
+# 坐标转换函数
+# ========================
+
+def bd09_to_wgs84(bd_lat, bd_lng):
+    """
+    将百度坐标 (BD09) 转换为 WGS84 坐标
+    """
+    x_pi = 3.14159265358979324 * 3000.0 / 180.0
+    z = math.sqrt(bd_lng * bd_lng + bd_lat * bd_lat) + 0.00002 * math.sin(bd_lat * x_pi)
+    theta = math.atan2(bd_lat, bd_lng) + 0.000003 * math.cos(bd_lng * x_pi)
+    wgs_lng = z * math.cos(theta) - 0.0065
+    wgs_lat = z * math.sin(theta) - 0.006
+    return wgs_lat, wgs_lng
+
+def generate_folium_map(route_data, origin, destination):
+    """
+    使用folium生成交互式地图HTML
+    返回: HTML字符串
+    """
+    # 解析坐标 (格式: lat,lng)
+    origin_parts = origin.split(',')
+    dest_parts = destination.split(',')
+    origin_lat, origin_lng = float(origin_parts[0]), float(origin_parts[1])
+    dest_lat, dest_lng = float(dest_parts[0]), float(dest_parts[1])
+    
+    # 转换坐标到 WGS84
+    origin_lat, origin_lng = bd09_to_wgs84(origin_lat, origin_lng)
+    dest_lat, dest_lng = bd09_to_wgs84(dest_lat, dest_lng)
+    
+    # 计算地图中心
+    center_lat = (origin_lat + dest_lat) / 2
+    center_lng = (origin_lng + dest_lng) / 2
+    
+    # 创建地图
+    m = folium.Map(
+        location=[center_lat, center_lng],
+        zoom_start=10,
+        control_scale=True,
+        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        attr='Google'
+    )
+    
+    # 路段类型配置
+    road_type_colors = {
+        0: '#667eea',  # 高速路
+        1: '#764ba2',  # 城市高速
+        2: '#8B4513',  # 国道
+        3: '#43e97b',  # 省道
+        4: '#f093fb',  # 县道
+        5: '#fa709a',  # 乡道
+        6: '#fee140'   # 其他
+    }
+    
+    road_type_names = {
+        0: '高速路',
+        1: '城市高速',
+        2: '国道',
+        3: '省道',
+        4: '县道',
+        5: '乡道',
+        6: '其他'
+    }
+    
+    # 绘制各路段
+    steps = route_data.get('steps', [])
+    valid_segments = 0
+    
+    for idx, step in enumerate(steps):
+        try:
+            distance_km = step.get('distance', 0) / 1000
+            duration_min = step.get('duration', 0) / 60
+            road_type = int(step.get('road_type', 6))
+            instruction = step.get('instruction', '').replace('<b>', '').replace('</b>', '')
+            
+            # 使用 path 字段而不是 polyline
+            polyline = step.get('path', '')
+            if not polyline:
+                continue
+            
+            # 解析坐标：格式为 "lng,lat;lng,lat;..."
+            try:
+                coords = []
+                for point_str in polyline.split(';'):
+                    if point_str.strip():
+                        lng, lat = point_str.split(',')
+                        # 转换百度坐标到 WGS84
+                        wgs_lat, wgs_lng = bd09_to_wgs84(float(lat), float(lng))
+                        coords.append([wgs_lat, wgs_lng])
+                
+                if len(coords) < 2:
+                    continue
+                
+                color = road_type_colors.get(road_type, '#666666')
+                road_name = road_type_names.get(road_type, '其他')
+                
+                # 添加路段线条
+                folium.PolyLine(
+                    coords,
+                    color=color,
+                    weight=3,
+                    opacity=0.8,
+                    popup=f"<b>第 {idx + 1} 段 - {road_name}</b><br/>{distance_km:.2f} km | {duration_min:.0f} 分钟<br/>{instruction[:50]}",
+                    tooltip=f"{road_name}: {distance_km:.2f} km"
+                ).add_to(m)
+                
+                valid_segments += 1
+                
+            except ValueError as e:
+                print(f"⚠️ 路段 {idx + 1} 坐标转换失败: {e}")
+                continue
+        
+        except Exception as e:
+            print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
+            continue
+    
+    # 添加起点标记
+    try:
+        folium.Marker(
+            location=[origin_lat, origin_lng],
+            popup='<b>起点</b>',
+            tooltip='出发地',
+            icon=folium.Icon(color='green', icon='play', prefix='fa')
+        ).add_to(m)
+    except Exception as e:
+        print(f"⚠️ 起点标记添加失败: {e}")
+    
+    # 添加终点标记
+    try:
+        folium.Marker(
+            location=[dest_lat, dest_lng],
+            popup='<b>终点</b>',
+            tooltip='目的地',
+            icon=folium.Icon(color='red', icon='stop', prefix='fa')
+        ).add_to(m)
+    except Exception as e:
+        print(f"⚠️ 终点标记添加失败: {e}")
+    
+    # 添加图例
+    legend_html = '''
+    <div style="position: fixed; 
+                bottom: 50px; right: 50px; width: 200px; height: auto;
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:12px; padding: 10px; border-radius: 5px;
+                box-shadow: 0 0 15px rgba(0,0,0,0.2);">
+    <p style="margin: 0 0 10px 0; font-weight: bold;">🛣️ 路段类型</p>
+    '''
+    
+    for road_type in sorted(road_type_colors.keys()):
+        color = road_type_colors[road_type]
+        name = road_type_names.get(road_type, '其他')
+        legend_html += f'<p style="margin: 5px 0;"><i style="background:{color}; width: 15px; height: 2px; display: inline-block; margin-right: 5px;"></i>{name}</p>'
+    
+    legend_html += '</div>'
+    
+    m.get_root().html.add_child(folium.Element(legend_html))
+    
+    # 添加统计信息面板
+    stats_html = f'''
+    <div style="position: fixed; 
+                top: 10px; left: 10px; width: 250px; height: auto;
+                background-color: white; border:2px solid #667eea; z-index:9999; 
+                font-size:13px; padding: 15px; border-radius: 5px;
+                box-shadow: 0 0 15px rgba(0,0,0,0.2);">
+    <p style="margin: 0 0 10px 0; font-weight: bold; color: #667eea;">🗺️ 路线统计</p>
+    <p style="margin: 5px 0;"><b>📏 总距离:</b> {route_data.get('distance', 0) / 1000:.2f} km</p>
+    <p style="margin: 5px 0;"><b>⏱️ 耗时:</b> {route_data.get('duration', 0) / 60:.1f} 分钟</p>
+    <p style="margin: 5px 0;"><b>💰 过路费:</b> ¥{route_data.get('toll', 0)}</p>
+    <p style="margin: 5px 0;"><b>🛣️ 路段数:</b> {len(steps)} 段</p>
+    </div>
+    '''
+    
+    m.get_root().html.add_child(folium.Element(stats_html))
+    
+    # 返回HTML字符串
+    return m._repr_html_()
+
+# ========================
 # API 端点
 # ========================
 
@@ -381,6 +561,13 @@ def route():
         # 生成地图URL
         map_url = generate_static_map(origin, destination, waypoints)
         
+        # 生成folium交互式地图
+        try:
+            map_html = generate_folium_map(route_data, origin, destination)
+        except Exception as e:
+            print(f"❌ 生成folium地图失败: {e}")
+            map_html = None
+        
         # 提取steps数据用于前端绘图
         steps = route_data.get("steps", [])
         steps_data = [{
@@ -405,6 +592,7 @@ def route():
             "routeSteps": steps_data,
             "roadTypeAnalysis": road_type_analysis,
             "map_url": map_url,
+            "map_html": map_html,
             "electric_cost": electric_cost,
             "electric_total_cost": electric_total_cost
         }
@@ -451,3 +639,25 @@ def clear_history():
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"error": "清除历史记录失败", "message": str(e)}), 500
+
+@bp.route('/map', methods=['POST'])
+def get_map():
+    """生成并返回路线地图"""
+    data = request.get_json() or {}
+    origin = data.get("origin")
+    destination = data.get("destination")
+    waypoints = data.get("waypoints")
+    
+    if not origin or not destination:
+        return jsonify({"error": "缺少起点或终点"}), 400
+    
+    route_data = calculate_route(origin, destination, waypoints)
+    
+    if not route_data:
+        return jsonify({"error": "未找到合适的路线"}), 404
+    
+    # 生成Folium地图
+    map_file = generate_folium_map(route_data, map_type="route")
+    
+    # 读取地图文件并返回
+    return send_file(map_file, mimetype='text/html')

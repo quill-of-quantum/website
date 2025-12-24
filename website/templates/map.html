@@ -1169,7 +1169,13 @@
             
             <!-- 地图展示 -->
             <div class="map-container">
-              <img id="routeMap" class="map-image" alt="路线地图">
+              <div id="mapLoading" style="text-align: center; padding: 40px; color: #a0aec0;">
+                加载地图中...
+              </div>
+              <div id="foliumMapContainer" style="display: none; height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.15); border: 3px solid white; margin-bottom: 24px;">
+                <!-- folium地图将插入这里 -->
+              </div>
+              <img id="routeMap" class="map-image" alt="路线地图" style="display: none;">
             </div>
             
             <!-- 路线统计 -->
@@ -1239,7 +1245,7 @@
       <!-- 路段分析面板 -->
       <div class="analysis-panel" id="analysisSection" style="display: none;">
         <div class="analysis-section">
-          <h3>📈 路段类型分析</h3>
+          <h3>📈 跄段类型分析</h3>
           <div style="position: relative; width: 100%; height: 320px; margin-top: 20px;">
             <canvas id="roadTypeChart"></canvas>
           </div>
@@ -2018,27 +2024,35 @@ function displayResults(data) {
   const costDiffDiv = document.getElementById('costDiffCard');
   
   if (oilTotal > electricTotal) {
-    // 电动车更便宜
     costDiffDiv.style.background = 'linear-gradient(135deg, #43e97b 0%, #38b000 100%)';
     document.getElementById('cost_comparison_text').innerHTML = `
       <div>电动车比燃油车便宜 ${savingsPercentage}%</div>
     `;
   } else if (electricTotal > oilTotal) {
-    // 燃油车更便宜
     costDiffDiv.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
     document.getElementById('cost_comparison_text').innerHTML = `
       <div>燃油车比电动车便宜 ${savingsPercentage}%</div>
     `;
   } else {
-    // 相同价格
     costDiffDiv.style.background = 'linear-gradient(135deg, #a0aec0 0%, #718096 100%)';
     document.getElementById('cost_comparison_text').innerHTML = `
       <div>燃油车和电动车成本相同</div>
     `;
   }
 
-  if (data.map_url) {
+  // 显示folium交互式地图
+  if (data.map_html) {
+    const mapContainer = document.getElementById('foliumMapContainer');
+    mapContainer.innerHTML = data.map_html;
+    mapContainer.style.display = 'block';
+    document.getElementById('mapLoading').style.display = 'none';
+    document.getElementById('routeMap').style.display = 'none';
+  } else if (data.map_url) {
+    // 备用方案：显示静态地图
     document.getElementById('routeMap').src = data.map_url;
+    document.getElementById('routeMap').style.display = 'block';
+    document.getElementById('mapLoading').style.display = 'none';
+    document.getElementById('foliumMapContainer').style.display = 'none';
   }
 
   document.getElementById('results').style.display = 'block';
@@ -2182,7 +2196,7 @@ function importHistoryTrip(origin, destination, waypointAddresses) {
   // 切换到路线规划标签页
   switchTab(0);
   
-  // 显示成功提示
+  // 显示 成功提示
   showMessage('✅ 已导入历史记录，点击"计算路线"重新规划', 'success');
 }
 
