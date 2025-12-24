@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧠 NIfTI 3D体渲染查看器</title>
+<style>
+body { margin: 0; overflow: hidden; font-family: Arial; background: #111; }
+canvas { display: block; }
+#info {
+  position: absolute; top: 10px; left: 10px;
+  color: white; background: rgba(0,0,0,0.6);
+  padding: 10px; border-radius: 5px; font-size: 12px;
+}
+#controls {
+  position: absolute; top: 10px; right: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px; border-radius: 5px; color: white;
+}
+button { margin: 5px 0; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
+input[type=range] { vertical-align: middle; }
+input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div id="info">
+  <div>FPS: <span id="fps">0</span></div>
+  <div>状态: <span id="status">初始化中...</span></div>
+</div>
+<div id="controls">
+  <button onclick="document.getElementById('fileInput').click()">📂 导入 NIfTI</button><br>
+  <button onclick="changeTestData('sphere')">测试: 球体</button><br>
+  <button onclick="changeTestData('gradient')">测试: 渐变</button><br>
+  <button onclick="changeTestData('noise')">测试: 噪声</button><br>
+  <label>步数:
+    <input type="range" id="steps" min="32" max="512" value="128" oninput="updateSteps(this.value)">
+  </label>
+  <span id="stepsValue">128</span>
+</div>
+
+<input type="file" id="fileInput" accept=".nii,.nii.gz">
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<script>
+let scene, camera, renderer, mesh, material;
+let frameCount = 0, lastTime = Date.now();
+
+const volumeShader = {
+  uniforms: {
+    "map": { value: null },
+    "steps": { value: 128.0 },
+    "alphaCorrection": { value: 1.0 }
+  },
+  vertexShader: `
+    varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    void main() {
+      vPosition = position * 0.5 + 0.5;
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * viewMatrix * worldPos;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    precision highp sampler3D;
+    uniform sampler3D map;
+    uniform float steps;
+    uniform float alphaCorrection;
+    varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    void main() {
+      vec3 rayDir = normalize(vWorldPosition - cameraPosition);
+      vec3 pos = vPosition;
+      vec4 color = vec4(0.0);
+      for (float i = 0.0; i < 1.0; i += 1.0 / steps) {
+        vec3 samplePos = pos + rayDir * i;
+        if (any(lessThan(samplePos, vec3(0.0))) || any(greaterThan(samplePos, vec3(1.0)))) continue;
+        float v = texture(map, samplePos).r;
+        vec4 samp = vec4(v, v, v, v);
+        samp.a = pow(samp.a, alphaCorrection);
+        samp.rgb = pow(samp.rgb, vec3(0.8));
+        color.rgb += (1.0 - color.a) * samp.a * samp.rgb;
+        color.a += (1.0 - color.a) * samp.a;
+        if (color.a > 0.95) break;
+      }
+      gl_FragColor = color;
+    }
+  `
+};
+
+function createTestTexture(type='sphere') {
+  const size = 64;
+  const data = new Uint8Array(size * size * size);
+  for (let z = 0; z < size; z++) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = z * size * size + y * size + x;
+        const nx = x / size - 0.5, ny = y / size - 0.5, nz = z / size - 0.5;
+        let v = 0;
+        if (type === 'sphere') v = Math.max(0, 1 - Math.sqrt(nx*nx + ny*ny + nz*nz) * 2);
+        else if (type === 'gradient') v = (x + y + z) / (size * 3);
+        else if (type === 'noise') v = Math.random();
+        data[i] = v * 255;
+      }
+    }
+  }
+  const tex = new THREE.Data3DTexture(data, size, size, size);
+  tex.format = THREE.RedFormat;
+  tex.type = THREE.UnsignedByteType;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.unpackAlignment = 1;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(2, 2, 2);
+  camera.lookAt(0, 0, 0);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+  if (!renderer.capabilities.isWebGL2) alert('❌ 需要 WebGL2 支持');
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  material = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(volumeShader.uniforms),
+    vertexShader: volumeShader.vertexShader,
+    fragmentShader: volumeShader.fragmentShader,
+    side: THREE.BackSide, transparent: true, depthWrite: false
+  });
+  material.uniforms.map.value = createTestTexture('sphere');
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+  document.getElementById('status').textContent = '渲染中';
+  window.addEventListener('resize', onWindowResize);
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  mesh.rotation.y += 0.005;
+  mesh.rotation.x += 0.002;
+  renderer.render(scene, camera);
+  frameCount++;
+  const now = Date.now();
+  if (now - lastTime > 1000) {
+    document.getElementById('fps').textContent = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function changeTestData(type) {
+  material.uniforms.map.value = createTestTexture(type);
+  document.getElementById('status').textContent = '已切换到: ' + type;
+}
+
+function updateSteps(value) {
+  material.uniforms.steps.value = parseFloat(value);
+  document.getElementById('stepsValue').textContent = value;
+}
+
+// 🧩 ---- NIfTI 文件加载 ----
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('status').textContent = `📂 加载中: ${file.name}`;
+  try {
+    let buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      document.getElementById('status').textContent = '📦 解压缩中...';
+      buffer = pako.inflate(bytes).buffer;
+    }
+    const view = new DataView(buffer);
+    const nx = view.getInt16(42, true);
+    const ny = view.getInt16(44, true);
+    const nz = view.getInt16(46, true);
+    const voxOffset = view.getFloat32(108, true);
+    const datatype = view.getInt16(70, true);
+    const dataSize = nx * ny * nz;
+    let data;
+    if (datatype === 2) data = new Uint8Array(buffer, voxOffset, dataSize);
+    else if (datatype === 4) data = new Int16Array(buffer, voxOffset, dataSize);
+    else if (datatype === 16) data = new Float32Array(buffer, voxOffset, dataSize);
+    else throw new Error('不支持的 NIfTI 数据类型');
+    // 归一化
+    let min = Infinity, max = -Infinity;
+    for (let v of data) { if (v < min) min = v; if (v > max) max = v; }
+    const normalized = new Uint8Array(data.length);
+    for (let i = 0; i < data.length; i++) normalized[i] = ((data[i] - min) / (max - min)) * 255;
+    const tex = new THREE.Data3DTexture(normalized, nx, ny, nz);
+    tex.format = THREE.RedFormat;
+    tex.type = THREE.UnsignedByteType;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.unpackAlignment = 1;
+    tex.needsUpdate = true;
+    material.uniforms.map.value = tex;
+    document.getElementById('status').textContent = `✅ 加载完成 (${nx}×${ny}×${nz})`;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('status').textContent = `⚠️ 加载失败: ${err.message}`;
+  }
+});
+
+init();
+</script>
+</body>
+</html>

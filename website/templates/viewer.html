@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧠 NIfTI Viewer</title>
+  <!-- 使用稳定的库：pako (解压) + Three.js (渲染) -->
+  <!-- 本地加载 js 库 -->
+<script src="/static/js/three.min.js"></script>
+<script src="/static/js/OrbitControls.js"></script>
+<script src="/static/js/VolumeShader.js"></script>
+<script src="/static/js/pako.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    header {
+      padding: 1.5rem;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      z-index: 10;
+    }
+    
+    h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    
+    .subtitle {
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+    
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
+      gap: 1rem;
+      position: relative;
+    }
+    
+    .upload-section {
+      text-align: center;
+      z-index: 5;
+    }
+    
+    .file-input-wrapper {
+        display: inline-block;
+        position: relative;
+        cursor: pointer;
+        z-index: 10;          /* ✅ 确保在顶层 */
+        overflow: hidden;     /* ✅ 防止子元素溢出 */
+    }
+    
+    .file-input-wrapper input[type="file"] {
+        position: absolute;
+        top: 0;               /* ✅ 关键：确保覆盖按钮 */
+        left: 0;
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        cursor: pointer;
+        z-index: 20;          /* ✅ 覆盖在按钮上 */
+    }
+    
+    .upload-btn {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      border-radius: 25px;
+      color: #fff;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    
+    .upload-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.6);
+      transform: translateY(-2px);
+    }
+    
+    #viewer-container {
+      flex: 1;
+      position: relative;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 15px;
+      overflow: hidden;
+      min-height: 500px;
+      backdrop-filter: blur(10px);
+    }
+    
+    #canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    
+    #status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      padding: 1.5rem 2.5rem;
+      border-radius: 15px;
+      font-size: 1.1rem;
+      pointer-events: none;
+      z-index: 10;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      max-width: 80%;
+    }
+    
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding: 0.75rem;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+      z-index: 5;
+    }
+    
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .control-group label {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    
+    input[type="range"] {
+      width: 120px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .info-text {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      margin-top: 0.5rem;
+    }
+    
+    .slice-info {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧠 NIfTI 医学影像查看器</h1>
+    <p class="subtitle">基于 Three.js 的切片查看器</p>
+  </header>
+  
+  <main>
+    <div class="upload-section">
+      <div class="file-input-wrapper">
+        <div class="upload-btn">📂 选择 NIfTI 文件</div>
+        <input type="file" id="fileInput" accept=".nii,.nii.gz" />
+      </div>
+      <p class="info-text">支持的格式: .nii, .nii.gz</p>
+    </div>
+    
+    <div class="controls" id="controls" style="display: none;">
+      <div class="control-group">
+        <label>切片位置:</label>
+        <input type="range" id="sliceSlider" min="0" max="100" value="50" />
+        <span id="sliceValue">50</span>
+      </div>
+      <div class="control-group">
+        <label>亮度:</label>
+        <input type="range" id="brightnessSlider" min="50" max="200" value="100" />
+        <span id="brightnessValue">100%</span>
+      </div>
+      <div class="control-group">
+        <label>对比度:</label>
+        <input type="range" id="contrastSlider" min="50" max="200" value="100" />
+        <span id="contrastValue">100%</span>
+      </div>
+    </div>
+    
+    <div id="viewer-container">
+      <div id="status">等待加载文件...</div>
+      <div class="slice-info" id="sliceInfo" style="display: none;">
+        切片: <span id="currentSlice">0</span> / <span id="totalSlices">0</span>
+      </div>
+      <canvas id="canvas"></canvas>
+    </div>
+  </main>
+
+  <script>
+    // NIfTI 文件头解析
+    function parseNIfTIHeader(buffer) {
+      const view = new DataView(buffer);
+      const header = {};
+      
+      header.sizeof_hdr = view.getInt32(0, true);
+      header.dim = [];
+      for (let i = 0; i < 8; i++) {
+        header.dim[i] = view.getInt16(40 + i * 2, true);
+      }
+      header.datatype = view.getInt16(70, true);
+      header.bitpix = view.getInt16(72, true);
+      
+      header.pixdim = [];
+      for (let i = 0; i < 8; i++) {
+        header.pixdim[i] = view.getFloat32(76 + i * 4, true);
+      }
+      
+      header.vox_offset = view.getFloat32(108, true);
+      header.scl_slope = view.getFloat32(112, true);
+      header.scl_inter = view.getFloat32(116, true);
+      
+      return header;
+    }
+
+    // 解压 .gz 文件
+    async function decompressGzip(buffer) {
+      try {
+        const uint8Array = new Uint8Array(buffer);
+        // 检查是否是 gzip 文件
+        if (uint8Array[0] === 0x1f && uint8Array[1] === 0x8b) {
+          return pako.inflate(uint8Array).buffer;
+        }
+        return buffer;
+      } catch (e) {
+        console.error('解压失败:', e);
+        throw new Error('文件解压失败');
+      }
+    }
+
+    // 读取 NIfTI 数据
+    function readNIfTIData(buffer, header) {
+      const voxOffset = Math.max(352, header.vox_offset);
+      const nx = header.dim[1];
+      const ny = header.dim[2];
+      const nz = header.dim[3];
+      const dataSize = nx * ny * nz;
+      
+      let data;
+      if (header.datatype === 2) { // unsigned char
+        data = new Uint8Array(buffer, voxOffset, dataSize);
+      } else if (header.datatype === 4) { // signed short
+        data = new Int16Array(buffer, voxOffset, dataSize);
+      } else if (header.datatype === 16) { // float
+        data = new Float32Array(buffer, voxOffset, dataSize);
+      } else {
+        data = new Uint16Array(buffer, voxOffset, dataSize);
+      }
+      
+      return { data, nx, ny, nz };
+    }
+
+    // Three.js 场景设置
+    const canvas = document.getElementById('canvas');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a24);
+    
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+    camera.position.z = 1;
+    
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    
+    function resizeRenderer() {
+      const container = document.getElementById('viewer-container');
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      renderer.setSize(width, height);
+      
+      const aspect = width / height;
+      camera.left = -aspect;
+      camera.right = aspect;
+      camera.top = 1;
+      camera.bottom = -1;
+      camera.updateProjectionMatrix();
+    }
+    
+    window.addEventListener('resize', resizeRenderer);
+    resizeRenderer();
+
+    let niftiData = null;
+    let sliceMesh = null;
+    let currentBrightness = 1.0;
+    let currentContrast = 1.0;
+
+    function createSliceTexture(sliceIndex) {
+      if (!niftiData) return null;
+      
+      const { data, nx, ny, nz } = niftiData;
+      const sliceData = new Uint8Array(nx * ny * 4);
+      
+      // 找到数据范围
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] < min) min = data[i];
+        if (data[i] > max) max = data[i];
+      }
+      
+      const range = max - min || 1;
+      
+      // 提取切片数据
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = sliceIndex * nx * ny + y * nx + x;
+          let value = (data[idx] - min) / range;
+          
+          // 应用亮度和对比度
+          value = ((value - 0.5) * currentContrast + 0.5) * currentBrightness;
+          value = Math.max(0, Math.min(1, value));
+          
+          const pixelIdx = (y * nx + x) * 4;
+          const byteValue = Math.floor(value * 255);
+          sliceData[pixelIdx] = byteValue;
+          sliceData[pixelIdx + 1] = byteValue;
+          sliceData[pixelIdx + 2] = byteValue;
+          sliceData[pixelIdx + 3] = 255;
+        }
+      }
+      
+      const texture = new THREE.DataTexture(sliceData, nx, ny, THREE.RGBAFormat);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function updateSlice(sliceIndex) {
+      if (!niftiData) return;
+      
+      const texture = createSliceTexture(sliceIndex);
+      if (!texture) return;
+      
+      if (sliceMesh) {
+        scene.remove(sliceMesh);
+      }
+      
+      const aspect = niftiData.nx / niftiData.ny;
+      const geometry = new THREE.PlaneGeometry(aspect * 1.5, 1.5);
+      const material = new THREE.MeshBasicMaterial({ map: texture });
+      
+      sliceMesh = new THREE.Mesh(geometry, material);
+      scene.add(sliceMesh);
+      
+      renderer.render(scene, camera);
+      
+      document.getElementById('currentSlice').textContent = sliceIndex + 1;
+    }
+
+    // 文件加载
+    const status = document.getElementById('status');
+    const controls = document.getElementById('controls');
+    const sliceInfo = document.getElementById('sliceInfo');
+    
+    function setStatus(msg, isError = false) {
+      status.innerHTML = msg;
+      status.style.display = 'block';
+      status.style.background = isError ? 'rgba(200, 50, 50, 0.85)' : 'rgba(0, 0, 0, 0.85)';
+    }
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      setStatus(`📂 正在加载: ${file.name}`);
+      
+      try {
+        let buffer = await file.arrayBuffer();
+        
+        // 如果是 .gz 文件，先解压
+        if (file.name.endsWith('.gz')) {
+          setStatus('📦 解压缩中...');
+          buffer = await decompressGzip(buffer);
+        }
+        
+        setStatus('🧠 解析 NIfTI 文件...');
+        const header = parseNIfTIHeader(buffer);
+        const result = readNIfTIData(buffer, header);
+        
+        niftiData = result;
+        
+        // 设置切片滑块
+        const sliceSlider = document.getElementById('sliceSlider');
+        sliceSlider.max = niftiData.nz - 1;
+        sliceSlider.value = Math.floor(niftiData.nz / 2);
+        
+        document.getElementById('totalSlices').textContent = niftiData.nz;
+        
+        setStatus('✅ 加载完成');
+        setTimeout(() => {
+          status.style.display = 'none';
+          controls.style.display = 'flex';
+          sliceInfo.style.display = 'block';
+        }, 800);
+        
+        updateSlice(parseInt(sliceSlider.value));
+        
+      } catch (err) {
+        console.error('加载错误:', err);
+        setStatus(`⚠️ 加载失败: ${err.message}`, true);
+      }
+    });
+
+    // 控制器
+    document.getElementById('sliceSlider').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('sliceValue').textContent = value;
+      updateSlice(value);
+    });
+
+    document.getElementById('brightnessSlider').addEventListener('input', (e) => {
+      const value = e.target.value;
+      currentBrightness = value / 100;
+      document.getElementById('brightnessValue').textContent = value + '%';
+      updateSlice(parseInt(document.getElementById('sliceSlider').value));
+    });
+
+    document.getElementById('contrastSlider').addEventListener('input', (e) => {
+      const value = e.target.value;
+      currentContrast = value / 100;
+      document.getElementById('contrastValue').textContent = value + '%';
+      updateSlice(parseInt(document.getElementById('sliceSlider').value));
+    });
+
+    console.log('✅ 查看器初始化完成');
+  </script>
+</body>
+</html>

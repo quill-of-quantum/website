@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>🏠 树莓派控制面板</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background-color: #f8f9fa;
+      margin: 2em auto;
+      max-width: 900px;
+      color: #333;
+    }
+    h1 { text-align: center; color: #222; }
+    a {
+      text-decoration: none;
+      color: #0077cc;
+    }
+    a:hover { text-decoration: underline; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      margin-bottom: 1.5em;
+    }
+    button {
+      background: #0077cc;
+      border: none;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #005fa3; }
+
+    /* 图表区域 */
+    .chart-section {
+      margin: 2rem auto;
+      text-align: center;
+      max-width: 1200px;
+    }
+    .chart-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1.5rem;
+    }
+    .chart-item {
+      flex: 1 1 calc(50% - 1.5rem);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      border-radius: 12px;
+      background: #fff;
+      padding: 1rem;
+      transition: transform 0.2s ease;
+    }
+    .chart-item:hover { transform: scale(1.02); }
+    .chart-item img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    .chart-caption {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    /* 📱 手机屏幕一列显示 */
+    @media (max-width: 768px) {
+      .chart-item { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🏠 树莓派控制面板</h1>
+
+  <!-- 登录按钮 - 使用统一的登录系统 -->
+  <div style="text-align:center; margin-bottom: 20px;">
+    <button onclick="authManager.showLoginModal()" 
+      style="display:inline-block; padding:8px 14px; background:#0077cc;
+              color:white; border-radius:6px; border:none; cursor:pointer;">
+      登录后台
+    </button>
+  </div>
+
+  <!-- 最新物流进度 -->
+  <div class="card">
+    <h2>📦 最新物流进度</h2>
+    <div id="latestStatus">加载中...</div>
+    <p><a href="/tracker">➡️ 查看所有物流任务</a></p>
+  </div>
+
+  <!-- 工具区 -->
+  <div class="card">
+    <h2>🧰 工具区</h2>
+    <p>你可以在这里上传 iPhone 备忘录文件或执行小工具功能。</p>
+    <p><a href="/tools">进入工具区</a></p>
+    <p><a href="/map">🗺️ 路线规划计价器</a></p>
+  </div>
+
+  <!-- 汇率走势 -->
+  <div class="card">
+    <h2>💱 汇率走势</h2>
+    <div id="exchange-container" style="text-align:center;">
+      <p>加载中...</p>
+    </div>
+  </div>
+
+  <!-- 用量图表 -->
+  <section class="chart-section">
+    <h2>Usage Charts</h2>
+    <div class="chart-grid">
+
+      <div class="chart-item">
+        <img src="/weather/usage_cumulative.svg" alt="Cumulative Chart">
+        <p class="chart-caption">Cumulative Value: Original vs Interpolated</p>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_forecast.svg" alt="Forecast Chart">
+        <p class="chart-caption">Forecast of Cumulative Usage & Estimated Cost</p>
+
+        <!-- CSV 预测结果表格 -->
+        <div id="forecast-table" style="margin-top: 0.8rem; text-align:center;">
+          <table style="margin:auto; border-collapse: collapse; font-size:0.9rem;">
+            <thead>
+              <tr style="background:#f0f0f0;">
+                <th style="padding:6px 12px; border:1px solid #ccc;">Date</th>
+                <th style="padding:6px 12px; border:1px solid #ccc;">Predicted Usage</th>
+                <th style="padding:6px 12px; border:1px solid #ccc;">Predicted Cost</th>
+              </tr>
+            </thead>
+            <tbody id="forecast-body">
+              <tr><td colspan="3">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_hourly.svg" alt="Hourly Chart">
+        <p class="chart-caption">Hourly Usage</p>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_daily.svg" alt="Daily Chart">
+        <p class="chart-caption">Daily Usage: Original vs Interpolated</p>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_heatmap.svg" alt="Heatmap Chart">
+        <p class="chart-caption">Hourly Usage Heatmap</p>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_pattern_polar.svg" alt="Polar Pattern Chart">
+        <p class="chart-caption">Hourly Pattern (Polar View)</p>
+      </div>
+
+      <div class="chart-item">
+        <img src="/weather/usage_pattern.svg" alt="Pattern Chart">
+        <p class="chart-caption">Average Hourly Pattern (Interpolated)</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 系统状态 -->
+  <div class="card">
+    <h2>⚙️ 系统状态</h2>
+    <div id="sysinfo">
+      <p>CPU 使用率: <span id="cpu_val">--</span>%</p>
+      <p>内存使用: <span id="mem_used">--</span> / <span id="mem_total">--</span> MB (<span id="mem_val">--</span>%)</p>
+      <p id="temp_row" style="display:none;">温度: <span id="temp_val">--</span> °C</p>
+      <p id="wifi_row" style="display:none;">WiFi 信号: <span id="wifi_val">--</span></p>
+      <p>运行时间: <span id="uptime_val">--</span></p>
+    </div>
+    <canvas id="sysChart" height="140"></canvas>
+  </div>
+
+  <!-- 引入统一的认证模块 -->
+  <script src="/static/js/auth.js"></script>
+
+  <!-- JS 脚本 -->
+  <script>
+    // 初始化认证系统
+    document.addEventListener('DOMContentLoaded', function() {
+      authManager.createLoginStatusWidget();
+      authManager.checkLoginStatus();
+    });
+
+    // 加载最新物流状态
+    async function loadLatest() {
+      const res = await fetch('/api/tracker/list');
+      const data = await res.json();
+      const target = document.getElementById('latestStatus');
+
+      if (!data.length) {
+        target.innerText = '暂无物流任务';
+        return;
+      }
+
+      const sorted = data.filter(t => t.last_run)
+                         .sort((a,b) => b.last_run.localeCompare(a.last_run));
+      const latest = sorted[0];
+      target.innerHTML = `
+        <b>单号：</b>${latest.tracking_number}<br>
+        <b>状态摘要：</b>${latest.last_status || '暂无数据'}<br>
+        <b>上次执行：</b>${latest.last_run || '未执行'}
+      `;
+    }
+    loadLatest();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const ctx = document.getElementById('sysChart').getContext('2d');
+    const sysData = {
+      labels: [],
+      datasets: [
+        { label: 'CPU (%)', borderColor: 'rgb(255, 99, 132)', data: [], fill: false, tension: 0.3 },
+        { label: 'Memory (%)', borderColor: 'rgb(54, 162, 235)', data: [], fill: false, tension: 0.3 },
+        { label: 'Temp (°C)', borderColor: 'rgb(255, 159, 64)', data: [], fill: false, tension: 0.3 }
+      ]
+    };
+
+    const sysChart = new Chart(ctx, {
+      type: 'line',
+      data: sysData,
+      options: {
+        scales: {
+          y: { min: 0, max: 100 },
+          x: { ticks: { maxRotation: 0, autoSkip: true } }
+        },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+
+    // 初始化：先加载历史数据
+    async function initSystemInfo() {
+      const res = await fetch('/api/system');
+      const data = await res.json();
+
+      // 加载历史数据到图表
+      if (data.history && data.history.timestamps.length > 0) {
+        sysData.labels = data.history.timestamps;
+        sysData.datasets[0].data = data.history.cpu;
+        sysData.datasets[1].data = data.history.memory;
+        sysData.datasets[2].data = data.history.temperature;
+        sysChart.update();
+      }
+
+      // 更新显示的数值
+      updateDisplayValues(data);
+    }
+
+    function updateDisplayValues(data) {
+      document.getElementById('cpu_val').textContent = data.cpu_percent.toFixed(1);
+      document.getElementById('mem_val').textContent = data.memory_percent.toFixed(1);
+      document.getElementById('mem_used').textContent = data.memory_used.toFixed(1);
+      document.getElementById('mem_total').textContent = data.memory_total.toFixed(1);
+      document.getElementById('uptime_val').textContent = data.uptime;
+
+      if (data.temperature !== undefined && data.temperature !== null) {
+        document.getElementById('temp_val').textContent = data.temperature.toFixed(1);
+        document.getElementById('temp_row').style.display = '';
+      }
+      if (data.wifi_signal !== undefined && data.wifi_signal !== null) {
+        document.getElementById('wifi_val').textContent = data.wifi_signal;
+        document.getElementById('wifi_row').style.display = '';
+      }
+    }
+
+    async function updateSystemInfo() {
+      const res = await fetch('/api/system');
+      const data = await res.json();
+
+      // 添加新数据点
+      const now = new Date().toLocaleTimeString();
+      sysData.labels.push(now);
+      sysData.datasets[0].data.push(data.cpu_percent);
+      sysData.datasets[1].data.push(data.memory_percent);
+      sysData.datasets[2].data.push(data.temperature ?? null);
+
+      // 保持最多30个数据点
+      if (sysData.labels.length > 30) {
+        sysData.labels.shift();
+        sysData.datasets.forEach(d => d.data.shift());
+      }
+      
+      sysChart.update();
+      updateDisplayValues(data);
+    }
+
+    // 页面加载时初始化历史数据
+    initSystemInfo();
+    
+    // 之后每3秒更新一次
+    setInterval(updateSystemInfo, 3000);
+  </script>
+
+  <script>
+    // 加载预测数据表
+    async function loadForecastCSV() {
+      const body = document.getElementById('forecast-body');
+      try {
+        // 传统 forecast_usage.csv
+        const res1 = await fetch('/weather/forecast_usage.csv');
+        const text1 = await res1.text();
+        const lines1 = text1.trim().split(/\r?\n/);
+        const forecastRows = lines1.length > 1 ? lines1.slice(1).map(l => l.split(',')) : [];
+
+        // 历史末值
+        let lastHistory = 0;
+        try {
+          const resHist = await fetch('/weather/daily_usage.csv');
+          const textHist = await resHist.text();
+          const linesHist = textHist.trim().split(/\r?\n/);
+          if (linesHist.length > 1) {
+            const lastLine = linesHist[linesHist.length - 1].split(',');
+            lastHistory = parseFloat(lastLine[1]) || 0;
+          }
+        } catch {
+          console.log("⚠️ 无法读取 daily_usage.csv，使用0作为历史累计");
+        }
+
+        // NN predicted_heat_simple.csv
+        let nnSummary = null;
+        try {
+          const res2 = await fetch('/weather/predicted_heat_simple.csv');
+          const text2 = await res2.text();
+          const lines2 = text2.trim().split(/\r?\n/);
+          if (lines2.length > 1) {
+            const cols = lines2[0].split(',');
+            const dateIdx = cols.indexOf('date');
+            const cumIdx = cols.indexOf('cumulative_heat');
+            const nnData = lines2.slice(1).map(l => l.split(','));
+            const last = nnData[nnData.length - 1];
+            const totalUsage = lastHistory + parseFloat(last[cumIdx]);
+            const totalCost = (0.225988 * (totalUsage - 160)).toFixed(2);
+            nnSummary = { date: last[dateIdx], usage: totalUsage.toFixed(2), cost: totalCost };
+          }
+        } catch (e) {
+          console.log('⚠️ NN CSV load failed', e);
+        }
+
+        // 生成表格 - 使用新计算方式
+        let html = '';
+
+        if (forecastRows.length > 0) {
+          html += `<tr style="background:#eef;"><td colspan="3"><b>Forecast (Avg 7d extrapolation)</b></td></tr>`;
+          html += forecastRows.map(r => {
+            const usage = parseFloat(r[1]);
+            const cost = (0.225988 * (usage - 160)).toFixed(2);
+            return `
+              <tr>
+                <td style="border:1px solid #ccc; padding:6px 12px;">${r[0]}</td>
+                <td style="border:1px solid #ccc; padding:6px 12px;">${usage.toFixed(2)}</td>
+                <td style="border:1px solid #ccc; padding:6px 12px;">€${cost}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        if (nnSummary) {
+          html += `<tr style="background:#efe;"><td colspan="3"><b>Forecast (NN model)</b></td></tr>`;
+          html += `
+            <tr>
+              <td style="border:1px solid #ccc; padding:6px 12px;">${nnSummary.date}</td>
+              <td style="border:1px solid #ccc; padding:6px 12px;">${nnSummary.usage}</td>
+              <td style="border:1px solid #ccc; padding:6px 12px;">€${nnSummary.cost}</td>
+            </tr>
+          `;
+        }
+
+        if (!html) html = '<tr><td colspan="3">No forecast data available</td></tr>';
+        body.innerHTML = html;
+
+      } catch (err) {
+        console.error(err);
+        body.innerHTML = '<tr><td colspan="3">⚠️ Unable to load forecast data</td></tr>';
+      }
+    }
+
+    loadForecastCSV();
+  </script>
+
+  <script>
+    // 汇率图表加载
+    async function loadExchangeChart() {
+      const container = document.getElementById("exchange-container");
+      let data = null;
+
+      try {
+        const res = await fetch("/api/exchange_rate");
+        data = await res.json();
+
+        if (data.image) {
+          container.innerHTML = `<img src="${data.image}" alt="Exchange Rate Chart" style="max-width:100%; border-radius:8px;">`;
+        } else {
+          container.innerHTML = "⚠️ Unable to load chart";
+        }
+      } catch {
+        container.innerHTML = "⚠️ Network error";
+      }
+    }
+
+    loadExchangeChart();
+  </script>
+
+</body>
+</html>

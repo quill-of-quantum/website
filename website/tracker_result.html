@@ -1,0 +1,80 @@
+<!DOCTYPE html><html><head><style rc-util-key="@ant-design-icons">
+.anticon {
+  display: inline-block;
+  color: inherit;
+  font-style: normal;
+  line-height: 0;
+  text-align: center;
+  text-transform: none;
+  vertical-align: -0.125em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.anticon > * {
+  line-height: 1;
+}
+
+.anticon svg {
+  display: inline-block;
+}
+
+.anticon::before {
+  display: none;
+}
+
+.anticon .anticon-icon {
+  display: block;
+}
+
+.anticon[tabindex] {
+  cursor: pointer;
+}
+
+.anticon-spin::before,
+.anticon-spin {
+  display: inline-block;
+  -webkit-animation: loadingCircle 1s infinite linear;
+  animation: loadingCircle 1s infinite linear;
+}
+
+@-webkit-keyframes loadingCircle {
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loadingCircle {
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+</style>
+    <meta charset="utf-8">
+    <!-- 禁止站标（favicon）请求 设置为默认值 -->
+    <link rel="icon" href="data:image/ico;base64,aWNv">
+    <title></title>
+    <link rel="stylesheet" href="//cdn.nextsls.com/ehub/20250619/dist/umi.34bc5cfa.css">
+    <script>
+      window.routerBase = "/";
+    </script>
+    <script>
+      //! umi version: 3.5.41
+    </script>
+  </head>
+  <body>
+    <div id="root"><main class="ant-layout-content content___iNG0g" style="height: 720px; background-color: white;"><div class="content_left___3c7kG" style="min-width: 450px;"><div class="body_container___1AoaH"><h1 style="text-align: center; font-weight: bolder; color: rgb(85, 85, 85); font-size: 32px; user-select: none;">查件系统</h1><div class="input_container___Al-el"><span class="ant-input-group-wrapper my_input___2Hfr3"><span class="ant-input-wrapper ant-input-group"><span class="ant-input-group-addon"><div class="addon_before___i6zr_">1.</div></span><input autocomplete="off" placeholder="每行输入一个单号,最多允许输入20个单号。" id="0" class="ant-input ant-input-borderless" type="text" value="LO021766"><span class="ant-input-group-addon"><span role="img" aria-label="delete" class="anticon anticon-delete icon_delete___2iRJo"><svg viewBox="64 64 896 896" focusable="false" data-icon="delete" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h60.4l24.7 523c1.6 34.1 29.8 61 63.9 61h454c34.2 0 62.3-26.8 63.9-61l24.7-523H888c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM731.3 840H292.7l-24.2-512h487l-24.2 512z"></path></svg></span></span></span></span><span class="ant-input-group-wrapper my_input___2Hfr3"><span class="ant-input-wrapper ant-input-group"><span class="ant-input-group-addon"><div class="addon_before___i6zr_">2.</div></span><input autocomplete="off" placeholder="每行输入一个单号,最多允许输入20个单号。" id="1" class="ant-input ant-input-borderless" type="text" value=""></span></span></div><div class="btn_container___2LQY2"><button type="button" class="ant-btn ant-btn-primary ant-btn-lg btn___HsRsT" ant-click-animating-without-extra-node="false"><span role="img" aria-label="search" class="anticon anticon-search" style="font-size: 20px;"><svg viewBox="64 64 896 896" focusable="false" data-icon="search" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M909.6 854.5L649.9 594.8C690.2 542.7 712 479 712 412c0-80.2-31.3-155.4-87.9-212.1-56.6-56.7-132-87.9-212.1-87.9s-155.5 31.3-212.1 87.9C143.2 256.5 112 331.8 112 412c0 80.1 31.3 155.5 87.9 212.1C256.5 680.8 331.8 712 412 712c67 0 130.6-21.8 182.7-62l259.7 259.6a8.2 8.2 0 0011.6 0l43.6-43.5a8.2 8.2 0 000-11.6zM570.4 570.4C528 612.7 471.8 636 412 636s-116-23.3-158.4-65.6C211.3 528 188 471.8 188 412s23.3-116.1 65.6-158.4C296 211.3 352.2 188 412 188s116.1 23.2 158.4 65.6S636 352.2 636 412s-23.3 116.1-65.6 158.4z"></path></svg></span><span> 查询</span></button><button type="button" class="ant-btn ant-btn-primary ant-btn-lg ant-btn-dangerous btn___HsRsT"><span role="img" aria-label="undo" class="anticon anticon-undo" style="font-size: 20px;"><svg viewBox="64 64 896 896" focusable="false" data-icon="undo" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M511.4 124C290.5 124.3 112 303 112 523.9c0 128 60.2 242 153.8 315.2l-37.5 48c-4.1 5.3-.3 13 6.3 12.9l167-.8c5.2 0 9-4.9 7.7-9.9L369.8 727a8 8 0 00-14.1-3L315 776.1c-10.2-8-20-16.7-29.3-26a318.64 318.64 0 01-68.6-101.7C200.4 609 192 567.1 192 523.9s8.4-85.1 25.1-124.5c16.1-38.1 39.2-72.3 68.6-101.7 29.4-29.4 63.6-52.5 101.7-68.6C426.9 212.4 468.8 204 512 204s85.1 8.4 124.5 25.1c38.1 16.1 72.3 39.2 101.7 68.6 29.4 29.4 52.5 63.6 68.6 101.7 16.7 39.4 25.1 81.3 25.1 124.5s-8.4 85.1-25.1 124.5a318.64 318.64 0 01-68.6 101.7c-7.5 7.5-15.3 14.5-23.4 21.2a7.93 7.93 0 00-1.2 11.1l39.4 50.5c2.8 3.5 7.9 4.1 11.4 1.3C854.5 760.8 912 649.1 912 523.9c0-221.1-179.4-400.2-400.6-399.9z"></path></svg></span><span> 重置</span></button></div></div></div><div class="content_right___1Iz1a" style="min-width: 830px;"><div class="right_item_container___1ZLGf"><h2 style="color: rgb(119, 119, 119); text-align: center;">当前共1条查询记录</h2><div class="item_container___33WcF"><div class="item_header___34LsY"><div class="item___8RCs8"><div class="search_icon___1PD6u"><div class="search_icon___1PD6u" style="background-color: rgb(0, 165, 0);"><span role="img" aria-label="check-circle" class="anticon anticon-check-circle icon___23ahp"><svg viewBox="64 64 896 896" focusable="false" data-icon="check-circle" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M699 353h-46.9c-10.2 0-19.9 4.9-25.9 13.3L469 584.3l-71.2-98.8c-6-8.3-15.6-13.3-25.9-13.3H325c-6.5 0-10.3 7.4-6.5 12.7l124.6 172.8a31.8 31.8 0 0051.7 0l210.6-292c3.9-5.3.1-12.7-6.4-12.7z"></path><path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z"></path></svg></span></div></div><div style="margin-left: 10px; max-width: 226.4px;"><p class="tracking_number___19XrB">LO021766</p><div class="rows___3ll2b"><span class="title___1hCGC">状态：</span><span class="comment___2Gy6N">转运中</span></div></div></div><div class="item___8RCs8"><div class="rows___3ll2b"><span class="title___1hCGC">国家：</span><span class="comment___2Gy6N">德国</span></div><div class="rows___3ll2b"><span class="title___1hCGC">邮编：</span><span class="comment___2Gy6N">80802</span></div></div><div class="item___8RCs8"><div class="rows___3ll2b"><span class="title___1hCGC">系统单号 ：</span><span class="comment___2Gy6N">LO021766</span></div><div class="rows___3ll2b"><span class="title___1hCGC">客户单号 ：</span><span class="comment___2Gy6N">L912068285</span></div></div><div class="item___8RCs8"><div class="rows___3ll2b"><span class="title___1hCGC">转单号 ：</span><span class="comment___2Gy6N">UPS 1ZW3715K6818613682</span></div></div></div><div class="item_route___2iBdN" style="max-height: 10000px;"><ul class="ant-timeline time_line___2Daiu"><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">已出境 待换装发运</span><i class="route_time___2OCqz">2025-12-22 09:30:05</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">新疆博尔塔拉</span><i class="route_time___2OCqz">2025-12-20 08:46:49</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">新疆乌鲁木齐市</span><i class="route_time___2OCqz">2025-12-19 09:18:30</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">新疆哈密市</span><i class="route_time___2OCqz">2025-12-18 08:57:10</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">甘肃省兰州市</span><i class="route_time___2OCqz">2025-12-17 09:03:48</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">已发运</span><i class="route_time___2OCqz">2025-12-16 20:20:33</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">已装柜出库 预计12月16日发运</span><i class="route_time___2OCqz">2025-12-11 19:03:04</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">深圳集散中心 已收货 , *,CN</span><i class="route_time___2OCqz">2025-12-06 21:34:10</i></div></li><li class="ant-timeline-item"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">已下单</span><i class="route_time___2OCqz">2025-12-06 17:51:45</i></div></li><li class="ant-timeline-item ant-timeline-item-last"><div class="ant-timeline-item-tail"></div><div class="ant-timeline-item-head ant-timeline-item-head-blue"></div><div class="ant-timeline-item-content"><span class="route_event___cF-bT">Shipper created a label, UPS has not received the package yet. Poland</span><i class="route_time___2OCqz">2025-12-06 14:54:00</i></div></li></ul></div></div></div></div></main></div>
+    <script>
+        var global_data={"top_token":"","client_token":"","logoUrl":"http:\/\/tracking.nextsls.com\/img\/logo_w.png","gpsUrl":"http:\/\/tracking.nextsls.com\/rest\/top\/gps\/track_form"};
+    </script>
+    <script>
+      var routerHost = "http://tracking.nextsls.com";
+    </script>
+
+    <script src="//cdn.nextsls.com/ehub/20250619/dist/umi.5ac6b0e5.js"></script>
+  
+
+<style data-rc-order="append" rc-util-key="antd-wave"></style></body></html>

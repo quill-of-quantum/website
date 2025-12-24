@@ -1,0 +1,2229 @@
+<!-- /home/bbdwz/projects/website/templates/map.html -->
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🗺️ 路线规划计价器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    /* 返回首页按钮 */
+    .home-nav {
+      position: absolute;
+      top: 10px;
+      left: 0;
+      z-index: 10;
+    }
+
+    .home-nav .btn {
+      background: rgba(255,255,255,0.95);
+      color: #667eea;
+      border: 2px solid rgba(255,255,255,0.7);
+      backdrop-filter: blur(10px);
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .home-nav .btn:hover {
+      background: white;
+      border-color: #667eea;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+
+    /* 页面标题 */
+    .page-header {
+      text-align: center;
+      margin-bottom: 40px;
+      margin-top: 60px;
+    }
+
+    .page-header h1 {
+      color: white;
+      font-size: 2.8em;
+      font-weight: 700;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      margin-bottom: 10px;
+    }
+
+    .page-header p {
+      color: rgba(255,255,255,0.9);
+      font-size: 1.1em;
+      font-weight: 300;
+    }
+
+    /* 主卡片容器 */
+    .main-card {
+      background: white;
+      border-radius: 16px;
+      padding: 0;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+
+    /* 标签页导航 */
+    .tabs-nav {
+      display: flex;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .tab-button {
+      flex: 1;
+      padding: 20px 24px;
+      background: none;
+      border: none;
+      color: #6c757d;
+      font-weight: 600;
+      font-size: 1.05em;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid transparent;
+      position: relative;
+    }
+
+    .tab-button:hover {
+      background: rgba(102, 126, 234, 0.05);
+      color: #495057;
+    }
+
+    .tab-button.active {
+      color: #667eea;
+      background: white;
+      border-bottom-color: #667eea;
+    }
+
+    /* 标签页内容 */
+    .tab-content {
+      display: none;
+      padding: 32px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* 路线规划页面布局 */
+    .route-planning-layout {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 32px;
+      min-height: 600px;
+    }
+
+    /* 输入面板 */
+    .input-panel {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 24px;
+      height: fit-content;
+    }
+
+    .input-section {
+      margin-bottom: 28px;
+    }
+
+    .input-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-title {
+      font-size: 1.2em;
+      font-weight: 700;
+      color: #2d3748;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 表单组件 */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      color: #4a5568;
+      font-weight: 600;
+      font-size: 0.95em;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1em;
+      transition: all 0.3s ease;
+      background: white;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    /* 途径点组件 */
+    .waypoint-input-group {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .waypoint-input-group input {
+      flex: 1;
+    }
+
+    .waypoints-container {
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .waypoint-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: move;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+
+    .waypoint-item:last-child {
+      border-bottom: none;
+    }
+
+    .waypoint-item:hover {
+      background: #f8fafc;
+    }
+
+    .waypoint-item.dragging {
+      opacity: 0.6;
+      background: #e2e8f0;
+    }
+
+    .waypoint-handle {
+      cursor: grab;
+      color: #a0aec0;
+      margin-right: 12px;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+
+    .waypoint-handle:active {
+      cursor: grabbing;
+    }
+
+    .waypoint-number {
+      flex: 0 0 32px;
+      color: #718096;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+
+    .waypoint-name-input {
+      flex: 1;
+      margin: 0 12px;
+      padding: 8px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 0.95em;
+      background: white;
+    }
+
+    .waypoint-remove-btn {
+      padding: 6px 12px;
+      background: #fed7d7;
+      color: #c53030;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .waypoint-remove-btn:hover {
+      background: #feb2b2;
+    }
+
+    /* 按钮样式 */
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f7fafc;
+      color: #4a5568;
+      border: 2px solid #e2e8f0;
+    }
+
+    .btn-secondary:hover {
+      background: #edf2f7;
+      border-color: #cbd5e0;
+    }
+
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 0.9em;
+    }
+
+    .btn-block {
+      width: 100%;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    /* 结果展示面板 */
+    .results-panel {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 24px;
+      min-height: 400px;
+    }
+
+    .results-content {
+      display: none;
+    }
+
+    .results-content.active {
+      display: block;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .results-header h3 {
+      color: #2d3748;
+      font-size: 1.4em;
+      font-weight: 700;
+    }
+
+    /* 地图容器 */
+    .map-container {
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .map-image {
+      border-radius: 12px;
+      max-width: 100%;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+      border: 3px solid white;
+    }
+
+    /* 路线统计卡片 */
+    .route-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border-left: 4px solid #667eea;
+    }
+
+    .stat-label {
+      font-size: 0.9em;
+      color: #718096;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stat-value {
+      font-size: 1.4em;
+      font-weight: 700;
+      color: #2d3748;
+    }
+
+    /* 总成本卡片 */
+    .total-cost-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+      border-radius: 12px;
+      text-align: center;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+    }
+
+    .total-cost-label {
+      font-size: 1.1em;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+
+    .total-cost-value {
+      font-size: 2.2em;
+      font-weight: 700;
+    }
+
+    /* 空状态 */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: #a0aec0;
+    }
+
+    .empty-state-icon {
+      font-size: 4em;
+      margin-bottom: 16px;
+      opacity: 0.6;
+    }
+
+    .empty-state-text {
+      font-size: 1.1em;
+      line-height: 1.6;
+    }
+
+    /* 分析面板 */
+    .analysis-panel {
+      margin-top: 32px;
+    }
+
+    .analysis-section {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .analysis-section h3 {
+      color: #2d3748;
+      margin-bottom: 20px;
+      font-size: 1.3em;
+      font-weight: 700;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 配置页面 */
+    .config-layout {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .config-section {
+      background: #f8f9fa;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+
+    .config-section h3 {
+      color: #2d3748;
+      font-size: 1.3em;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 历史记录页面 */
+    .history-layout {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .history-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 12px;
+    }
+
+    .history-list {
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      background: white;
+      padding: 20px;
+      margin-bottom: 16px;
+      border-radius: 12px;
+      border-left: 4px solid #667eea;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    .history-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      background: #f8fafc;
+    }
+
+    .history-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .history-item-title {
+      font-weight: 700;
+      color: #2d3748;
+      font-size: 1.1em;
+      flex: 1;
+    }
+
+    .history-item-time {
+      font-size: 0.9em;
+      color: #a0aec0;
+      font-weight: 500;
+      white-space: nowrap;
+      margin-left: 16px;
+    }
+
+    .history-item-details {
+      font-size: 0.95em;
+      color: #4a5568;
+      line-height: 1.5;
+    }
+
+    .history-item-waypoints {
+      margin-bottom: 8px;
+      color: #718096;
+      font-style: italic;
+    }
+
+    .history-item-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .history-stat {
+      text-align: center;
+      padding: 8px;
+      background: #f7fafc;
+      border-radius: 6px;
+    }
+
+    .history-stat-value {
+      font-weight: 700;
+      color: #667eea;
+      display: block;
+    }
+
+    .history-stat-label {
+      font-size: 0.8em;
+      color: #718096;
+    }
+
+    /* 消息提示 */
+    .message {
+      margin-bottom: 20px;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-weight: 600;
+    }
+
+    .message.success {
+      background: #f0fff4;
+      color: #38a169;
+      border-left: 4px solid #38a169;
+    }
+
+    .message.error {
+      background: #fed7d7;
+      color: #c53030;
+      border-left: 4px solid #c53030;
+    }
+
+    .message.loading {
+      background: #ebf8ff;
+      color: #3182ce;
+      border-left: 4px solid #3182ce;
+    }
+
+    /* 响应式设计 */
+    @media (max-width: 1200px) {
+      .route-planning-layout {
+        grid-template-columns: 380px 1fr;
+        gap: 24px;
+      }
+    }
+
+    @media (max-width: 968px) {
+      .route-planning-layout {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+      
+      /* 移动端始终保持输入面板在上，结果面板在下 */
+      .input-panel {
+        order: 1;
+      }
+      
+      .results-panel {
+        order: 2;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 12px;
+      }
+
+      .container {
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+
+      .main-card {
+        width: 100%;
+        overflow-x: hidden;
+      }
+      
+      .home-nav {
+        position: relative;
+        top: auto;
+        left: auto;
+        margin-bottom: 20px;
+        text-align: left;
+      }
+      
+      .page-header {
+        margin-top: 0;
+        margin-bottom: 20px;
+      }
+      
+      .page-header h1 {
+        font-size: 1.8em;
+      }
+
+      .page-header p {
+        font-size: 0.95em;
+      }
+      
+      .tab-content {
+        padding: 12px;
+        overflow-x: hidden;
+      }
+      
+      .tabs-nav {
+        flex-direction: row;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .tab-button {
+        padding: 14px 16px;
+        font-size: 0.95em;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* 竖屏手机：路线规划保持水平卡片布局 */
+      .route-planning-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        min-height: auto;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .input-panel {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 12px;
+        height: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 8px;
+        align-content: start;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .input-section {
+        margin-bottom: 8px;
+        grid-column: span 1;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .input-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-title {
+        font-size: 0.9em;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+      }
+
+      .form-group {
+        margin-bottom: 8px;
+      }
+
+      .form-label {
+        margin-bottom: 3px;
+        font-size: 0.8em;
+      }
+
+      .form-input {
+        padding: 8px 10px;
+        font-size: 0.85em;
+        width: 100%;
+      }
+
+      .waypoint-input-group {
+        gap: 6px;
+        width: 100%;
+      }
+
+      .waypoint-input-group input {
+        min-width: 0;
+      }
+
+      .waypoints-container {
+        max-height: 180px;
+        width: 100%;
+      }
+
+      .waypoint-item {
+        padding: 8px 12px;
+        min-width: 0;
+      }
+
+      .btn-group {
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+        grid-column: 1 / -1;
+        width: 100%;
+      }
+
+      .btn {
+        padding: 8px 12px;
+        font-size: 0.85em;
+        width: 100%;
+      }
+
+      .btn-small {
+        padding: 6px 10px;
+        font-size: 0.75em;
+      }
+
+      .results-panel {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 12px;
+        min-height: auto;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .route-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .stat-card {
+        padding: 10px;
+      }
+
+      .stat-label {
+        font-size: 0.75em;
+        margin-bottom: 4px;
+      }
+
+      .stat-value {
+        font-size: 1.1em;
+      }
+
+      .total-cost-card {
+        padding: 12px;
+        margin-bottom: 8px;
+      }
+
+      .total-cost-label {
+        font-size: 0.9em;
+      }
+
+      .total-cost-value {
+        font-size: 1.6em;
+      }
+
+      .map-container {
+        margin-bottom: 12px;
+      }
+
+      .map-image {
+        border: 2px solid white;
+        max-width: 100%;
+      }
+
+      /* 系统配置：竖屏改为两列卡片布局 */
+      .config-layout {
+        max-width: 100%;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .config-section {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 10px;
+        margin-bottom: 0;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .config-section h3 {
+        font-size: 0.9em;
+        margin-bottom: 8px;
+      }
+
+      .config-section:nth-child(3) {
+        grid-column: 1 / -1;
+      }
+
+      /* 历史记录：竖屏改为水平滚动卡片 */
+      .history-layout {
+        max-width: 100%;
+        margin: 0 auto;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .history-controls {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .history-controls h3 {
+        margin: 0;
+        font-size: 1em;
+      }
+
+      .history-list {
+        display: flex;
+        flex-direction: column;
+        max-height: none;
+        overflow-y: auto;
+        gap: 8px;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .history-item {
+        padding: 10px;
+        margin-bottom: 0;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .history-item-header {
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .history-item-title {
+        font-size: 0.9em;
+        word-break: break-word;
+      }
+
+      .history-item-time {
+        font-size: 0.75em;
+        margin-left: 0;
+      }
+
+      .history-item-details {
+        font-size: 0.8em;
+      }
+
+      .history-item-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .history-stat {
+        padding: 4px;
+      }
+
+      .history-stat-value {
+        font-size: 0.9em;
+      }
+
+      .history-stat-label {
+        font-size: 0.7em;
+      }
+
+      /* 分析面板 */
+      .analysis-panel {
+        margin-top: 12px;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .analysis-section {
+        padding: 10px;
+        margin-bottom: 8px;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      .analysis-section h3 {
+        font-size: 0.95em;
+        margin-bottom: 10px;
+      }
+
+      .road-type-stat {
+        padding: 6px 0;
+      }
+
+      .road-type-label {
+        flex: 0 0 60px;
+        font-size: 0.8em;
+      }
+
+      .road-type-value {
+        flex: 0 0 90px;
+        font-size: 0.85em;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 8px;
+      }
+
+      .container {
+        overflow-x: hidden;
+      }
+
+      .main-card {
+        overflow-x: hidden;
+      }
+
+      .tab-content {
+        padding: 8px;
+        overflow-x: hidden;
+      }
+
+      .home-nav .btn {
+        font-size: 0.75em;
+        padding: 6px 10px;
+      }
+      
+      .page-header h1 {
+        font-size: 1.5em;
+      }
+      
+      .page-header p {
+        font-size: 0.9em;
+      }
+
+      .main-card {
+        border-radius: 12px;
+      }
+
+      .tab-button {
+        padding: 10px 10px;
+        font-size: 0.8em;
+      }
+
+      /* 超小屏幕：输入面板改为单列 */
+      .input-panel {
+        grid-template-columns: 1fr;
+        padding: 8px;
+        gap: 6px;
+      }
+
+      .input-section {
+        grid-column: span 1;
+      }
+
+      .btn-group {
+        grid-column: 1;
+        gap: 4px;
+      }
+
+      .btn {
+        padding: 6px 10px;
+        font-size: 0.8em;
+      }
+
+      .route-stats {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .config-layout {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .config-section {
+        padding: 8px;
+      }
+
+      .config-section:nth-child(3) {
+        grid-column: 1;
+      }
+
+      .results-panel {
+        padding: 8px;
+      }
+
+      .total-cost-card {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+      }
+
+      .total-cost-value {
+        font-size: 1.3em;
+      }
+
+      .waypoint-item {
+        flex-wrap: wrap;
+        padding: 6px 8px;
+      }
+
+      .waypoint-name-input {
+        flex: 1 1 100%;
+        order: 3;
+        margin: 4px 0 0 30px;
+      }
+
+      .waypoint-remove-btn {
+        order: 2;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 返回首页导航 -->
+  <div class="home-nav">
+    <a href="/" class="btn btn-small">🏠 返回首页</a>
+  </div>
+
+  <!-- 页面标题 -->
+  <div class="page-header">
+    <h1>🗺️ 路线规划计价器</h1>
+    <p>智能路线规划 · 精准成本计算 · 一站式出行助手</p>
+  </div>
+
+  <!-- 主卡片 -->
+  <div class="main-card">
+    <!-- 标签页导航 -->
+    <div class="tabs-nav">
+      <button class="tab-button active" onclick="switchTab(0)">📍 路线规划</button>
+      <button class="tab-button" onclick="switchTab(1)">⚙️ 系统配置</button>
+      <button class="tab-button" onclick="switchTab(2)">📜 历史记录</button>
+    </div>
+
+    <!-- 标签页 1: 路线规划 -->
+    <div class="tab-content active" id="tab0">
+      <div class="route-planning-layout">
+        <!-- 输入面板 -->
+        <div class="input-panel">
+          <div id="message"></div>
+
+          <!-- 基本路线信息 -->
+          <div class="input-section">
+            <h3 class="section-title">🎯 基本信息</h3>
+            
+            <div class="form-group">
+              <label class="form-label" for="origin">📍 出发地</label>
+              <input type="text" id="origin" class="form-input" placeholder="请输入出发地址，如：北京市朝阳区" onchange="saveFormData()">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="destination">🏁 目的地</label>
+              <input type="text" id="destination" class="form-input" placeholder="请输入目的地址，如：天津市南开区" onchange="saveFormData()">
+            </div>
+          </div>
+
+          <!-- 途径点设置 -->
+          <div class="input-section">
+            <h3 class="section-title">📌 途径点设置</h3>
+            
+            <div class="waypoint-input-group">
+              <input type="text" id="waypointInput" class="form-input" placeholder="输入途径点地址">
+              <button class="btn btn-secondary btn-small" onclick="addWaypoint()">➕ 添加</button>
+            </div>
+            
+            <div class="waypoints-container" id="waypointsList"></div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="btn-group">
+            <button class="btn btn-primary btn-block" onclick="calculateRoute()">
+              🚀 开始计算路线
+            </button>
+            <button class="btn btn-secondary btn-block" onclick="clearFormData()">
+              🗑️ 清空重置
+            </button>
+          </div>
+        </div>
+
+        <!-- 结果展示面板 -->
+        <div class="results-panel">
+          <!-- 有结果时显示 -->
+          <div class="results-content" id="results">
+            <div class="results-header">
+              <h3>✅ 路线规划结果</h3>
+            </div>
+            
+            <!-- 地图展示 -->
+            <div class="map-container">
+              <img id="routeMap" class="map-image" alt="路线地图">
+            </div>
+            
+            <!-- 路线统计 -->
+            <div class="route-stats">
+              <div class="stat-card">
+                <div class="stat-label">📏 总距离</div>
+                <div class="stat-value"><span id="result_distance">--</span> km</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">⏱️ 预计耗时</div>
+                <div class="stat-value"><span id="result_duration">--</span></div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">💰 过路费</div>
+                <div class="stat-value">¥<span id="result_toll">--</span></div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">📝 其他费用</div>
+                <div class="stat-value">¥<span id="result_other">--</span></div>
+              </div>
+            </div>
+
+            <!-- 燃油车和电动车成本对比 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+              <!-- 燃油车成本 -->
+              <div class="total-cost-card">
+                <div class="total-cost-label">🚗 燃油车总成本</div>
+                <div class="total-cost-value">¥<span id="result_total">--</span></div>
+                <div style="margin-top: 12px; font-size: 0.95em; opacity: 0.9;">
+                  <div>油费: ¥<span id="result_oil_total">--</span></div>
+                </div>
+              </div>
+
+              <!-- 电动车成本 -->
+              <div class="total-cost-card" style="background: linear-gradient(135deg, #43e97b 0%, #38b000 100%);">
+                <div class="total-cost-label">🔋 电动车总成本</div>
+                <div class="total-cost-value">¥<span id="result_electric_total">--</span></div>
+                <div style="margin-top: 12px; font-size: 0.95em; opacity: 0.9;">
+                  <div>电费: ¥<span id="result_electric_cost">--</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 成本差额对比 -->
+            <div id="costDiffCard" style="background: linear-gradient(135deg, #ffa500 0%, #ff6b6b 100%); color: white; padding: 24px; border-radius: 12px; text-align: center; box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3); margin-bottom: 24px;">
+              <div style="font-size: 1.1em; opacity: 0.9; margin-bottom: 8px;">💡 成本对比</div>
+              <div style="font-size: 2.2em; font-weight: 700; margin-bottom: 12px">
+                ¥<span id="cost_difference_value">--</span>
+              </div>
+              <div style="font-size: 0.95em; opacity: 0.9;" id="cost_comparison_text">
+                <!-- 动态显示对比结果 -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态 -->
+          <div class="empty-state" id="noResults">
+            <div class="empty-state-icon">🗺️</div>
+            <div class="empty-state-text">
+              请在左侧输入出发地和目的地<br>
+              点击"开始计算路线"获取详细规划结果
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 路段分析面板 -->
+      <div class="analysis-panel" id="analysisSection" style="display: none;">
+        <div class="analysis-section">
+          <h3>📈 路段类型分析</h3>
+          <div style="position: relative; width: 100%; height: 320px; margin-top: 20px;">
+            <canvas id="roadTypeChart"></canvas>
+          </div>
+        </div>
+
+        <div class="analysis-section">
+          <h3>📊 全程路段分布</h3>
+          <div style="position: relative; width: 100%; margin-top: 20px;">
+            <div style="display: flex; height: 60px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" id="routeProgressBar"></div>
+            <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;" id="routeLegend"></div>
+          </div>
+        </div>
+
+        <div class="analysis-section">
+          <h3>📋 详细路段信息</h3>
+          <div id="stepsList" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签页 2: 系统配置 -->
+    <div class="tab-content" id="tab1">
+      <div class="config-layout">
+        <div class="config-section">
+          <h3>🚗 燃油车配置</h3>
+          
+          <div class="form-group">
+            <label class="form-label" for="oilPrice">⛽ 当前油价 (¥/升)</label>
+            <input type="number" id="oilPrice" class="form-input" step="0.1" value="7.0" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="consumptionHighway">🛣️ 高速公路油耗 (L/100km)</label>
+            <input type="number" id="consumptionHighway" class="form-input" step="0.1" value="6.5" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="consumptionNational">🛤️ 国道省道油耗 (L/100km)</label>
+            <input type="number" id="consumptionNational" class="form-input" step="0.1" value="7.5" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="consumptionUrban">🏙️ 市区道路油耗 (L/100km)</label>
+            <input type="number" id="consumptionUrban" class="form-input" step="0.1" value="9.0" onchange="saveConfig()">
+          </div>
+        </div>
+
+        <div class="config-section">
+          <h3>🔋 电动车配置</h3>
+          
+          <div class="form-group">
+            <label class="form-label" for="electricPrice">💡 当前电价 (¥/度)</label>
+            <input type="number" id="electricPrice" class="form-input" step="0.1" value="1.5" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="electricConsumptionHighway">🛣️ 高速公路电耗 (kWh/100km)</label>
+            <input type="number" id="electricConsumptionHighway" class="form-input" step="0.1" value="16.0" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="electricConsumptionNational">🛤️ 国道省道电耗 (kWh/100km)</label>
+            <input type="number" id="electricConsumptionNational" class="form-input" step="0.1" value="18.0" onchange="saveConfig()">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="electricConsumptionUrban">🏙️ 市区道路电耗 (kWh/100km)</label>
+            <input type="number" id="electricConsumptionUrban" class="form-input" step="0.1" value="22.0" onchange="saveConfig()">
+          </div>
+        </div>
+
+        <div class="config-section">
+          <h3>📝 其他费用</h3>
+          
+          <div class="form-group">
+            <label class="form-label" for="other">其他费用 (¥)</label>
+            <input type="number" id="other" class="form-input" step="0.5" value="15.0" onchange="saveConfig()">
+            <small style="color: #718096; font-size: 0.9em;">如停车费、过桥费等其他开支</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签页 3: 历史记录 -->
+    <div class="tab-content" id="tab2">
+      <div class="history-layout">
+        <div class="history-controls">
+          <h3 style="margin: 0; color: #2d3748;">📜 历史记录</h3>
+          <button class="btn btn-secondary btn-small" onclick="clearHistory()">🗑️ 清除全部</button>
+        </div>
+        
+        <div class="history-list" id="historyList">
+          <div class="empty-state">
+            <div class="empty-state-icon">⏳</div>
+            <div class="empty-state-text">正在加载历史记录...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+// 全局变量
+let waypoints = [];
+let currentRoute = null;
+let roadTypeChart = null;
+
+// 登录相关变量
+let isLoggedIn = false;
+let currentUser = null;
+
+// 保存表单数据到 localStorage
+function saveFormData() {
+  const formData = {
+    origin: document.getElementById('origin').value,
+    destination: document.getElementById('destination').value,
+    waypoints: waypoints,
+    routeResult: currentRoute
+  };
+  localStorage.setItem('routePlannerData', JSON.stringify(formData));
+}
+
+// 从 localStorage 加载表单数据
+function loadFormData() {
+  const saved = localStorage.getItem('routePlannerData');
+  if (saved) {
+    try {
+      const formData = JSON.parse(saved);
+      document.getElementById('origin').value = formData.origin || '';
+      document.getElementById('destination').value = formData.destination || '';
+      waypoints = formData.waypoints || [];
+      renderWaypoints();
+      
+      // 恢复路线结果
+      if (formData.routeResult) {
+        currentRoute = formData.routeResult;
+        displayResults(formData.routeResult);
+      }
+    } catch (e) {
+      console.error('加载表单数据失败', e);
+    }
+  }
+}
+
+// 清空表单数据
+function clearFormData() {
+  if (!confirm('确定要清空所有输入吗？')) return;
+  
+  document.getElementById('origin').value = '';
+  document.getElementById('destination').value = '';
+  waypoints = [];
+  currentRoute = null;
+  renderWaypoints();
+  localStorage.removeItem('routePlannerData');
+  
+  // 清空结果显示
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('noResults').style.display = 'block';
+  
+  showMessage('✅ 输入已清空', 'success');
+}
+
+// 切换标签页
+function switchTab(index) {
+  const tabs = document.querySelectorAll('.tab-content');
+  const buttons = document.querySelectorAll('.tab-button');
+  
+  tabs.forEach(t => t.classList.remove('active'));
+  buttons.forEach(b => b.classList.remove('active'));
+  
+  tabs[index].classList.add('active');
+  buttons[index].classList.add('active');
+
+  // 切换标签页时重新绘制图表
+  if (index === 0) {
+    setTimeout(() => {
+      if (roadTypeChart) roadTypeChart.resize();
+    }, 100);
+  } else if (index === 1) {
+    loadConfig();
+  } else if (index === 2) {
+    loadHistory();
+  }
+}
+
+// 加载配置
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/map/config');
+    const config = await res.json();
+    
+    document.getElementById('oilPrice').value = config.oil_price;
+    document.getElementById('other').value = config.other;
+    document.getElementById('electricPrice').value = config.electric_price || 1.5;
+    
+    // 处理新旧配置格式兼容
+    if (typeof config.oil_consumption === 'object') {
+      document.getElementById('consumptionHighway').value = config.oil_consumption.highway || 6.5;
+      document.getElementById('consumptionNational').value = config.oil_consumption.national || 7.5;
+      document.getElementById('consumptionUrban').value = config.oil_consumption.urban || 9.0;
+    } else {
+      // 旧格式兼容
+      document.getElementById('consumptionHighway').value = config.oil_consumption || 6.5;
+      document.getElementById('consumptionNational').value = config.oil_consumption || 7.5;
+      document.getElementById('consumptionUrban').value = config.oil_consumption || 9.0;
+    }
+
+    // 加载电动车配置
+    if (typeof config.electric_consumption === 'object') {
+      document.getElementById('electricConsumptionHighway').value = config.electric_consumption.highway || 16.0;
+      document.getElementById('electricConsumptionNational').value = config.electric_consumption.national || 18.0;
+      document.getElementById('electricConsumptionUrban').value = config.electric_consumption.urban || 22.0;
+    } else {
+      document.getElementById('electricConsumptionHighway').value = 16.0;
+      document.getElementById('electricConsumptionNational').value = 18.0;
+      document.getElementById('electricConsumptionUrban').value = 22.0;
+    }
+  } catch (e) {
+    console.error('加载配置失败', e);
+  }
+}
+
+// 保存配置
+async function saveConfig() {
+  const config = {
+    oil_price: parseFloat(document.getElementById('oilPrice').value),
+    electric_price: parseFloat(document.getElementById('electricPrice').value),
+    other: parseFloat(document.getElementById('other').value),
+    oil_consumption: {
+      highway: parseFloat(document.getElementById('consumptionHighway').value),
+      national: parseFloat(document.getElementById('consumptionNational').value),
+      urban: parseFloat(document.getElementById('consumptionUrban').value)
+    },
+    electric_consumption: {
+      highway: parseFloat(document.getElementById('electricConsumptionHighway').value),
+      national: parseFloat(document.getElementById('electricConsumptionNational').value),
+      urban: parseFloat(document.getElementById('electricConsumptionUrban').value)
+    }
+  };
+
+  try {
+    const res = await fetch('/api/map/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    const result = await res.json();
+    
+    if (result.status === 'ok') {
+      showMessage('✅ 配置已保存', 'success');
+    }
+  } catch (e) {
+    showMessage('❌ 保存失败: ' + e.message, 'error');
+  }
+}
+
+// 添加途径点
+async function addWaypoint() {
+  const input = document.getElementById('waypointInput');
+  const address = input.value.trim();
+
+  if (!address) {
+    showMessage('请输入途径点地址', 'error');
+    return;
+  }
+
+  waypoints.push(address);
+  input.value = '';
+  renderWaypoints();
+  saveFormData();
+}
+
+// 移除途径点
+function removeWaypoint(index) {
+  waypoints.splice(index, 1);
+  renderWaypoints();
+  saveFormData();
+}
+
+// 渲染途径点列表
+function renderWaypoints() {
+  const list = document.getElementById('waypointsList');
+  
+  if (waypoints.length === 0) {
+    list.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 20px; font-size: 0.9em;">暂无途径点，可点击上方"添加"按钮添加</div>';
+    return;
+  }
+  
+  list.innerHTML = waypoints.map((wp, i) => `
+    <div class="waypoint-item" draggable="true" data-index="${i}">
+      <span class="waypoint-handle">☰</span>
+      <span class="waypoint-number">${i + 1}.</span>
+      <input type="text" class="waypoint-name-input" value="${wp}" onchange="updateWaypointName(${i}, this.value)" onblur="updateWaypointName(${i}, this.value)">
+      <button class="waypoint-remove-btn" onclick="removeWaypoint(${i})">✕</button>
+    </div>
+  `).join('');
+  
+  // 为途径点项添加拖动事件
+  addDragListeners();
+}
+
+// 添加拖动事件监听器
+function addDragListeners() {
+  const waypointItems = document.querySelectorAll('.waypoint-item');
+  
+  waypointItems.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      item.classList.add('dragging');
+      e.dataTransfer.setData('text/html', item.innerHTML);
+    });
+    
+    item.addEventListener('dragend', (e) => {
+      item.classList.remove('dragging');
+      waypointItems.forEach(i => i.classList.remove('drag-over'));
+    });
+    
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const draggedItem = document.querySelector('.waypoint-item.dragging');
+      const targetItem = e.target.closest('.waypoint-item');
+      
+      if (targetItem && targetItem !== draggedItem) {
+        const rect = targetItem.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+        
+        // 清除所有drag-over类
+        waypointItems.forEach(i => i.classList.remove('drag-over'));
+        
+        // 根据鼠标位置添加drag-over类
+        if (e.clientY < midpoint) {
+          targetItem.classList.add('drag-over');
+          targetItem.style.borderTop = '2px solid #667eea';
+          targetItem.style.paddingTop = '6px';
+        } else {
+          targetItem.classList.add('drag-over');
+          targetItem.style.borderBottom = '2px solid #667eea';
+          targetItem.style.paddingBottom = '6px';
+        }
+      }
+    });
+    
+    item.addEventListener('dragleave', (e) => {
+      const targetItem = e.target.closest('.waypoint-item');
+      if (targetItem) {
+        targetItem.classList.remove('drag-over');
+        targetItem.style.borderTop = '';
+        targetItem.style.borderBottom = '';
+        targetItem.style.paddingTop = '8px';
+        targetItem.style.paddingBottom = '8px';
+      }
+    });
+    
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const draggedItem = document.querySelector('.waypoint-item.dragging');
+      const targetItem = e.target.closest('.waypoint-item');
+      
+      if (targetItem && targetItem !== draggedItem) {
+        const draggedIndex = parseInt(draggedItem.dataset.index);
+        const targetIndex = parseInt(targetItem.dataset.index);
+        
+        // 移除被拖动的元素
+        const [draggedWaypoint] = waypoints.splice(draggedIndex, 1);
+        
+        // 根据插入位置重新计算目标索引
+        let insertIndex = targetIndex;
+        if (draggedIndex < targetIndex) {
+          insertIndex = targetIndex - 1;
+        }
+        
+        // 在新位置插入
+        waypoints.splice(insertIndex, 0, draggedWaypoint);
+        
+        renderWaypoints();
+        saveFormData();
+      }
+      
+      // 清理样式
+      waypointItems.forEach(i => {
+        i.classList.remove('drag-over');
+        i.style.borderTop = '';
+        i.style.borderBottom = '';
+        i.style.paddingTop = '8px';
+        i.style.paddingBottom = '8px';
+      });
+    });
+  });
+}
+
+// 更新途径点名称
+function updateWaypointName(index, newName) {
+  const trimmedName = newName.trim();
+  if (trimmedName) {
+    waypoints[index] = trimmedName;
+    saveFormData();
+  }
+}
+
+// 计算路线
+async function calculateRoute() {
+  const origin = document.getElementById('origin').value.trim();
+  const destination = document.getElementById('destination').value.trim();
+
+  if (!origin || !destination) {
+    showMessage('请输入出发地和目的地', 'error');
+    return;
+  }
+
+  showMessage('⏳ 正在计算路线...', 'loading');
+
+  try {
+    // 保存原始地址
+    const originAddress = origin;
+    const destinationAddress = destination;
+    const waypointAddresses = [...waypoints];
+
+    // 先地理编码
+    const originCoords = await geocodeAddress(origin);
+    const destCoords = await geocodeAddress(destination);
+
+    if (!originCoords || !destCoords) {
+      showMessage('❌ 地址解析失败，请检查地址是否正确', 'error');
+      return;
+    }
+
+    // 地理编码途径点
+    let waypointCoords = [];
+    if (waypoints.length > 0) {
+      for (const wp of waypoints) {
+        const coords = await geocodeAddress(wp);
+        if (coords) {
+          waypointCoords.push(coords);
+        }
+      }
+    }
+
+    // 调用路线规划 API
+    const res = await fetch('/api/map/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin: originCoords,
+        destination: destCoords,
+        waypoints: waypointCoords.length > 0 ? waypointCoords : null,
+        origin_address: originAddress,
+        destination_address: destinationAddress,
+        waypoint_addresses: waypointAddresses
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      currentRoute = data;
+      displayResults(data);
+      showMessage('✅ 路线规划成功', 'success');
+    } else {
+      showMessage('❌ ' + (data.error || '路线规划失败'), 'error');
+    }
+  } catch (e) {
+    showMessage('❌ 请求失败: ' + e.message, 'error');
+  }
+}
+
+// 地理编码地址
+async function geocodeAddress(address) {
+  try {
+    const res = await fetch('/api/map/geocode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'ok') {
+      return data.coords;
+    }
+  } catch (e) {
+    console.error('地理编码失败', e);
+  }
+  return null;
+}
+
+// 显示分析结果
+function displayAnalysis(data) {
+  if (!data.roadTypeAnalysis) {
+    document.getElementById('analysisSection').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('analysisSection').style.display = 'block';
+
+  safeDraw(() => drawRoadTypeChart(data.roadTypeAnalysis));
+  safeDraw(() => drawRouteProgressBar(data.routeSteps));
+  safeDraw(() => displayStepsList(data.routeSteps));
+}
+
+// 安全绘制包装器，防止单个图表错误中断后续渲染
+function safeDraw(fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error('图表绘制错误:', e);
+  }
+}
+
+// 绘制路段类型饼图
+function drawRoadTypeChart(roadTypeAnalysis) {
+  const ctx = document.getElementById('roadTypeChart').getContext('2d');
+  
+  // 使用与全程路段分布相同的颜色映射
+  const roadTypeColors = {
+    0: '#667eea',  // 高速路
+    1: '#764ba2',  // 城市高速
+    2: '#8B4513',  // 国道 - 棕色
+    3: '#43e97b',  // 省道
+    4: '#f093fb',  // 县道
+    5: '#fa709a',  // 乡道
+    6: '#fee140'   // 其他
+  };
+  
+  // 道路名称到类型的映射
+  const roadNameToType = {
+    '高速路': 0,
+    '城市高速': 1,
+    '国道': 2,
+    '省道': 3,
+    '县道': 4,
+    '乡道': 5,
+    '其他': 6
+  };
+  
+  const labels = [];
+  const distances = [];
+  const percentages = [];
+  const colors = [];
+
+  Object.values(roadTypeAnalysis)
+    .sort((a, b) => b.distance_km - a.distance_km)
+    .forEach((item, idx) => {
+      labels.push(`${item.name} (${item.percentage}%)`);
+      distances.push(item.distance_km);
+      percentages.push(item.percentage);
+      
+      // 根据道路名称获取道路类型，再获取对应颜色
+      const roadType = roadNameToType[item.name] !== undefined ? roadNameToType[item.name] : 6;
+      colors.push(roadTypeColors[roadType]);
+    });
+
+  // 销毁旧的图表实例
+  if (roadTypeChart !== null && roadTypeChart !== undefined) {
+    roadTypeChart.destroy();
+  }
+
+  roadTypeChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: distances,
+        backgroundColor: colors,
+        borderColor: 'white',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            font: { size: 12 },
+            padding: 15,
+            usePointStyle: true
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = distances[context.dataIndex];
+              return `${label}: ${value} km`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// 绘制全程路段进度条
+function drawRouteProgressBar(steps) {
+  const roadTypeColors = {
+    0: '#667eea',  // 高速路
+    1: '#764ba2',  // 城市高速
+    2: '#8B4513',  // 国道 - 棕色
+    3: '#43e97b',  // 省道
+    4: '#f093fb',  // 县道
+    5: '#fa709a',  // 乡道
+    6: '#fee140'   // 其他
+  };
+
+  const roadTypeNames = {
+    0: '高速路',
+    1: '城市高速',
+    2: '国道',
+    3: '省道',
+    4: '县道',
+    5: '乡道',
+    6: '其他'
+  };
+
+  // 计算总距离
+  const totalDistance = steps.reduce((sum, step) => sum + step.distance, 0);
+  
+  // 合并相邻的相同路段类型
+  const mergedSegments = [];
+  steps.forEach(step => {
+    let roadType = parseInt(step.road_type);
+    if (Number.isNaN(roadType)) {
+      roadType = 6;
+    }
+
+    // 如果最后一个段与当前段类型相同，则合并
+    if (mergedSegments.length > 0 && mergedSegments[mergedSegments.length - 1].roadType === roadType) {
+      mergedSegments[mergedSegments.length - 1].distance += step.distance;
+      mergedSegments[mergedSegments.length - 1].count += 1;
+    } else {
+      // 否则创建新段
+      mergedSegments.push({
+        roadType: roadType,
+        distance: step.distance,
+        count: 1
+      });
+    }
+  });
+
+  // 构建进度条HTML
+  let progressHTML = '';
+  mergedSegments.forEach((segment, idx) => {
+    const percentage = (segment.distance / totalDistance) * 100;
+    const color = roadTypeColors[segment.roadType];
+    const distanceKm = (segment.distance / 1000).toFixed(1);
+    const segmentLabel = segment.count > 1 ? `${segment.count}段` : '';
+
+    progressHTML += `
+      <div style="
+        flex: ${percentage};
+        background-color: ${color};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: white;
+        font-weight: 600;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        border-right: 1px solid white;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      " title="${roadTypeNames[segment.roadType]} ${distanceKm}km ${segmentLabel}" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+        ${percentage > 8 ? distanceKm + 'km' : ''}
+      </div>
+    `;
+  });
+
+  // 统计各类型的距离和出现次数（基于原始steps，不是合并后的）
+  const typeStats = {};
+  steps.forEach(step => {
+    let roadType = parseInt(step.road_type);
+    if (Number.isNaN(roadType)) {
+      roadType = 6;
+    }
+
+    if (!typeStats[roadType]) {
+      typeStats[roadType] = { distance: 0, count: 0 };
+    }
+    typeStats[roadType].distance += step.distance;
+    typeStats[roadType].count += 1;
+  });
+
+  // 构建图例HTML
+  let legendHTML = '';
+  Object.keys(typeStats)
+    .map(t => parseInt(t))
+    .sort((a, b) => a - b)
+    .forEach(roadType => {
+      const color = roadTypeColors[roadType];
+      const distanceKm = (typeStats[roadType].distance / 1000).toFixed(1);
+      const count = typeStats[roadType].count;
+
+      legendHTML += `
+        <div style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: white; border-radius: 4px; border: 1px solid #ddd;">
+          <div style="width: 16px; height: 16px; background-color: ${color}; border-radius: 2px;"></div>
+          <span style="font-size: 12px; color: #555;">
+            ${roadTypeNames[roadType]}: ${distanceKm}km (${count}段)
+          </span>
+        </div>
+      `;
+    });
+
+  document.getElementById('routeProgressBar').innerHTML = progressHTML;
+  document.getElementById('routeLegend').innerHTML = legendHTML;
+}
+
+// 显示路段详情列表
+function displayStepsList(steps) {
+  const listDiv = document.getElementById('stepsList');
+  
+  listDiv.innerHTML = steps.map((step, idx) => {
+    const roadTypeNames = {
+      0: '高速路', 1: '城市高速', 2: '国道', 3: '省道',
+      4: '县道', 5: '乡道', 6: '其他'
+    };
+
+    let roadType = parseInt(step.road_type);
+    if (Number.isNaN(roadType)) {
+      roadType = 6;
+    }
+
+    const distanceKm = (step.distance / 1000).toFixed(2);
+    const durationMin = Math.floor(step.duration / 60);
+    
+    return `
+      <div class="step-item">
+        <div class="step-header">
+          <span class="step-title">第 ${idx + 1} 段 - ${roadTypeNames[roadType]}</span>
+          <span class="step-meta">${distanceKm} km | ${durationMin} 分钟</span>
+        </div>
+        <div class="step-instruction">${step.instruction || '行驶'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 显示结果
+function displayResults(data) {
+  document.getElementById('result_distance').textContent = data.distance_km;
+  
+  function formatDuration(minutes) {
+    if (minutes >= 60) {
+      const hours = Math.floor(minutes / 60);
+      const mins = Math.floor(minutes % 60);
+      return `${hours}小时${mins}分钟`;
+    }
+    return `${Math.floor(minutes)}分钟`;
+  }
+  
+  document.getElementById('result_duration').textContent = formatDuration(data.duration_min);
+  document.getElementById('result_toll').textContent = data.toll;
+  document.getElementById('result_other').textContent = data.other;
+  document.getElementById('result_oil_total').textContent = data.oil_cost;
+  document.getElementById('result_total').textContent = data.total_cost;
+  
+  // 显示电动车费用
+  document.getElementById('result_electric_cost').textContent = data.electric_cost || '0.00';
+  document.getElementById('result_electric_total').textContent = data.electric_total_cost || '0.00';
+  
+  // 计算和显示成本差额
+  const oilTotal = parseFloat(data.total_cost) || 0;
+  const electricTotal = parseFloat(data.electric_total_cost) || 0;
+  const difference = Math.abs(oilTotal - electricTotal);
+  const savingsPercentage = Math.max(oilTotal, electricTotal) > 0 
+    ? ((difference / Math.max(oilTotal, electricTotal)) * 100).toFixed(1) 
+    : 0;
+  
+  document.getElementById('cost_difference_value').textContent = difference.toFixed(2);
+  
+  const costDiffDiv = document.getElementById('costDiffCard');
+  
+  if (oilTotal > electricTotal) {
+    // 电动车更便宜
+    costDiffDiv.style.background = 'linear-gradient(135deg, #43e97b 0%, #38b000 100%)';
+    document.getElementById('cost_comparison_text').innerHTML = `
+      <div>电动车比燃油车便宜 ${savingsPercentage}%</div>
+    `;
+  } else if (electricTotal > oilTotal) {
+    // 燃油车更便宜
+    costDiffDiv.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    document.getElementById('cost_comparison_text').innerHTML = `
+      <div>燃油车比电动车便宜 ${savingsPercentage}%</div>
+    `;
+  } else {
+    // 相同价格
+    costDiffDiv.style.background = 'linear-gradient(135deg, #a0aec0 0%, #718096 100%)';
+    document.getElementById('cost_comparison_text').innerHTML = `
+      <div>燃油车和电动车成本相同</div>
+    `;
+  }
+
+  if (data.map_url) {
+    document.getElementById('routeMap').src = data.map_url;
+  }
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('noResults').style.display = 'none';
+  
+  // 显示路段分析
+  displayAnalysis(data);
+  
+  // 保存结果
+  saveFormData();
+}
+
+// 显示消息
+function showMessage(msg, type) {
+  const msgDiv = document.getElementById('message');
+  msgDiv.innerHTML = `<div class="message ${type}">${msg}</div>`;
+  if (type === 'success' || type === 'error') {
+    setTimeout(() => {
+      msgDiv.innerHTML = '';
+    }, 4000);
+  }
+}
+
+// 检查登录状态
+async function checkLoginStatus() {
+  try {
+    const res = await fetch('/api/auth/status');
+    const data = await res.json();
+    isLoggedIn = data.logged_in;
+    currentUser = data.user;
+  } catch (e) {
+    console.error('检查登录状态失败:', e);
+  }
+}
+
+// 需要登录的操作包装器
+function requireLogin(action) {
+  if (!isLoggedIn) {
+    if (confirm('此操作需要登录，是否跳转到登录页面？')) {
+      window.open('/1/login', '_blank');
+    }
+    return false;
+  }
+  return true;
+}
+
+// 加载历史记录
+async function loadHistory() {
+  const historyDiv = document.getElementById('historyList');
+  
+  try {
+    const res = await fetch('/api/map/history');
+    const data = await res.json();
+    
+    if (!data.trips || data.trips.length === 0) {
+      historyDiv.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-text">暂无历史记录<br>完成路线规划后会自动保存到这里</div>
+        </div>
+      `;
+      return;
+    }
+    
+    // 按时间倒序排列
+    const trips = data.trips.reverse();
+    
+    historyDiv.innerHTML = trips.map((trip, tripIndex) => {
+      const date = new Date(trip.timestamp);
+      const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      
+      // 构建途径点显示文本
+      let waypointText = '';
+      if (trip.waypoint_addresses && trip.waypoint_addresses.length > 0) {
+        waypointText = `途经: ${trip.waypoint_addresses.join(' → ')}`;
+      }
+      
+      return `
+        <div class="history-item" data-trip-index="${tripIndex}">
+          <div class="history-item-header">
+            <div class="history-item-title">${trip.origin_address} → ${trip.destination_address}</div>
+            <div class="history-item-time">${timeStr}</div>
+          </div>
+          <div class="history-item-details">
+            ${waypointText ? `<div class="history-item-waypoints">${waypointText}</div>` : ''}
+            <div class="history-item-stats">
+              <div class="history-stat">
+                <span class="history-stat-value">${trip.distance_km.toFixed(1)} km</span>
+                <span class="history-stat-label">📏 距离</span>
+              </div>
+              <div class="history-stat">
+                <span class="history-stat-value">${Math.floor(trip.duration_min)} 分钟</span>
+                <span class="history-stat-label">⏱️ 时间</span>
+              </div>
+              <div class="history-stat">
+                <span class="history-stat-value">¥${trip.toll}</span>
+                <span class="history-stat-label">💰 过路费</span>
+              </div>
+              <div class="history-stat">
+                <span class="history-stat-value">¥${trip.oil_cost}</span>
+                <span class="history-stat-label">⛽ 油费</span>
+              </div>
+              <div class="history-stat">
+                <span class="history-stat-value">¥${trip.total_cost}</span>
+                <span class="history-stat-label">💵 总成本</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // 为每个历史记录项添加点击事件
+    document.querySelectorAll('.history-item').forEach((item, index) => {
+      item.addEventListener('click', () => {
+        const trip = trips[index];
+        importHistoryTrip(trip.origin_address, trip.destination_address, trip.waypoint_addresses || []);
+      });
+    });
+    
+  } catch (e) {
+    console.error('加载历史记录失败', e);
+    historyDiv.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❌</div>
+        <div class="empty-state-text">加载历史记录失败<br>请稍后重试</div>
+      </div>
+    `;
+  }
+}
+
+// 导入历史记录到路线规划
+function importHistoryTrip(origin, destination, waypointAddresses) {
+  // 填充表单数据
+  document.getElementById('origin').value = origin;
+  document.getElementById('destination').value = destination;
+  waypoints = waypointAddresses || [];
+  renderWaypoints();
+  saveFormData();
+  
+  // 切换到路线规划标签页
+  switchTab(0);
+  
+  // 显示成功提示
+  showMessage('✅ 已导入历史记录，点击"计算路线"重新规划', 'success');
+}
+
+// 清除历史记录
+async function clearHistory() {
+  if (!requireLogin()) return;
+  
+  if (!confirm('确定要清除所有历史记录吗？')) return;
+  
+  try {
+    const res = await fetch('/api/map/history', {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    
+    if (res.status === 403 && data.require_login) {
+      alert('需要登录后才能清除历史记录');
+      window.open('/1/login', '_blank');
+      return;
+    }
+    
+    if (data.status === 'ok') {
+      document.getElementById('historyList').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-text">暂无历史记录<br>完成路线规划后会自动保存到这里</div>
+        </div>
+      `;
+      showMessage('✅ 历史记录已清除', 'success');
+    } else {
+      showMessage('❌ 清除失败: ' + data.error, 'error');
+    }
+  } catch (e) {
+    showMessage('❌ 请求失败: ' + e.message, 'error');
+  }
+}
+
+// 初始化
+checkLoginStatus();
+loadFormData();
+</script>
+
+</body>
+</html>

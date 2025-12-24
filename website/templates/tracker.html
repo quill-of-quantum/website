@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>物流任务管理</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* === 设计变量 === */
+  :root {
+    --c-primary: #0a7bdc;
+    --c-success: #16a34a;
+    --c-warning: #eab308;
+    --c-danger: #dc2626;
+    --c-muted: #6b7280;
+    --c-border: #ddd;
+    --c-bg: #fafafa;
+    --c-card: #fff;
+    --c-run: #fff4cc;
+    --radius-sm: 8px;
+    --radius: 10px;
+    --radius-lg: 14px;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  }
+
+  /* === 基础样式 === */
+  body { 
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; 
+    max-width: 1024px; 
+    margin: 0 auto; 
+    padding: 24px 16px; 
+    background: var(--c-bg);
+    color: #111;
+    line-height: 1.5;
+  }
+
+  a { 
+    text-decoration: none; 
+    color: var(--c-primary); 
+    transition: all 0.2s;
+  }
+  a:hover { 
+    text-decoration: underline; 
+    opacity: 0.8;
+  }
+
+  /* === 页面头部 === */
+  .page-header {
+    background: var(--c-card);
+    padding: 20px 24px;
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .page-header .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+
+  .page-header h1 { 
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+  }
+
+  /* === 工具栏 === */
+  .toolbar { 
+    background: var(--c-card);
+    padding: 20px;
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .toolbar-content {
+    display: flex; 
+    gap: 12px; 
+    align-items: center; 
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .toolbar input[type="text"], 
+  .toolbar input[type="number"] { 
+    padding: 10px 12px; 
+    border: 1px solid var(--c-border); 
+    border-radius: var(--radius); 
+    outline: none;
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+  
+  .toolbar input:focus {
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 3px rgb(10 123 220 / 0.1);
+  }
+
+  .toolbar button { 
+    padding: 10px 16px; 
+    border: 1px solid var(--c-border); 
+    background: var(--c-card); 
+    border-radius: var(--radius); 
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  
+  .toolbar button:hover {
+    background: var(--c-bg);
+  }
+  
+  .toolbar button.primary { 
+    background: var(--c-primary); 
+    color: var(--c-card); 
+    border-color: var(--c-primary); 
+  }
+  
+  .toolbar button.primary:hover {
+    background: #0969c3;
+  }
+
+  .toolbar-hint {
+    color: var(--c-muted);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  /* === 任务卡片 === */
+  .tasks-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  details.task { 
+    border: 1px solid var(--c-border); 
+    border-radius: var(--radius-lg); 
+    overflow: hidden; 
+    background: var(--c-card);
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+  }
+
+  details.task:hover {
+    box-shadow: var(--shadow);
+  }
+
+  details.task[open] .summary { 
+    border-bottom: 1px solid var(--c-border); 
+  }
+
+  .summary { 
+    list-style: none; 
+    display: flex; 
+    gap: 12px; 
+    align-items: center; 
+    padding: 16px 20px; 
+    background: var(--c-bg); 
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .summary:hover {
+    background: #f1f5f9;
+  }
+
+  .summary .title { 
+    font-weight: 600; 
+    font-size: 16px;
+  }
+
+  /* === 状态标签 === */
+  .pill { 
+    font-size: 12px; 
+    border: 1px solid var(--c-border); 
+    padding: 4px 10px; 
+    border-radius: 999px; 
+    background: var(--c-card);
+    font-weight: 500;
+  }
+  
+  .pill.good { 
+    border-color: var(--c-success); 
+    color: #166534; 
+    background: #f0fdf4;
+  }
+  
+  .pill.bad  { 
+    border-color: var(--c-danger); 
+    color: #991b1b; 
+    background: #fef2f2;
+  }
+  
+  .pill.run  { 
+    border-color: var(--c-warning); 
+    background: var(--c-run); 
+    color: #854d0e; 
+  }
+
+  .summary .muted { 
+    color: var(--c-muted); 
+    font-size: 13px; 
+  }
+  
+  .summary .grow { 
+    flex: 1; 
+  }
+
+  .running { 
+    background: var(--c-run); 
+  }
+
+  /* === 任务面板 === */
+  .panel { 
+    padding: 20px; 
+  }
+
+  .topbar { 
+    display: flex; 
+    align-items: flex-start; 
+    justify-content: space-between; 
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+
+  .actions { 
+    display: flex; 
+    gap: 8px; 
+    flex-wrap: wrap;
+  }
+  
+  .actions button { 
+    padding: 8px 12px; 
+    border-radius: var(--radius); 
+    border: 1px solid var(--c-border); 
+    background: var(--c-card); 
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .actions button:hover {
+    background: var(--c-bg);
+  }
+  
+  .actions button.primary { 
+    background: var(--c-primary); 
+    color: var(--c-card); 
+    border-color: var(--c-primary); 
+  }
+
+  .actions button.primary:hover {
+    background: #0969c3;
+  }
+  
+  .actions button.danger { 
+    border-color: var(--c-danger); 
+    color: #b91c1c; 
+  }
+
+  .actions button.danger:hover {
+    background: #fef2f2;
+  }
+
+  .interval-info {
+    color: var(--c-muted);
+    font-size: 13px;
+    align-self: center;
+  }
+
+  /* === 信息面板 === */
+  .info-grid { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 16px; 
+    margin-bottom: 16px;
+  }
+
+  .info-card { 
+    border: 1px solid var(--c-border); 
+    border-radius: var(--radius); 
+    padding: 16px; 
+    background: #fafbfc;
+  }
+  
+  .info-card h3 { 
+    margin: 0 0 12px; 
+    font-size: 14px; 
+    color: var(--c-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .info-card p { 
+    margin: 8px 0; 
+    font-size: 14px; 
+    line-height: 1.4;
+  }
+
+  .info-card p b {
+    font-weight: 600;
+    color: #374151;
+  }
+
+  /* === 时间线 === */
+  .timeline { 
+    border: 1px solid var(--c-border); 
+    border-radius: var(--radius); 
+    padding: 16px; 
+    max-height: 400px; 
+    overflow: auto; 
+    background: var(--c-card);
+  }
+  
+  .timeline h3 { 
+    margin: 0 0 12px; 
+    font-size: 14px; 
+    color: var(--c-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .timeline-item { 
+    padding: 12px 0; 
+    border-bottom: 1px solid #f1f5f9;
+  }
+  
+  .timeline-item:last-child { 
+    border-bottom: none; 
+  }
+  
+  .item-time { 
+    font-weight: 600; 
+    color: var(--c-primary);
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  
+  .item-event { 
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  .empty { 
+    color: var(--c-muted); 
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* === 响应式设计 === */
+  @media (max-width: 768px) { 
+    body {
+      padding: 16px 12px;
+    }
+    
+    .page-header {
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    
+    .page-header h1 {
+      font-size: 24px;
+    }
+
+    .toolbar {
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .toolbar-content {
+      gap: 8px;
+    }
+
+    .info-grid { 
+      grid-template-columns: 1fr; 
+      gap: 12px;
+    }
+
+    .topbar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    .interval-info {
+      align-self: start;
+    }
+
+    .summary {
+      padding: 12px 16px;
+      gap: 8px;
+    }
+
+    .summary .title {
+      font-size: 15px;
+    }
+
+    .panel {
+      padding: 16px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .toolbar input[type="text"] {
+      min-width: 0;
+      flex: 1;
+    }
+    
+    .actions {
+      width: 100%;
+    }
+
+    .actions button {
+      flex: 1;
+      justify-content: center;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <a href="/" class="nav-link">🏠 返回首页</a>
+  <h1>📦 物流追踪任务</h1>
+</div>
+
+<div class="toolbar">
+  <div class="toolbar-content">
+    <input id="num" placeholder="输入物流号" required>
+    <input id="interval" type="number" value="60" min="5" title="间隔分钟"> 
+    <button class="primary" id="btnAdd">添加任务</button>
+    <button id="btnReload">刷新列表</button>
+  </div>
+  <p id="hint" class="toolbar-hint"></p>
+</div>
+
+<div id="tasks" class="tasks-container"></div>
+
+<div id="statusMessage" style="display:none; color:var(--c-success); font-weight:500; margin-top:16px;"></div>
+
+<!-- 引入统一的认证模块 -->
+<script src="/static/js/auth.js"></script>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const $tasks = $('#tasks');
+const HINT = $('#hint');
+
+function pillEnabled(v){ return `<span class="pill ${v? 'good':''}">${v? '已启用':'未启用'}</span>` }
+function pillRunning(v){ return `<span class="pill run">${v? '🟡 运行中':'⚪ 空闲'}</span>` }
+function safe(v){ return (v===null || v===undefined) ? '' : v; }
+
+function summaryLine(t){
+  const last = safe(t.last_run) ? `上次执行：${t.last_run}` : '上次执行：—';
+  const brief = safe(t.last_status) || '—';
+  return `
+    <span class="title">📦 ${t.tracking_number}</span>
+    ${pillEnabled(!!t.enabled)}
+    ${pillRunning(!!t.running)}
+    <span class="muted">${last}</span>
+    <span class="grow"></span>
+    <span class="muted">${brief}</span>
+  `;
+}
+
+// 渲染一个任务卡片（details + panel）
+function renderTask(t){
+  const id = t.id;
+  const details = document.createElement('details');
+  details.className = 'task';
+  details.open = true;
+  details.dataset.taskId = id;
+
+  const summary = document.createElement('summary');
+  summary.className = 'summary' + (t.running ? ' running' : '');
+  summary.innerHTML = summaryLine(t);
+  details.appendChild(summary);
+
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = `
+    <div class="topbar">
+      <div class="actions">
+        <button onclick="toggle(${id})">${t.enabled ? '停用' : '启用'}</button>
+        <button class="primary" onclick="run(${id})">手动执行</button>
+        <button onclick="refreshInfo(${id})">刷新详情</button>
+        <button class="danger" onclick="delTask(${id})">🗑 删除</button>
+      </div>
+      <div class="interval-info">间隔：${t.interval_minutes} 分钟</div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <h3>任务信息</h3>
+        <p><b>ID：</b>${t.id}</p>
+        <p><b>单号：</b>${t.tracking_number}</p>
+        <p><b>启用：</b>${t.enabled ? '是' : '否'}</p>
+        <p><b>运行中：</b>${t.running ? '是' : '否'}</p>
+      </div>
+
+      <div class="info-card">
+        <h3>最新状态</h3>
+        <p><b>上次执行：</b>${safe(t.last_run) || '—'}</p>
+        <p><b>状态摘要：</b>${safe(t.last_status) || '—'}</p>
+      </div>
+    </div>
+
+    <div class="timeline" id="tl-${id}">
+      <h3>物流时间线</h3>
+      <div class="empty">正在载入详情…</div>
+    </div>
+  `;
+  details.appendChild(panel);
+  return details;
+}
+
+// 将 routes 渲染为时间线
+function renderRoutes(el, info){
+  const routes = Array.isArray(info.routes) ? info.routes : [];
+  
+  // ✅ 完全清空容器
+  el.innerHTML = '';
+  
+  // 重新添加标题
+  const title = document.createElement('h3');
+  title.textContent = '物流时间线';
+  el.appendChild(title);
+  
+  if(!routes.length){
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '暂无物流事件';
+    el.appendChild(empty);
+    return;
+  }
+  
+  // 逐个添加时间线项
+  routes.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'timeline-item';
+    
+    const timeEl = document.createElement('div');
+    timeEl.className = 'item-time';
+    timeEl.textContent = safe(r.time) || '';
+    
+    const eventEl = document.createElement('div');
+    eventEl.className = 'item-event';
+    eventEl.textContent = safe(r.event) || '';
+    
+    item.appendChild(timeEl);
+    item.appendChild(eventEl);
+    el.appendChild(item);
+  });
+}
+
+// 拉取单个任务详情（添加缓存检查）
+async function fetchInfo(id){
+  try {
+    const res = await fetch(`/api/tracker/info/${id}`);
+    if (!res.ok) {
+      return { error: `HTTP ${res.status}` };
+    }
+    const text = await res.text();
+    let data;
+    try { 
+      data = JSON.parse(text); 
+    } catch (e) { 
+      return { error: 'parse_error', raw: text }; 
+    }
+    // ✅ 验证数据的 task_id 是否匹配
+    return data;
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// 刷新某任务详情（按钮用）
+async function refreshInfo(id){
+  const box = document.getElementById(`tl-${id}`);
+  if(!box) return;
+  
+  box.innerHTML = `<h3>物流时间线</h3><div class="empty">正在刷新详情…</div>`;
+  
+  try{
+    const data = await fetchInfo(id);
+    
+    if(data.error){
+      box.innerHTML = `<h3>物流时间线</h3><div class="empty">⚠️ ${data.error}</div>`;
+      return;
+    }
+    
+    // ✅ 再次验证 routes 存在
+    if (!data.routes || !Array.isArray(data.routes)) {
+      box.innerHTML = `<h3>物流时间线</h3><div class="empty">暂无物流事件</div>`;
+      return;
+    }
+    
+    renderRoutes(box, data);
+  }catch(e){
+    box.innerHTML = `<h3>物流时间线</h3><div class="empty">加载异常：${e.message}</div>`;
+  }
+}
+
+// 拉取并渲染任务列表
+async function loadTasks(){
+  HINT.textContent = '加载中…';
+  try {
+    const res = await fetch('/api/tracker/list');
+    const data = await res.json();
+    $tasks.innerHTML = '';
+    
+    data.forEach(t => {
+      const el = renderTask(t);
+      $tasks.appendChild(el);
+    });
+    
+    HINT.textContent = `共 ${data.length} 条任务`;
+    
+    // ✅ 按顺序（不并发）加载每个任务的详情，避免竞态
+    for (const t of data) {
+      await refreshInfo(t.id);
+    }
+  } catch (e) {
+    HINT.textContent = `加载失败: ${e.message}`;
+  }
+}
+
+// 操作：启用/停用
+async function toggle(id){
+  await fetch(`/api/tracker/toggle/${id}`, { method: 'POST' });
+  await loadTasks();
+}
+
+// 操作：手动执行（抓取一次）
+async function run(id){
+  const btn = event?.target;
+  if(btn) { btn.disabled = true; btn.textContent = '执行中…'; }
+  try{
+    const res = await fetch(`/api/tracker/run/${id}`, { method: 'POST' });
+    const data = await res.json();
+    // 执行结束后刷新列表与详情
+    await loadTasks();
+    // ✅ 关键修改：主动刷新该任务的时间线
+    await new Promise(r => setTimeout(r, 500)); // 给数据库一点时间写入
+    await refreshInfo(id);
+    // 定位到该任务的详情（保持打开）
+    const d = document.querySelector(`details.task[data-task-id="${id}"]`);
+    if (d) d.open = true;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '手动执行'; }
+  }
+}
+
+// 登录相关变量
+let isLoggedIn = false;
+let currentUser = null;
+
+// 检查登录状态
+async function checkLoginStatus() {
+  try {
+    const res = await fetch('/api/auth/status');
+    const data = await res.json();
+    isLoggedIn = data.logged_in;
+    currentUser = data.user;
+  } catch (e) {
+    console.error('检查登录状态失败:', e);
+  }
+}
+
+// 需要登录的操作包装器
+function requireLogin(action) {
+  if (!isLoggedIn) {
+    authManager.showLoginModal();
+    return false;
+  }
+  return true;
+}
+
+// 操作：删除
+async function delTask(id){
+  if (!requireLogin()) return;
+  
+  if(!confirm('确定删除这个任务？')) return;
+  
+  try {
+    const res = await fetch(`/api/tracker/delete/${id}`, { method: 'POST' });
+    const data = await res.json();
+    
+    if (res.status === 403 && data.require_login) {
+      authManager.showLoginModal();
+      return;
+    }
+    
+    await loadTasks();
+  } catch (e) {
+    alert(`删除失败: ${e.message}`);
+  }
+}
+
+// 添加任务
+$('#btnAdd').onclick = async () => {
+  const num = $('#num').value.trim();
+  const interval = parseInt($('#interval').value, 10) || 60;
+  if(!num) return alert('请输入物流号');
+  await fetch('/api/tracker/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tracking_number: num, interval })
+  });
+  $('#num').value = '';
+  await loadTasks();
+};
+
+// 刷新列表
+$('#btnReload').onclick = loadTasks;
+
+// 初次加载 & 周期刷新
+checkLoginStatus();
+loadTasks();
+setInterval(async () => {
+  // 刷新任务列表
+  await loadTasks();
+}, 10000);
+</script>
+
+</body>
+</html>

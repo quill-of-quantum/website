@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>📂 工具区 - 文件上传</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
+  <style>
+    body {
+      font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+      background: #f8f9fb;
+      margin: 0;
+      padding: 2rem;
+      color: #333;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 2rem;
+      border-radius: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #0074D9; }
+    button {
+      padding: 0.6rem 1.2rem;
+      background: #0074D9;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    button:hover { background: #005fa3; }
+    .file-list { margin-top: 1rem; }
+    .file-item {
+      background: #f1f1f1;
+      margin: 4px 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    a { text-decoration: none; color: #0074D9; margin-right: 0.5rem; }
+    #uploadStatus { margin-top: 1rem; font-size: 0.95rem; }
+    .disk-info {
+      margin-top: 1rem;
+      background: #eef3ff;
+      padding: 0.8rem 1rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+    progress {
+      width: 100%;
+      height: 18px;
+      margin-top: 10px;
+      border-radius: 10px;
+      overflow: hidden;
+      appearance: none;
+    }
+    progress::-webkit-progress-bar {
+      background-color: #eee;
+      border-radius: 10px;
+    }
+    progress::-webkit-progress-value {
+      background: linear-gradient(90deg, #0074D9, #33a0ff);
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>📂 工具区 - 文件上传</h1>
+    <p>可上传任意文件，系统将保存到服务器，可在下方下载或删除。</p>
+
+    <input type="file" id="fileInput" multiple />
+    <button id="uploadBtn">上传</button>
+    <a href="/" style="margin-left:1rem;">🏠 返回首页</a>
+
+    <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
+    <div id="speedText" style="margin-top:0.5rem;font-size:0.9rem;color:#555;"></div>
+    <div id="uploadStatus"></div>
+
+    <div id="diskInfo" class="disk-info">💾 正在获取存储空间信息...</div>
+
+    <h2>📋 已上传文件</h2>
+    <div id="fileList" class="file-list"></div>
+  </div>
+
+  <!-- 引入统一的认证模块 -->
+  <script src="/static/js/auth.js"></script>
+
+  <script>
+  const statusDiv = document.getElementById("uploadStatus");
+  const diskDiv = document.getElementById("diskInfo");
+  const progressBar = document.getElementById("progressBar");
+  const speedText = document.getElementById("speedText");
+
+  let selectedFiles = new Map();
+  let totalFiles = [];
+  let imageFiles = [];
+  let currentImageIndex = -1;
+
+  // 初始化认证系统
+  document.addEventListener('DOMContentLoaded', function() {
+    authManager.createLoginStatusWidget();
+    authManager.checkLoginStatus();
+  });
+
+  // --- 格式化大小 ---
+  function formatSize(mb) {
+    return mb >= 1024 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(2) + " MB";
+  }
+
+  // --- 更新选中信息 ---
+  function updateSelectionInfo() {
+    const info = document.getElementById("selectionInfo");
+    const count = selectedFiles.size;
+    const totalMB = [...selectedFiles.values()].reduce((a, b) => a + b, 0);
+    info.textContent = count
+      ? `已选择 ${count} 个文件，共 ${formatSize(totalMB)}`
+      : "未选择文件";
+  }
+
+  // --- 判断是否图片文件 ---
+  function isImageFile(name) {
+    return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(name);
+  }
+
+  // --- 显示图片预览弹窗 ---
+  function openImageViewer(index) {
+    currentImageIndex = index;
+    const overlay = document.getElementById("imageOverlay");
+    const img = document.getElementById("previewImage");
+    const caption = document.getElementById("imageCaption");
+
+    const f = imageFiles[index];
+    img.src = `/uploads/${encodeURIComponent(f.name)}`;
+    caption.textContent = `${f.name} (${f.size})`;
+
+    overlay.style.display = "flex";
+  }
+
+  // --- 关闭预览 ---
+  function closeViewer() {
+    document.getElementById("imageOverlay").style.display = "none";
+  }
+
+  // --- 上一张/下一张 ---
+  function prevImage() {
+    if (currentImageIndex <= 0)
+      currentImageIndex = imageFiles.length - 1;
+    else currentImageIndex--;
+    openImageViewer(currentImageIndex);
+  }
+
+  function nextImage() {
+    if (currentImageIndex >= imageFiles.length - 1)
+      currentImageIndex = 0;
+    else currentImageIndex++;
+    openImageViewer(currentImageIndex);
+  }
+
+  // --- 加载文件列表 ---
+  async function loadFiles() {
+    const res = await fetch("/api/tools/files");
+    const data = await res.json();
+    totalFiles = data.files || [];
+    imageFiles = totalFiles.filter(f => isImageFile(f.name));
+
+    if (data.disk) {
+      const d = data.disk;
+      diskDiv.textContent = `💾 存储使用：总容量 ${d.total}　已用 ${d.used}　剩余 ${d.free}`;
+    }
+
+    const list = document.getElementById("fileList");
+    list.innerHTML = "";
+
+    const toolbar = document.createElement("div");
+    toolbar.style.marginBottom = "0.8rem";
+    toolbar.innerHTML = `
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+        <button id="selectAllBtn">全选</button>
+        <button id="clearSelectBtn">取消全选</button>
+        <button id="batchDeleteBtn" style="background:#dc3545;">批量删除</button>
+        <button id="batchDownloadBtn" style="background:#28a745;">批量下载</button>
+        <span id="selectionInfo" style="margin-left:auto;font-size:0.9rem;color:#444;">未选择文件</span>
+      </div>
+    `;
+    list.appendChild(toolbar);
+
+    data.files.forEach((f, idx) => {
+      const div = document.createElement("div");
+      div.className = "file-item";
+      const isImg = isImageFile(f.name);
+
+      div.innerHTML = `
+        <label style="display:flex;align-items:center;gap:0.5rem;">
+          <input type="checkbox" class="file-checkbox" data-name="${f.name}" data-size="${parseFloat(f.size)}">
+          <span>${f.name} <small style="color:#777;">(${f.size})</small></span>
+        </label>
+        <span>
+          <a href="/api/tools/download/${encodeURIComponent(f.name)}">下载</a>
+          ${isImg
+            ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.name===f.name)})">查看</a>`
+            : `<a href="/uploads/${encodeURIComponent(f.name)}" target="_blank">查看</a>`
+          }
+          <button onclick="deleteFile('${f.name}')">删除</button>
+        </span>`;
+      list.appendChild(div);
+    });
+
+    document.querySelectorAll(".file-checkbox").forEach(cb => {
+      cb.addEventListener("change", e => {
+        const name = e.target.dataset.name;
+        const size = parseFloat(e.target.dataset.size);
+        if (e.target.checked) selectedFiles.set(name, size);
+        else selectedFiles.delete(name);
+        updateSelectionInfo();
+      });
+    });
+
+    document.getElementById("selectAllBtn").onclick = () => {
+      selectedFiles.clear();
+      document.querySelectorAll(".file-checkbox").forEach(cb => {
+        cb.checked = true;
+        selectedFiles.set(cb.dataset.name, parseFloat(cb.dataset.size));
+      });
+      updateSelectionInfo();
+    };
+
+    document.getElementById("clearSelectBtn").onclick = () => {
+      document.querySelectorAll(".file-checkbox").forEach(cb => (cb.checked = false));
+      selectedFiles.clear();
+      updateSelectionInfo();
+    };
+
+    document.getElementById("batchDeleteBtn").onclick = batchDelete;
+    document.getElementById("batchDownloadBtn").onclick = batchDownload;
+
+    updateSelectionInfo();
+  }
+
+  // --- 批量删除 ---
+  async function batchDelete() {
+    if (!authManager.requireLogin()) return;
+    
+    if (selectedFiles.size === 0) {
+      alert("⚠️ 请先选择要删除的文件！");
+      return;
+    }
+    if (!confirm(`确定删除以下 ${selectedFiles.size} 个文件吗？\n${[...selectedFiles.keys()].join("\n")}`)) return;
+
+    for (const name of selectedFiles.keys()) {
+      try {
+        const res = await fetch(`/api/tools/delete/${encodeURIComponent(name)}`, { method: "POST" });
+        const data = await res.json();
+        
+        if (res.status === 403 && data.require_login) {
+          alert('需要登录后才能删除文件');
+          authManager.showLoginModal();
+          return;
+        }
+      } catch (e) {
+        console.error(`删除 ${name} 失败:`, e);
+      }
+    }
+    statusDiv.textContent = `🗑️ 已删除 ${selectedFiles.size} 个文件`;
+    selectedFiles.clear();
+    loadFiles();
+  }
+
+  // --- 批量下载 ---
+  function batchDownload() {
+    if (selectedFiles.size === 0) {
+      alert("⚠️ 请先选择要下载的文件！");
+      return;
+    }
+    [...selectedFiles.keys()].forEach((name, i) => {
+      setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = `/api/tools/download/${encodeURIComponent(name)}`;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, i * 500);
+    });
+    statusDiv.textContent = `⬇️ 已开始下载 ${selectedFiles.size} 个文件`;
+  }
+
+  // --- 上传多个文件 ---
+  async function uploadFilesSequential(files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      await uploadSingleFile(file, i + 1, files.length);
+    }
+  }
+
+  // --- 上传单个文件 ---
+  function uploadSingleFile(file, index, total) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/tools/upload");
+
+      progressBar.value = 0;
+      progressBar.style.display = "block";
+      speedText.textContent = `📤 上传 ${index}/${total}：${file.name}`;
+
+      let lastTime = performance.now();
+      let lastLoaded = 0;
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = (e.loaded / e.total) * 100;
+          progressBar.value = percent;
+          const now = performance.now();
+          const deltaTime = (now - lastTime) / 1000;
+          const deltaBytes = e.loaded - lastLoaded;
+          if (deltaTime > 0.3) {
+            const speedMBs = (deltaBytes / 1024 / 1024 / deltaTime).toFixed(2);
+            speedText.textContent = `📤 上传 ${index}/${total}：${file.name}　速度：${speedMBs} MB/s`;
+            lastTime = now;
+            lastLoaded = e.loaded;
+          }
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const res = JSON.parse(xhr.responseText);
+          statusDiv.textContent = res.message || "✅ 上传完成";
+        } else {
+          statusDiv.textContent = `❌ 上传失败 (${xhr.status})`;
+        }
+        resolve();
+        loadFiles();
+      };
+
+      xhr.onerror = () => {
+        statusDiv.textContent = "❌ 上传出错";
+        reject();
+      };
+
+      xhr.send(formData);
+    });
+  }
+
+  // --- 上传入口 ---
+  function uploadFile() {
+    const input = document.getElementById("fileInput");
+    const files = Array.from(input.files);
+    if (!files.length) {
+      statusDiv.textContent = "⚠️ 请先选择文件。";
+      return;
+    }
+
+    statusDiv.textContent = `📤 正在上传 ${files.length} 个文件...`;
+    progressBar.style.display = "block";
+    progressBar.value = 0;
+    speedText.textContent = "";
+
+    uploadFilesSequential(files).then(() => {
+      statusDiv.textContent = "✅ 全部文件上传完成。";
+      progressBar.style.display = "none";
+      speedText.textContent = "";
+      input.value = "";
+    });
+  }
+
+  // --- 修改删除单个文件函数 ---
+  async function deleteFile(name) {
+    if (!authManager.requireLogin()) return;
+    
+    if (!confirm(`确定删除 ${name} 吗？`)) return;
+    
+    try {
+      const res = await fetch(`/api/tools/delete/${encodeURIComponent(name)}`, { method: "POST" });
+      const data = await res.json();
+      
+      if (res.status === 403 && data.require_login) {
+        alert('需要登录后才能删除文件');
+        authManager.showLoginModal();
+        return;
+      }
+      
+      statusDiv.textContent = data.message;
+      loadFiles();
+    } catch (e) {
+      statusDiv.textContent = `❌ 删除失败: ${e.message}`;
+    }
+  }
+
+  document.getElementById("uploadBtn").addEventListener("click", uploadFile);
+  loadFiles();
+
+  </script>
+
+  <!-- ✅ 图片预览弹窗 -->
+  <style>
+    #imageOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      z-index: 9999;
+    }
+    #imageOverlay img {
+      max-width: 90%;
+      max-height: 80vh;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(255,255,255,0.3);
+    }
+    #imageOverlay .controls {
+      color: white;
+      font-size: 2rem;
+      margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    #imageOverlay .controls button {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 2.2rem;
+      cursor: pointer;
+    }
+    #imageCaption {
+      color: #ccc;
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+  </style>
+
+  <div id="imageOverlay" onclick="closeViewer()">
+    <img id="previewImage" src="">
+    <div id="imageCaption"></div>
+    <div class="controls" onclick="event.stopPropagation()">
+      <button onclick="prevImage()">⬅️</button>
+      <button onclick="closeViewer()">❌</button>
+      <button onclick="nextImage()">➡️</button>
+    </div>
+  </div>
+
+</body>
+</html>
