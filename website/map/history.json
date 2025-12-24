@@ -1199,6 +1199,98 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.348625212231,39.73255523655448;87.41602874517912,43.47708606579323&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:15:36.097621",
+      "origin_address": "成都双流机场",
+      "destination_address": "成都双流机场",
+      "waypoint_addresses": [
+        "都江堰景区",
+        "青城山",
+        "都江堰市虹口深溪沟地震遗迹纪念地",
+        "北川县地震遗址",
+        "三星堆"
+      ],
+      "distance_km": 534.685,
+      "duration_min": 634.65,
+      "toll": 101,
+      "oil_cost": 429.94,
+      "other": 0,
+      "total_cost": 530.94,
+      "breakdown": {
+        "highway": {
+          "distance": 237.48900000000003,
+          "cost": 163.86741
+        },
+        "national": {
+          "distance": 200.62899999999993,
+          "cost": 166.12081199999997
+        },
+        "urban": {
+          "distance": 96.56700000000002,
+          "cost": 99.946845
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:24:08.265300",
+      "origin_address": "北京",
+      "destination_address": "唐山",
+      "waypoint_addresses": [
+        "天津"
+      ],
+      "distance_km": 270.885,
+      "duration_min": 247.48333333333332,
+      "toll": 97,
+      "oil_cost": 192.91,
+      "other": 0,
+      "total_cost": 289.91,
+      "breakdown": {
+        "highway": {
+          "distance": 236.199,
+          "cost": 162.97731000000007
+        },
+        "national": {
+          "distance": 28.846,
+          "cost": 23.884488
+        },
+        "urban": {
+          "distance": 5.839999999999999,
+          "cost": 6.0444
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4133836971231,39.910924547299565;117.2080927529767,39.09110259843554;118.18645947203979,39.63658372414733&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T12:32:03.785554",
+      "origin_address": "西双版纳机场",
+      "destination_address": "西双版纳站",
+      "waypoint_addresses": [
+        "西双版纳植物园",
+        "西双版纳景迈山"
+      ],
+      "distance_km": 149.032,
+      "duration_min": 170.08333333333334,
+      "toll": 82,
+      "oil_cost": 109.42,
+      "other": 0,
+      "total_cost": 191.42,
+      "breakdown": {
+        "highway": {
+          "distance": 115.671,
+          "cost": 79.81299000000001
+        },
+        "national": {
+          "distance": 23.753999999999998,
+          "cost": 19.668312
+        },
+        "urban": {
+          "distance": 9.607000000000003,
+          "cost": 9.943245000000003
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=100.7739338953413,21.976228400575813;101.2629510232767,21.93160413701705;100.80344682455637,22.013601254764165;100.7792629131164,21.989345443776788&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }
