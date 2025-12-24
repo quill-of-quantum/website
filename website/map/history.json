@@ -670,6 +670,37 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;113.37334499999993,40.102784060617616;114.70919519888348,39.2229306452524;115.47146383768579,38.87998776845534;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T11:11:20.438733",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "大同",
+        "保定白石山景区",
+        "保定"
+      ],
+      "distance_km": 840.873,
+      "duration_min": 728.3333333333334,
+      "toll": 301,
+      "oil_cost": 596.26,
+      "other": 0,
+      "total_cost": 897.26,
+      "breakdown": {
+        "highway": {
+          "distance": 764.9569999999998,
+          "cost": 527.8203299999996
+        },
+        "national": {
+          "distance": 48.94100000000001,
+          "cost": 40.523148
+        },
+        "urban": {
+          "distance": 26.974999999999998,
+          "cost": 27.919125
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;113.37334499999993,40.102784060617616;114.70919519888348,39.2229306452524;115.47146383768579,38.87998776845534;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }
