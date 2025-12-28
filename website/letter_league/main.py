@@ -7,7 +7,26 @@ import time
 from collections import defaultdict
 
 # ==============================================================================
-# 🧠 第一部分：GADDAG 核心算法 & 求解器 (严谨版)
+# ⚙️ 用户配置区域 (USER CONFIGURATION) - 在这里手动调整
+# ==============================================================================
+
+# 📁 路径配置
+INPUT_IMAGE = "./test.png"       # 游戏截图路径
+LOGO_IMAGE  = "./test_logo.png"  # Logo 模板路径
+DICT_FILE   = "./twl06_ENABLE.txt"      # 字典文件路径
+OUTPUT_DIR  = "./output"         # 输出目录 (不再使用 combined 子文件夹)
+
+# 🤖 推荐算法配置
+REC_TOP_N   = 6    # 推荐前几名最佳走法 (比如 3 或 5)
+REC_SHORT_N = 6    # 推荐前几名短走法 (用于防守或清牌)
+MIN_DIST    = 1    # 走法之间的最小格距离 (避免推荐挤在一起，设为 0 则不限制)
+SHORT_LEN   = 4    # 定义"短走法"的最大长度 (<= 这个长度算短词)
+
+# 🎨 可视化配置
+VIS_SHOW_DEBUG = True  # 是否保存中间的调试图 (如网格线、分割图)
+
+# ==============================================================================
+# 🧠 第一部分：GADDAG 核心算法 & 求解器
 # ==============================================================================
 
 class GADDAGNode:
@@ -32,7 +51,6 @@ class GADDAG:
             print("⚠️ 使用内置微型字典 (建议下载 twl06.txt) ...")
             words = ["APPLE", "BANANA", "CAT", "DOG", "HELLO", "WORLD", "TEST", "LETTER", "LEAGUE", "CODE", "DATA", "GAME", "BOARD", "RACK", "FROM", "FORM", "FA"]
         
-        # 构建 GADDAG 路径
         for w in words:
             self.add_word(w)
             
@@ -53,9 +71,7 @@ class GADDAG:
             node = node.edges[char]
         node.is_end = True
     
-    # 用于 Cross-Check 的快速验证
     def contains(self, word):
-        # 验证 word 是否存在。走路径: REV(word) + delimiter
         path = word[::-1] + self.delimiter
         node = self.root
         for c in path:
@@ -78,15 +94,10 @@ class ScrabbleSolver:
     def solve(self, rack_str):
         self.rack = list(rack_str.upper())
         self.results = []
-        
-        # 1. 预计算所有空格的纵向合法字母集 (Cross-Sets)
         self._compute_cross_sets()
-        
-        # 2. 逐行搜索
         for row in range(self.N):
             self._gen_row(row)
             
-        # 3. 去重与排序
         unique = {}
         for res in self.results:
             key = f"{res['word']}_{res['row']}_{res['col']}"
@@ -95,10 +106,6 @@ class ScrabbleSolver:
         return sorted(unique.values(), key=lambda x: len(x['word']), reverse=True)
 
     def _compute_cross_sets(self):
-        """
-        核心修复：计算每个空格在纵向上允许填什么字母。
-        如果某格上下有字，必须形成合法单词。
-        """
         full_set = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
         for r in range(self.N):
             for c in range(self.N):
@@ -110,16 +117,13 @@ class ScrabbleSolver:
         for c in range(self.N):
             for r in range(self.N):
                 if self.board[r][c] == '':
-                    # 检查上下是否有邻居
                     top = (r > 0 and self.board[r-1][c] != '')
                     bottom = (r < self.N-1 and self.board[r+1][c] != '')
                     
                     if top or bottom:
                         valid = set()
-                        # 向上找词头
                         start = r
                         while start > 0 and self.board[start-1][c] != '': start -= 1
-                        # 向下找词尾
                         end = r
                         while end < self.N-1 and self.board[end+1][c] != '': end += 1
                         
@@ -127,20 +131,16 @@ class ScrabbleSolver:
                         suffix = "".join([self.board[k][c] for k in range(r+1, end+1)])
                         
                         for char in full_set:
-                            # 组合起来必须是字典里的词
                             candidate = prefix + char + suffix
                             if self.g.contains(candidate):
                                 valid.add(char)
-                        
                         self.cross_sets[r][c] = valid
 
     def _gen_row(self, row):
         line = self.board[row]
         anchors = []
-        # 寻找锚点
         for i in range(self.N):
             if line[i] == '':
-                # 只要该格四周有字，就是锚点
                 has_neighbor = False
                 if i>0 and line[i-1]!='': has_neighbor=True
                 if i<14 and line[i+1]!='': has_neighbor=True
@@ -152,12 +152,8 @@ class ScrabbleSolver:
             anchors.append(7)
 
         for anchor in anchors:
-            # GADDAG 逻辑：锚点必须由 Rack 里的新牌填充
-            # 如果锚点左边紧挨着字，说明这是个延伸词，逻辑不同，暂跳过(简化版)
             if anchor > 0 and line[anchor-1] != '': continue
             
-            # 从锚点开始向左构建前缀
-            # 必须检查 anchor 本身的 cross-set
             allowed = self.cross_sets[row][anchor]
             unique_rack = set(self.rack)
             candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
@@ -167,11 +163,9 @@ class ScrabbleSolver:
                     to_remove = char if char in self.rack else '?'
                     if to_remove in self.rack:
                         self.rack.remove(to_remove)
-                        # 递归入口：填入 anchor，状态设为 LEFT
                         new_node = self.g.root.edges[char]
                         self._gen(row, anchor-1, char, new_node, anchor, "LEFT")
                         
-                        # 同时也可能直接转右
                         if self.g.delimiter in new_node.edges:
                             right_node = new_node.edges[self.g.delimiter]
                             self._gen(row, anchor+1, char, right_node, anchor, "RIGHT")
@@ -179,25 +173,17 @@ class ScrabbleSolver:
                         self.rack.append(to_remove)
 
     def _gen(self, row, col, word, node, anchor_pos, direction):
-        # -------------------------------------------------
-        # 状态 A: 往左搜 (构建前缀)
-        # -------------------------------------------------
         if direction == "LEFT":
-            # 1. 尝试结束左搜，转向右搜
             if self.g.delimiter in node.edges:
                 right_node = node.edges[self.g.delimiter]
                 self._gen(row, anchor_pos + 1, word, right_node, anchor_pos, "RIGHT")
             
-            # 2. 继续往左填
             if col >= 0:
                 char_on_board = self.board[row][col]
-                
-                if char_on_board != '': # 棋盘上有字
+                if char_on_board != '': 
                     if char_on_board in node.edges:
-                        # 必须匹配板上字母，且不需要检查 Cross-Set (因为它已经在板上了)
                         self._gen(row, col - 1, char_on_board + word, node.edges[char_on_board], anchor_pos, "LEFT")
-                else: # 棋盘为空，尝试放字
-                    # 【核心】必须检查 Cross-Set
+                else: 
                     allowed = self.cross_sets[row][col]
                     unique_rack = set(self.rack)
                     candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
@@ -210,28 +196,19 @@ class ScrabbleSolver:
                                 self._gen(row, col - 1, char + word, node.edges[char], anchor_pos, "LEFT")
                                 self.rack.append(to_remove)
 
-        # -------------------------------------------------
-        # 状态 B: 往右搜 (构建后缀)
-        # -------------------------------------------------
         elif direction == "RIGHT":
-            # 1. 记录结果 (核心修复：边界检查)
             if node.is_end:
-                # 只有当【下一个格子是空的】或者【到达边界】时，才能结束单词！
-                # 否则说明后面还有字母（比如 FROM 后面还有 E），必须连起来读，不能停。
                 if col >= 15 or self.board[row][col] == '':
                     start_col = col - len(word)
                     if start_col >= 0 and col <= 15:
                          self.results.append({'word': word, 'row': row, 'col': start_col})
 
-            # 2. 继续往右填
             if col < 15:
                 char_on_board = self.board[row][col]
                 if char_on_board != '':
-                    # 【核心】强制连读：如果板上有字，必须使用它，不能跳过，也不能停止
                     if char_on_board in node.edges:
                         self._gen(row, col + 1, word + char_on_board, node.edges[char_on_board], anchor_pos, "RIGHT")
                 else:
-                    # 尝试放字，必须检查 Cross-Set
                     allowed = self.cross_sets[row][col]
                     unique_rack = set(self.rack)
                     candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
@@ -244,21 +221,23 @@ class ScrabbleSolver:
                                 self._gen(row, col + 1, word + char, node.edges[char], anchor_pos, "RIGHT")
                                 self.rack.append(to_remove)
 
+
 # ==============================================================================
-# 👁️ 第二部分：OCR 视觉层 (保持不变)
+# 👁️ 第二部分：OCR 视觉层 (适配新配置)
 # ==============================================================================
 
 class LetterLeagueVision:
     def __init__(self):
         print("👁️ 初始化视觉模块...")
         self.reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-        self.out_dir = "./output/combined"
+        # 修改：直接使用配置的输出目录
+        self.out_dir = OUTPUT_DIR
         os.makedirs(self.out_dir, exist_ok=True)
         self.correction_map = {'0': 'O', '8': 'B', '6': 'G', '5': 'S', '1': 'I', '2': 'Z'}
         self.grid_params = None 
         self.seg_board_img = None 
 
-    def process_full_pipeline(self, img_path, logo_path="./test_logo.png"):
+    def process_full_pipeline(self, img_path, logo_path):
         img = cv2.imread(img_path)
         if img is None: raise FileNotFoundError(f"无法读取: {img_path}")
         board_img, rack_img = self.segment_image(img, logo_path)
@@ -305,6 +284,12 @@ class LetterLeagueVision:
             return img[y1:y2, x1:x2]
         board = safe_crop(0.00, 0.13, 0.9, 0.70)
         rack  = safe_crop(0.35, 0.87, 0.28, 0.11)
+        
+        # 只在 debug 开启时保存中间图片
+        if VIS_SHOW_DEBUG:
+            if board.size > 0: cv2.imwrite(f"{self.out_dir}/debug_seg_board.png", board)
+            if rack.size > 0: cv2.imwrite(f"{self.out_dir}/debug_seg_rack.png", rack)
+            
         return board, rack
 
     def ocr_rack(self, img):
@@ -422,45 +407,92 @@ class LetterLeagueVision:
             anchor_row_idx = max(0, min(14, anchor_row_idx))
             grid_origin_x = anchor_tile['cx'] - anchor_col_idx * true_step_x
             grid_origin_y = anchor_tile['cy'] - anchor_row_idx * true_step_y
+            
+            debug_viz = img.copy() if VIS_SHOW_DEBUG else None
+            
             for d in detected_raw:
                 c_idx = int(round((d['cx'] - grid_origin_x) / true_step_x))
                 r_idx = int(round((d['cy'] - grid_origin_y) / true_step_y))
                 c_idx = max(0, min(14, c_idx))
                 r_idx = max(0, min(14, r_idx))
                 matrix[r_idx][c_idx] = d['char']
+                
+                if debug_viz is not None:
+                     cv2.rectangle(debug_viz, (int(d['cx'])-10, int(d['cy'])-10), (int(d['cx'])+10, int(d['cy'])+10), (0,255,0), 1)
+
+            if debug_viz is not None:
+                 cv2.imwrite(f"{self.out_dir}/debug_grid_fit.png", debug_viz)
+
         self.grid_params = (grid_origin_x, grid_origin_y, true_step_x, true_step_y)
         return matrix
 
-    def visualize_move(self, move, board_matrix):
+    # 🎨 四角轮换可视化
+    def visualize_batch(self, moves_list, board_matrix):
         if not self.grid_params or self.seg_board_img is None:
             print("⚠️ 无法绘制，缺少网格参数或图片")
             return
+
         ox, oy, sx, sy = self.grid_params
         img = self.seg_board_img.copy()
-        word = move['word']
-        r_start = move['row']
-        c_start = move['col']
-        print(f"🎨 正在绘制单词: {word} @ ({r_start}, {c_start})")
-        for i, char in enumerate(word):
-            r = r_start
-            c = c_start + i
-            if 0 <= r < 15 and 0 <= c < 15 and board_matrix[r][c] == '':
-                px = int(ox + c * sx)
-                py = int(oy + r * sy)
-                box_size = int(sx * 0.9)
-                x1, y1 = px - box_size//2, py - box_size//2
-                x2, y2 = x1 + box_size, y1 + box_size
-                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), -1) 
-                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 255, 255), 2) 
-                font_scale = 1.0
-                thickness = 2
-                (tw, th), _ = cv2.getTextSize(char, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-                tx = px - tw // 2
-                ty = py + th // 2
-                cv2.putText(img, char, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
-        out_path = "./output/board_result_v3.png"
+
+        # 配置：每个Rank对应的 (位置偏移, 颜色, 描述)
+        # BL=(-0.25, 0.25), TL=(-0.25, -0.25), TR=(0.25, -0.25), BR=(0.25, 0.25)
+        styles = [
+            {'offset': (-0.2, 0.2),  'color': (255, 100, 0),   'name': 'BL (1st)'}, # Blue
+            {'offset': (-0.2, -0.2), 'color': (0, 165, 255),   'name': 'TL (2nd)'}, # Orange
+            {'offset': (0.2, -0.2),  'color': (0, 200, 0),     'name': 'TR (3rd)'}, # Green
+            {'offset': (0.2, 0.2),   'color': (128, 0, 128),   'name': 'BR (4th)'}  # Purple
+        ]
+
+        # 遍历所有要画的走法
+        for rank, move in enumerate(moves_list):
+            style = styles[rank % 4]
+            word = move['word']
+            r_start, c_start = move['row'], move['col']
+            
+            for i, char in enumerate(word):
+                r, c = r_start, c_start + i
+                if 0 <= r < 15 and 0 <= c < 15 and board_matrix[r][c] == '':
+                    cx = ox + c * sx
+                    cy = oy + r * sy
+                    
+                    dx, dy = style['offset']
+                    px = int(cx + dx * sx)
+                    py = int(cy + dy * sy)
+                    
+                    box_size = int(sx * 0.45)
+                    x1, y1 = px - box_size//2, py - box_size//2
+                    x2, y2 = x1 + box_size, y1 + box_size
+                    
+                    cv2.rectangle(img, (x1, y1), (x2, y2), style['color'], -1)
+                    cv2.rectangle(img, (x1, y1), (x2, y2), (255, 255, 255), 1)
+                    
+                    font_scale = 0.5
+                    thickness = 1
+                    (tw, th), _ = cv2.getTextSize(char, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                    tx = px - tw // 2
+                    ty = py + th // 2
+                    cv2.putText(img, char, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+
+        out_path = f"{self.out_dir}/board_result_final.png"
         cv2.imwrite(out_path, img)
         print(f"✨ 结果已保存: {out_path}")
+
+# ==============================================================================
+# 🚀 辅助函数
+# ==============================================================================
+def get_diverse_moves(moves, top_n=3, min_dist=3):
+    selected = []
+    for m in moves:
+        is_far_enough = True
+        for s in selected:
+            dist = math.sqrt((m['row'] - s['row'])**2 + (m['col'] - s['col'])**2)
+            if dist < min_dist:
+                is_far_enough = False
+                break
+        if is_far_enough: selected.append(m)
+        if len(selected) >= top_n: break
+    return selected
 
 # ==============================================================================
 # 🚀 主运行逻辑
@@ -469,11 +501,11 @@ class LetterLeagueVision:
 if __name__ == "__main__":
     try:
         vision = LetterLeagueVision()
-        gaddag = GADDAG("./twl06.txt") 
+        gaddag = GADDAG(DICT_FILE) 
         solver = ScrabbleSolver(gaddag)
         
         print("\n📸 开始视觉分析...")
-        board, rack = vision.process_full_pipeline("./test.png", "./test_logo.png")
+        board, rack = vision.process_full_pipeline(INPUT_IMAGE, LOGO_IMAGE)
         
         print("\n🧩 识别到的棋盘:")
         for r in board:
@@ -490,19 +522,25 @@ if __name__ == "__main__":
         print(f"\n✅ 计算完成! 耗时 {time.time()-start_t:.3f}s, 找到 {len(moves)} 种走法")
         
         if moves:
-            print("\n🏆 Top 3 最佳推荐:")
-            for i, m in enumerate(moves[:3]):
-                print(f"  {i+1}. {m['word']} (Row {m['row']}, Col {m['col']}, Length {len(m['word'])})")
+            # 1. 筛选 Top N (使用配置参数)
+            diverse_top = get_diverse_moves(moves, top_n=REC_TOP_N, min_dist=MIN_DIST)
+            print(f"\n🏆 Top {REC_TOP_N} 最佳推荐:")
+            for i, m in enumerate(diverse_top):
+                print(f"  {i+1}. {m['word']} (Row {m['row']}, Col {m['col']}, Len {len(m['word'])})")
 
-            short_moves = [m for m in moves if len(m['word']) <= 4]
-            print("\n🐣 Top 3 短走法 (<= 4 字母):")
-            for i, m in enumerate(short_moves[:3]):
+            # 2. 筛选 短词 Top N (使用配置参数)
+            short_moves = [m for m in moves if len(m['word']) <= SHORT_LEN]
+            diverse_short = get_diverse_moves(short_moves, top_n=REC_SHORT_N, min_dist=MIN_DIST)
+            
+            print(f"\n🐣 Top {REC_SHORT_N} 短走法 (<= {SHORT_LEN}):")
+            for i, m in enumerate(diverse_short):
                 print(f"  {i+1}. {m['word']} (Row {m['row']}, Col {m['col']})")
 
-            top_move = moves[0]
-            vision.visualize_move(top_move, board)
+            # 3. 批量可视化 (合并列表)
+            final_visualization_list = diverse_top + diverse_short
+            vision.visualize_batch(final_visualization_list, board)
         else:
-            print("❌ 未找到任何合法走法 (请检查字典或 Letter League 规则)")
+            print("❌ 未找到任何合法走法")
             
     except Exception as e:
         print(f"❌ 程序中断: {e}")
