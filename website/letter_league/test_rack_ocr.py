@@ -1,3 +1,10 @@
+"""
+功能: 识别游戏手牌区域(rack)中的字母
+用法: python test_rack_ocr.py
+前置: 需要 ./output/rack.png 文件 (由 test_orgin_segmentation.py 生成)
+输出: ./output/clean_letter_*.png (单个字母) 和 ./output/final_result_view.png (标注图)
+"""
+
 import cv2
 import numpy as np
 import easyocr

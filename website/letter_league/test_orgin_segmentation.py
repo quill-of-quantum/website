@@ -1,3 +1,10 @@
+"""
+功能: 从游戏截图中分割出棋盘和手牌区域
+用法: python test_orgin_segmentation.py
+前置: 需要 test.png (游戏截图) 和 test_logo.png (Logo模板) 在当前目录
+输出: ./output/board.png, ./output/rack.png, ./output/debug_overlay.png
+"""
+
 import cv2, os
 import numpy as np
 

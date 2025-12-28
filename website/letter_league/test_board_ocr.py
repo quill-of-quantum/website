@@ -1,3 +1,10 @@
+"""
+功能: 识别游戏棋盘(board)上已放置的字母，自动剔除噪点
+用法: python test_board_ocr.py  
+前置: 需要 ./output/board.png 文件 (由 test_orgin_segmentation.py 生成)
+输出: ./output/board_result_v3.png (标注图，蓝叉=噪点，红字=强制识别)
+"""
+
 import cv2
 import numpy as np
 import easyocr
