@@ -116,6 +116,7 @@
                 <input type="number" id="shortLen" value="4" min="2" max="8">
             </div>
             <div class="control-group" style="flex-direction: row; align-items: center; margin-left: 10px;">
+                <!-- Default unchecked -->
                 <input type="checkbox" id="useWildcard" style="width: auto; margin-right: 5px; cursor: pointer;">
                 <label for="useWildcard" style="margin: 0; cursor: pointer;">使用万能替换 (?)</label>
             </div>
@@ -155,7 +156,14 @@
                     <div style="flex: 1; min-width: 300px;">
                         <h5>2. 字母架分割 (Rack Crop)</h5>
                         <img id="debugSegRack" style="max-width: 100%; border: 1px solid #999;">
-                        <p><strong>识别字母:</strong> <span id="debugRackText" style="font-family: monospace; font-size: 1.2em; background: #eee; padding: 2px 5px;"></span></p>
+                        <p style="margin-top: 5px;">
+                            <strong>OCR 识别:</strong> 
+                            <span id="debugRackText" style="font-family: monospace; font-size: 1.2em; background: #eee; padding: 2px 5px;"></span>
+                        </p>
+                        <p style="margin-top: 5px;">
+                            <strong>实际计算:</strong> 
+                            <span id="debugFinalRackText" style="font-family: monospace; font-size: 1.2em; background: #e8f0fe; padding: 2px 5px; color: #007bff; font-weight: bold;"></span>
+                        </p>
                     </div>
                 </div>
 
@@ -228,8 +236,18 @@
 
         async function uploadAndProcess(base64Image) {
             loading.style.display = 'block';
+            loading.textContent = "准备开始...";
             resultArea.style.display = 'none';
-            debugSection.style.display = 'none'; // Reset debug
+            debugSection.style.display = 'block'; // Show debug immediately
+            
+            // Reset debug views
+            document.getElementById('debugSegBoard').src = '';
+            document.getElementById('debugSegRack').src = '';
+            document.getElementById('debugGridFit').src = '';
+            document.getElementById('debugRackText').textContent = '';
+            document.getElementById('debugFinalRackText').textContent = '';
+            document.getElementById('debugBoardMatrix').textContent = '';
+            document.getElementById('debugLogoStatus').innerHTML = 'Pending...';
             
             // 获取所有参数
             const params = {
@@ -245,101 +263,31 @@
             try {
                 const response = await fetch('/api/letter/process', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(params)
                 });
 
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    resultArea.style.display = 'block';
-                    const res = data.result;
-                    let html = '';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
 
-                    // 1. 显示结果图片
-                    if (res.result_image) {
-                        html += `<div style="text-align:center; margin-bottom:20px;">
-                            <img src="${res.result_image}" style="max-width:100%; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                        </div>`;
-                    }
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
 
-                    // 2. 辅助函数生成列表
-                    const createList = (title, items, icon, color) => {
-                        if (!items || items.length === 0) return '';
-                        let listHtml = `<div style="margin-bottom: 20px;">
-                            <h4 style="color:${color}; margin: 10px 0; border-bottom: 2px solid ${color}; padding-bottom: 5px;">${icon} ${title}</h4>
-                            <ul style="list-style:none; padding-left:0;">`;
-                        
-                        items.forEach((item, index) => {
-                            let details = [];
-                            if (item.cross !== undefined && item.cross > 0) details.push(`Cross: ${item.cross}`);
-                            if (item.row !== undefined) details.push(`Pos: [${item.row}, ${item.col}]`);
-                            
-                            const detailStr = details.length ? `<span style="color:#666; font-size:0.85em; margin-left:10px;">(${details.join(' | ')})</span>` : '';
-
-                            listHtml += `<li style="padding:8px 10px; background-color:${index%2===0?'#f8f9fa':'#fff'}; border-radius:4px; margin-bottom:2px;">
-                                <span style="font-weight:bold; color:#333; width:20px; display:inline-block;">${index + 1}.</span>
-                                <span style="font-weight:bold; font-size:1.1em; color:#000;">${item.word}</span>
-                                ${detailStr}
-                            </li>`;
-                        });
-                        listHtml += '</ul></div>';
-                        return listHtml;
-                    };
-
-                    // 3. 生成各部分内容
-                    html += createList('最佳推荐 (Best)', res.best, '🏆', '#007bff'); // Blue
-                    html += createList('短词防守 (Short)', res.short, '🐣', '#6f42c1'); // Purple
-                    html += createList('一箭多雕 (Multi)', res.multi, '🔱', '#e83e8c'); // Pink
-
-                    if (!res.best.length && !res.short.length && !res.multi.length) {
-                        html += '<div style="text-align:center; padding:20px; color:#666;">❌ 未找到任何合法走法</div>';
-                    }
-
-                    resultContent.innerHTML = html;
-
-                    // --- Debug Display Logic ---
-                    if (res.debug) {
-                        debugSection.style.display = 'block';
-                        
-                        // Logo Info
-                        const logoInfo = res.debug.logo_detection || {};
-                        const logoStatus = document.getElementById('debugLogoStatus');
-                        const logoScore = document.getElementById('debugLogoScore');
-                        const logoPath = document.getElementById('debugLogoPath');
-                        
-                        if (logoInfo.found) {
-                            logoStatus.innerHTML = '<span style="color:green; font-weight:bold;">✅ 找到 Logo (定位成功)</span>';
-                        } else {
-                            let reason = logoInfo.exists ? "匹配度过低" : "文件不存在";
-                            logoStatus.innerHTML = `<span style="color:red; font-weight:bold;">❌ 未找到 Logo (${reason})</span> - 使用默认比例`;
-                        }
-                        logoScore.textContent = (logoInfo.score || 0).toFixed(4);
-                        logoPath.textContent = logoInfo.path || "N/A";
-                        
-                        // Images
-                        if (res.debug.seg_board) document.getElementById('debugSegBoard').src = res.debug.seg_board;
-                        if (res.debug.seg_rack) document.getElementById('debugSegRack').src = res.debug.seg_rack;
-                        if (res.debug.grid_fit) document.getElementById('debugGridFit').src = res.debug.grid_fit;
-                        
-                        // Text
-                        document.getElementById('debugRackText').textContent = res.debug.rack_str || "None";
-                        
-                        // Matrix
-                        if (res.debug.ocr_board_matrix) {
-                            const matrixStr = res.debug.ocr_board_matrix.map(row => 
-                                row.map(c => c ? c.padEnd(2) : '. ').join(' ')
-                            ).join('\n');
-                            document.getElementById('debugBoardMatrix').textContent = matrixStr;
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const msg = JSON.parse(line);
+                            handleStreamMessage(msg);
+                        } catch (e) {
+                            console.error("JSON Parse Error", e, line);
                         }
                     }
-                    // ---------------------------
-
-                } else {
-                    alert('处理失败: ' + data.message);
-                    if (data.trace) console.error(data.trace);
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -347,6 +295,94 @@
             } finally {
                 loading.style.display = 'none';
             }
+        }
+
+        function handleStreamMessage(msg) {
+            if (msg.type === 'step') {
+                loading.textContent = msg.msg;
+            } else if (msg.type === 'debug') {
+                const d = msg.data;
+                if (d.seg_board) document.getElementById('debugSegBoard').src = d.seg_board;
+                if (d.seg_rack) document.getElementById('debugSegRack').src = d.seg_rack;
+                if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
+                
+                if (d.rack_str) document.getElementById('debugRackText').textContent = d.rack_str;
+                if (d.final_rack_str) document.getElementById('debugFinalRackText').textContent = d.final_rack_str;
+                
+                if (d.logo_detection) {
+                    const logoInfo = d.logo_detection;
+                    const logoStatus = document.getElementById('debugLogoStatus');
+                    const logoScore = document.getElementById('debugLogoScore');
+                    const logoPath = document.getElementById('debugLogoPath');
+                    
+                    if (logoInfo.found) {
+                        logoStatus.innerHTML = '<span style="color:green; font-weight:bold;">✅ 找到 Logo</span>';
+                    } else {
+                        let reason = logoInfo.exists ? "匹配度过低" : "文件不存在";
+                        logoStatus.innerHTML = `<span style="color:red; font-weight:bold;">❌ 未找到 Logo (${reason})</span>`;
+                    }
+                    logoScore.textContent = (logoInfo.score || 0).toFixed(4);
+                    logoPath.textContent = logoInfo.path || "N/A";
+                }
+
+                if (d.ocr_board_matrix) {
+                    const matrixStr = d.ocr_board_matrix.map(row => 
+                        row.map(c => c ? c.padEnd(2) : '. ').join(' ')
+                    ).join('\n');
+                    document.getElementById('debugBoardMatrix').textContent = matrixStr;
+                }
+            } else if (msg.type === 'result') {
+                renderResults(msg.data);
+            } else if (msg.type === 'error') {
+                alert('Error: ' + msg.message);
+            }
+        }
+
+        function renderResults(res) {
+            resultArea.style.display = 'block';
+            let html = '';
+
+            // 1. 显示结果图片
+            if (res.result_image) {
+                html += `<div style="text-align:center; margin-bottom:20px;">
+                    <img src="${res.result_image}" style="max-width:100%; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                </div>`;
+            }
+
+            // 2. 辅助函数生成列表
+            const createList = (title, items, icon, color) => {
+                if (!items || items.length === 0) return '';
+                let listHtml = `<div style="margin-bottom: 20px;">
+                    <h4 style="color:${color}; margin: 10px 0; border-bottom: 2px solid ${color}; padding-bottom: 5px;">${icon} ${title}</h4>
+                    <ul style="list-style:none; padding-left:0;">`;
+                
+                items.forEach((item, index) => {
+                    let details = [];
+                    if (item.cross !== undefined && item.cross > 0) details.push(`Cross: ${item.cross}`);
+                    if (item.row !== undefined) details.push(`Pos: [${item.row}, ${item.col}]`);
+                    
+                    const detailStr = details.length ? `<span style="color:#666; font-size:0.85em; margin-left:10px;">(${details.join(' | ')})</span>` : '';
+
+                    listHtml += `<li style="padding:8px 10px; background-color:${index%2===0?'#f8f9fa':'#fff'}; border-radius:4px; margin-bottom:2px;">
+                        <span style="font-weight:bold; color:#333; width:20px; display:inline-block;">${index + 1}.</span>
+                        <span style="font-weight:bold; font-size:1.1em; color:#000;">${item.word}</span>
+                        ${detailStr}
+                    </li>`;
+                });
+                listHtml += '</ul></div>';
+                return listHtml;
+            };
+
+            // 3. 生成各部分内容
+            html += createList('最佳推荐 (Best)', res.best, '🏆', '#007bff'); // Blue
+            html += createList('短词防守 (Short)', res.short, '🐣', '#6f42c1'); // Purple
+            html += createList('一箭多雕 (Multi)', res.multi, '🔱', '#e83e8c'); // Pink
+
+            if (!res.best.length && !res.short.length && !res.multi.length) {
+                html += '<div style="text-align:center; padding:20px; color:#666;">❌ 未找到任何合法走法</div>';
+            }
+
+            resultContent.innerHTML = html;
         }
     </script>
 </body>

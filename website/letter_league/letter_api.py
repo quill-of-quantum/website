@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, Response
+import json
 import base64
 import io
 from PIL import Image
@@ -490,6 +491,7 @@ class LetterLeagueVision:
 
         ox, oy, sx, sy = self.grid_params
         img = self.seg_board_img.copy()
+        h_img, w_img = img.shape[:2]
 
         # 颜色配置: BGR
         # 1. Best Moves (Long/High Score) -> Blue/Green tones
@@ -557,6 +559,25 @@ class LetterLeagueVision:
                     text_color = (0, 0, 0) if char.islower() else (255, 255, 255)
                     cv2.putText(img, display_char, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, thickness)
 
+        # --- Crop Logic: Crop to grid area with padding ---
+        pad_x = int(sx * 0.5)
+        pad_y = int(sy * 0.5)
+        
+        x1 = int(ox - pad_x)
+        y1 = int(oy - pad_y)
+        x2 = int(ox + 15 * sx + pad_x)
+        y2 = int(oy + 15 * sy + pad_y)
+        
+        # Clamp to image boundaries
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w_img, x2)
+        y2 = min(h_img, y2)
+        
+        if x2 > x1 and y2 > y1:
+            img = img[y1:y2, x1:x2]
+        # --------------------------------------------------
+
         out_path = f"{self.out_dir}/board_result_final.png"
         # cv2.imwrite(out_path, img) # Optional: skip disk write
         print(f"✨ 结果已保存: {out_path}")
@@ -598,113 +619,137 @@ def letter_ui():
 
 @bp.route("/api/letter/process", methods=["POST"])
 def process_letter_image():
-    """处理上传的图片"""
-    try:
-        data = request.get_json()
-        if not data or 'image' not in data:
-            return jsonify({"status": "error", "message": "No image data provided"}), 400
+    """处理上传的图片 (Streaming Response)"""
+    data = request.get_json()
+    if not data or 'image' not in data:
+        return jsonify({"status": "error", "message": "No image data provided"}), 400
 
-        # 获取参数 (使用默认常量作为后备)
-        image_data = data['image']
-        use_wildcard = data.get('use_wildcard', False)
-        
-        rec_top_n = int(data.get('rec_top_n', REC_TOP_N))
-        rec_short_n = int(data.get('rec_short_n', REC_SHORT_N))
-        rec_multi_n = int(data.get('rec_multi_n', REC_MULTI_N))
-        min_dist = int(data.get('min_dist', MIN_DIST))
-        short_len = int(data.get('short_len', SHORT_LEN))
+    # 获取参数
+    image_data = data['image']
+    use_wildcard = data.get('use_wildcard', False)
+    rec_top_n = int(data.get('rec_top_n', REC_TOP_N))
+    rec_short_n = int(data.get('rec_short_n', REC_SHORT_N))
+    rec_multi_n = int(data.get('rec_multi_n', REC_MULTI_N))
+    min_dist = int(data.get('min_dist', MIN_DIST))
+    short_len = int(data.get('short_len', SHORT_LEN))
 
-        # 处理 Base64 图片
-        if "," in image_data:
-            image_data = image_data.split(",")[1]
-        
-        image_bytes = base64.b64decode(image_data)
-        pil_image = Image.open(io.BytesIO(image_bytes))
-
-        # Convert PIL to OpenCV (BGR)
-        img_np = np.array(pil_image)
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        
-        vision = LetterLeagueVision()
-        # Override output dir for safety
-        vision.out_dir = "/tmp/letter_league_output" 
-        os.makedirs(vision.out_dir, exist_ok=True)
-        
-        # Use the modified pipeline that accepts array
-        board, rack = vision.process_full_pipeline(img_bgr, LOGO_IMAGE)
-        
-        solver = ScrabbleSolver(get_gaddag())
-        solver.set_board(board)
-        
-        rack_str = "".join(rack).replace("?", "?")
-        if use_wildcard and "?" not in rack_str:
-            rack_str += "?" 
-        
-        moves = solver.solve(rack_str)
-        
-        results = {
-            "best": [],
-            "short": [],
-            "multi": [],
-            "result_image": None,
-            "debug": vision.debug_info # Include debug info
-        }
-        
-        # Add text debug info
-        results["debug"]["rack_str"] = rack_str
-        results["debug"]["moves_count"] = len(moves)
-        
-        final_viz_list = []
-        
-        if moves:
-            # 1. Top Best
-            diverse_top = get_diverse_moves(moves, top_n=rec_top_n, min_dist=min_dist)
-            for m in diverse_top:
-                m['type'] = 'best'
-                final_viz_list.append(m)
-                results["best"].append({
-                    "word": m['word'],
-                    "row": m['row'],
-                    "col": m['col'],
-                    "cross": m['cross']
-                })
-
-            # 2. Top Short
-            short_moves = [m for m in moves if len(m['word']) <= short_len]
-            diverse_short = get_diverse_moves(short_moves, top_n=rec_short_n, min_dist=min_dist)
-            for m in diverse_short:
-                m['type'] = 'short'
-                final_viz_list.append(m)
-                results["short"].append({
-                    "word": m['word'],
-                    "row": m['row'],
-                    "col": m['col']
-                })
-
-            # 3. Top Multi
-            multi_moves = [m for m in moves if m['cross'] > 0]
-            multi_moves.sort(key=lambda x: x['cross'], reverse=True)
-            diverse_multi = get_diverse_moves(multi_moves, top_n=rec_multi_n, min_dist=min_dist)
-            for m in diverse_multi:
-                m['type'] = 'multi'
-                if m not in final_viz_list:
-                    final_viz_list.append(m)
-                results["multi"].append({
-                    "word": m['word'],
-                    "cross": m['cross']
-                })
-                
-            # Visualize
-            res_img = vision.visualize_batch(final_viz_list, board)
+    def generate():
+        try:
+            yield json.dumps({"type": "step", "msg": "正在解码图片..."}) + "\n"
             
-            # Convert result image to base64
-            if res_img is not None:
-                _, buffer = cv2.imencode('.png', res_img)
-                img_str = base64.b64encode(buffer).decode('utf-8')
-                results["result_image"] = f"data:image/png;base64,{img_str}"
-        
-        return jsonify({"status": "success", "result": results})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e), "trace": traceback.format_exc()}), 500
+            # 处理 Base64 图片
+            img_b64 = image_data
+            if "," in img_b64:
+                img_b64 = img_b64.split(",")[1]
+            
+            image_bytes = base64.b64decode(img_b64)
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            img_np = np.array(pil_image)
+            img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            
+            vision = LetterLeagueVision()
+            vision.out_dir = "/tmp/letter_league_output" 
+            os.makedirs(vision.out_dir, exist_ok=True)
+            
+            # 1. Segmentation
+            yield json.dumps({"type": "step", "msg": "正在分割棋盘与字母架..."}) + "\n"
+            board_img, rack_img = vision.segment_image(img_bgr, LOGO_IMAGE)
+            vision.seg_board_img = board_img
+            
+            debug_data = {}
+            if board_img is not None and board_img.size > 0:
+                debug_data['seg_board'] = vision._img_to_base64(board_img)
+            if rack_img is not None and rack_img.size > 0:
+                debug_data['seg_rack'] = vision._img_to_base64(rack_img)
+            debug_data['logo_detection'] = vision.debug_info.get('logo_detection')
+            
+            yield json.dumps({"type": "debug", "data": debug_data}) + "\n"
+
+            # 2. OCR Rack
+            yield json.dumps({"type": "step", "msg": "正在识别字母架..."}) + "\n"
+            rack_letters = []
+            if rack_img is not None and rack_img.size > 0:
+                rack_letters = vision.ocr_rack(rack_img)
+            
+            yield json.dumps({"type": "debug", "data": {"rack_str": "".join(rack_letters)}}) + "\n"
+
+            # 3. OCR Board
+            yield json.dumps({"type": "step", "msg": "正在识别棋盘布局..."}) + "\n"
+            board_matrix = [['' for _ in range(15)] for _ in range(15)]
+            if board_img is not None and board_img.size > 0:
+                board_matrix = vision.ocr_board(board_img)
+            
+            grid_fit_b64 = vision.debug_info.get('grid_fit')
+            yield json.dumps({"type": "debug", "data": {
+                "ocr_board_matrix": board_matrix,
+                "grid_fit": grid_fit_b64
+            }}) + "\n"
+
+            # 4. Solving
+            yield json.dumps({"type": "step", "msg": "正在计算最佳走法..."}) + "\n"
+            solver = ScrabbleSolver(get_gaddag())
+            solver.set_board(board_matrix)
+            
+            rack_str = "".join(rack_letters).replace("?", "?")
+            
+            # Logic: If user checks "Use Wildcard", we append a wildcard.
+            # This allows the user to manually add a blank tile if OCR missed it.
+            if use_wildcard:
+                rack_str += "?" 
+            
+            # Send debug update about the final rack used
+            yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str}}) + "\n"
+            
+            moves = solver.solve(rack_str)
+            
+            # 5. Formatting Results
+            results = {
+                "best": [],
+                "short": [],
+                "multi": [],
+                "result_image": None
+            }
+            
+            final_viz_list = []
+            if moves:
+                # 1. Top Best
+                diverse_top = get_diverse_moves(moves, top_n=rec_top_n, min_dist=min_dist)
+                for m in diverse_top:
+                    m['type'] = 'best'
+                    final_viz_list.append(m)
+                    results["best"].append({"word": m['word'], "row": m['row'], "col": m['col'], "cross": m['cross']})
+
+                # 2. Top Short
+                short_moves = [m for m in moves if len(m['word']) <= short_len]
+                diverse_short = get_diverse_moves(short_moves, top_n=rec_short_n, min_dist=min_dist)
+                for m in diverse_short:
+                    m['type'] = 'short'
+                    final_viz_list.append(m)
+                    results["short"].append({"word": m['word'], "row": m['row'], "col": m['col']})
+
+                # 3. Top Multi
+                multi_moves = [m for m in moves if m['cross'] > 0]
+                multi_moves.sort(key=lambda x: x['cross'], reverse=True)
+                diverse_multi = get_diverse_moves(multi_moves, top_n=rec_multi_n, min_dist=min_dist)
+                for m in diverse_multi:
+                    m['type'] = 'multi'
+                    if m not in final_viz_list:
+                        final_viz_list.append(m)
+                    results["multi"].append({"word": m['word'], "cross": m['cross']})
+                
+                # Visualize
+                res_img = vision.visualize_batch(final_viz_list, board_matrix)
+                if res_img is not None:
+                    _, buffer = cv2.imencode('.png', res_img)
+                    img_str = base64.b64encode(buffer).decode('utf-8')
+                    results["result_image"] = f"data:image/png;base64,{img_str}"
+
+            yield json.dumps({"type": "result", "data": results}) + "\n"
+            yield json.dumps({"type": "step", "msg": "完成!"}) + "\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield json.dumps({"type": "error", "message": str(e)}) + "\n"
+
+    return Response(generate(), mimetype='application/x-ndjson')
