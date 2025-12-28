@@ -6,7 +6,7 @@ import math
 import time
 
 # ==============================================================================
-# 🎯 第一部分：GADDAG 数据结构 & 求解器 (保持不变，这是大脑)
+# 🎯 第一部分：GADDAG 数据结构 & 求解器
 # ==============================================================================
 
 class GADDAGNode:
@@ -19,8 +19,6 @@ class GADDAG:
     def __init__(self, dict_path=None):
         self.root = GADDAGNode()
         self.delimiter = '>'
-        
-        # 加载字典
         words = []
         if dict_path and os.path.exists(dict_path):
             print(f"📖 正在加载字典: {dict_path} ...")
@@ -31,8 +29,6 @@ class GADDAG:
         else:
             print("⚠️ 使用内置微型字典...")
             words = ["APPLE", "BANANA", "CAT", "DOG", "HELLO", "WORLD", "TEST", "LETTER", "LEAGUE", "CODE", "DATA", "GAME", "BOARD", "RACK"]
-            
-        # 构建 GADDAG
         for w in words:
             self.add_word(w)
             
@@ -57,18 +53,15 @@ class ScrabbleSolver:
     def __init__(self, gaddag):
         self.g = gaddag
         self.board = [['' for _ in range(15)] for _ in range(15)]
-        self.rack = []
-        
     def set_board(self, board_matrix):
         self.board = board_matrix
-
     def solve(self, rack_str):
-        # 这里仅作演示占位，实际需要复杂的 GADDAG 搜索逻辑
-        print(f"🧠 (Solver收到 Rack: {rack_str}，GADDAG Ready)")
+        print(f"🧠 (Solver收到 Rack: {rack_str}，准备计算...)")
+        # 这里是求解逻辑的入口，目前仅返回空列表作为框架
         return []
 
 # ==============================================================================
-# 👁️ 第二部分：OCR 视觉层 (完全复刻你的三个文件)
+# 👁️ 第二部分：OCR 视觉层 (带智能排斥算法)
 # ==============================================================================
 
 class LetterLeagueVision:
@@ -83,38 +76,42 @@ class LetterLeagueVision:
         img = cv2.imread(img_path)
         if img is None: raise FileNotFoundError(f"无法读取: {img_path}")
         
-        # 1. 严格复刻 test_orgin_segmentation.py
+        # 1. 切割
         board_img, rack_img = self.segment_image(img, logo_path)
         
-        # 2. 严格复刻 test_rack_ocr.py
-        rack_letters = self.ocr_rack(rack_img)
+        # 2. Rack 识别
+        rack_letters = []
+        if rack_img is not None and rack_img.size > 0:
+            rack_letters = self.ocr_rack(rack_img)
         
-        # 3. 严格复刻 test_board_ocr.py
-        board_matrix = self.ocr_board(board_img)
+        # 3. Board 识别
+        board_matrix = [['' for _ in range(15)] for _ in range(15)]
+        if board_img is not None and board_img.size > 0:
+            board_matrix = self.ocr_board(board_img)
         
         return board_matrix, rack_letters
 
     def segment_image(self, img, logo_path):
-        """
-        来源：test_orgin_segmentation.py
-        """
         h_img, w_img = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # Logo 匹配逻辑
-        if not os.path.exists(logo_path):
-            print("❌ 找不到 Logo 模板，无法进行标准切割")
-            return None, None
-            
-        tpl_l = cv2.imread(logo_path, 0)
-        res = cv2.matchTemplate(gray, tpl_l, cv2.TM_CCOEFF_NORMED)
-        _, maxv, _, maxloc = cv2.minMaxLoc(res)
+        lx, ly, lh, lw = 0, 0, 0, 0
+        found_logo = False
         
-        lx, ly = maxloc
-        lh, lw = tpl_l.shape
-        print(f"match score logo_l: {maxv} at {(lx, ly)} size {(lw, lh)}")
-        
-        # ========== 参数严格来自 test_orgin_segmentation.py ==========
+        if os.path.exists(logo_path):
+            tpl_l = cv2.imread(logo_path, 0)
+            res = cv2.matchTemplate(gray, tpl_l, cv2.TM_CCOEFF_NORMED)
+            _, maxv, _, maxloc = cv2.minMaxLoc(res)
+            if maxv > 0.7:
+                lx, ly = maxloc
+                lh, lw = tpl_l.shape
+                found_logo = True
+                print(f"⚓ Logo 匹配成功 (分值: {maxv:.2f})")
+
+        if not found_logo:
+            print("⚠️ 未找到 Logo，使用默认全屏参数")
+            lx, ly, lh, lw = 0, 0, int(h_img*0.05), int(w_img*0.05)
+
         game_left = lx
         game_width = w_img - game_left
         
@@ -123,227 +120,205 @@ class LetterLeagueVision:
         
         GAME_H_RATIO = 0.5
         game_height = int(game_width * GAME_H_RATIO)
-        # 注意：原文件里有 min(H, ...)，这里保留逻辑
         game_bottom = min(h_img, game_top + game_height)
         
         game_w = game_width
         game_h = game_bottom - game_top
         
-        # 内部分区比例
-        BOARD_X0 = 0.00
-        BOARD_Y0 = 0.13
-        BOARD_W  = 0.9
-        BOARD_H  = 0.70
+        BOARD_X0, BOARD_Y0, BOARD_W, BOARD_H = 0.00, 0.13, 0.9, 0.70
+        RACK_X0, RACK_Y0, RACK_W, RACK_H = 0.35, 0.87, 0.28, 0.11
         
-        RACK_X0  = 0.35
-        RACK_Y0  = 0.87
-        RACK_W   = 0.28
-        RACK_H   = 0.11
-        
-        def crop_ratio(x0, y0, w0, h0):
+        def safe_crop(x0, y0, w0, h0, tag):
             x = int(game_left + x0 * game_w)
             y = int(game_top  + y0 * game_h)
             w = int(w0 * game_w)
             h = int(h0 * game_h)
-            # 安全检查 (防止越界报错)
-            y1, y2 = max(0, y), min(h_img, y+h)
             x1, x2 = max(0, x), min(w_img, x+w)
-            if y2<=y1 or x2<=x1: return np.array([])
+            y1, y2 = max(0, y), min(h_img, y+h)
+            if x2 <= x1 or y2 <= y1: return np.array([])
             return img[y1:y2, x1:x2]
 
-        board = crop_ratio(BOARD_X0, BOARD_Y0, BOARD_W, BOARD_H)
-        rack  = crop_ratio(RACK_X0,  RACK_Y0,  RACK_W,  RACK_H)
+        board = safe_crop(BOARD_X0, BOARD_Y0, BOARD_W, BOARD_H, "Board")
+        rack  = safe_crop(RACK_X0,  RACK_Y0,  RACK_W,  RACK_H, "Rack")
         
-        cv2.imwrite(f"{self.out_dir}/seg_board.png", board)
-        cv2.imwrite(f"{self.out_dir}/seg_rack.png", rack)
+        if board.size > 0: cv2.imwrite(f"{self.out_dir}/seg_board.png", board)
+        if rack.size > 0: cv2.imwrite(f"{self.out_dir}/seg_rack.png", rack)
         
         return board, rack
 
     def ocr_rack(self, img):
-        """
-        来源：test_rack_ocr.py
-        """
-        if img is None or img.size == 0: return []
-        
-        # 图像预处理 (严格参数)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced_gray = clahe.apply(gray)
         binary_map = cv2.adaptiveThreshold(enhanced_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-        kernel = np.ones((3,3), np.uint8)
-        binary_map = cv2.erode(binary_map, kernel, iterations=1)
+        binary_map = cv2.erode(binary_map, np.ones((3,3), np.uint8), iterations=1)
         cnts, _ = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         valid_boxes = []
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
-            # 参数: 30 < cw < 150 ...
-            if 30 < cw < 150 and 30 < ch < 150:
-                ratio = cw / float(ch)
-                if 0.8 < ratio < 1.2:
-                    valid_boxes.append((x, y, cw, ch))
-                    
-        valid_boxes = sorted(valid_boxes, key=lambda b: b[0])
+            if 30 < cw < 150 and 30 < ch < 150 and 0.8 < cw/float(ch) < 1.2:
+                valid_boxes.append((x, y, cw, ch))
+        valid_boxes.sort(key=lambda b: b[0])
         
-        # 去重逻辑 (来自 test_rack_ocr.py)
         final_boxes = []
         for box in valid_boxes:
-            if not final_boxes:
-                final_boxes.append(box)
+            if not final_boxes: final_boxes.append(box)
             else:
-                last_box = final_boxes[-1]
-                if abs(box[0] - last_box[0]) < 20:
-                    if (box[2]*box[3]) > (last_box[2]*last_box[3]):
-                        final_boxes.pop()
-                        final_boxes.append(box)
-                else:
-                    final_boxes.append(box)
-                    
+                last = final_boxes[-1]
+                if abs(box[0]-last[0]) < 20:
+                    if box[2]*box[3] > last[2]*last[3]: final_boxes[-1] = box
+                else: final_boxes.append(box)
+
         results = []
-        for i, (x, y, cw, ch) in enumerate(final_boxes):
-            # 1. 基础切割
-            pad = 2 # test_rack_ocr.py 中 pad_x=8 pad_y=5? 
-            # 等等，你的 test_rack_ocr.py snippet 里写的是 pad = 2 
-            # 见 snippet: "pad = 2 \n tile_roi = img[y+pad : y+ch-pad, x+pad : x+cw-pad]"
-            # 之前的 pad_x=8 是更早版本的，我遵循你最后提供的 snippet
-            
+        for (x, y, cw, ch) in final_boxes:
+            pad = 2
             tile_roi = img[y+pad : y+ch-pad, x+pad : x+cw-pad]
-            th, tw, _ = tile_roi.shape
+            th, tw = tile_roi.shape[:2]
+            if th==0 or tw==0: continue
             
-            # ----------------------------------------------------
-            # ✂️ 核心修改：Sub-cropping (严格参数)
-            # ----------------------------------------------------
-            crop_y1 = int(th * 0.25)
-            crop_y2 = int(th * 0.85)
-            crop_x1 = int(tw * 0.15)
-            crop_x2 = int(tw * 0.75)
+            roi = tile_roi[int(th*0.25):int(th*0.85), int(tw*0.15):int(tw*0.75)]
+            if roi.size == 0: continue
+
+            roi = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            _, roi_bin = cv2.threshold(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             
-            letter_roi = tile_roi[crop_y1:crop_y2, crop_x1:crop_x2]
-            
-            # 2. 图像增强 (放大 + 灰度 + Otsu)
-            roi_zoom = cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            roi_gray = cv2.cvtColor(roi_zoom, cv2.COLOR_BGR2GRAY)
-            _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            # 3. 识别
-            char = "_"
+            char = "?"
             try:
-                res = self.reader.readtext(roi_binary, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                res = self.reader.readtext(roi_bin, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
                 if res:
-                    char = res[0]
-                    # 常见误识别修正 (来自 snippet)
-                    if char == 'I' and 'L' in char: char = 'L'
+                    c = res[0].upper()
+                    if c == 'I' and 'L' in c: c = 'L'
+                    char = c
             except: pass
-            
             results.append(char)
-            
         return results
 
     def ocr_board(self, img):
-        """
-        来源：test_board_ocr.py
-        """
-        if img is None or img.size == 0: return []
         h, w = img.shape[:2]
-        
-        # 步骤 1: 定位 (Dark Ink Extraction)
-        # 参数严格复刻: threshold 80, INV
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, binary_finder = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
-        
-        # 参数严格复刻: dilate iterations=2
-        kernel_finder = np.ones((3,3), np.uint8)
-        binary_finder = cv2.dilate(binary_finder, kernel_finder, iterations=2)
-        
-        cnts, _ = cv2.findContours(binary_finder, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+        binary = cv2.dilate(binary, np.ones((3,3), np.uint8), iterations=2)
+        cnts, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         raw_tiles = []
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
-            # 基础过滤 (参数严格复刻)
-            if not (10 < cw < 150 and 10 < ch < 150): continue
-            ratio = cw / float(ch)
-            if not (0.2 < ratio < 2.0): continue
-            raw_tiles.append((x, y, cw, ch))
-            
-        # 步骤 2: 剔除离群点
+            if 10 < cw < 150 and 10 < ch < 150 and 0.2 < cw/float(ch) < 2.0:
+                raw_tiles.append((x, y, cw, ch))
+        
         final_tiles = []
         if len(raw_tiles) > 1:
-            avg_size = sum([max(t[2], t[3]) for t in raw_tiles]) / len(raw_tiles)
-            # 参数: 2.5 倍
-            distance_threshold = avg_size * 2.5
-            
+            avg_s = sum([max(t[2], t[3]) for t in raw_tiles]) / len(raw_tiles)
+            thresh = avg_s * 2.5
             for i, t1 in enumerate(raw_tiles):
-                c1_x = t1[0] + t1[2] // 2
-                c1_y = t1[1] + t1[3] // 2
-                min_dist = float('inf')
-                
+                c1 = (t1[0]+t1[2]//2, t1[1]+t1[3]//2)
+                min_d = float('inf')
                 for j, t2 in enumerate(raw_tiles):
-                    if i == j: continue
-                    c2_x = t2[0] + t2[2] // 2
-                    c2_y = t2[1] + t2[3] // 2
-                    dist = math.sqrt((c1_x - c2_x)**2 + (c1_y - c2_y)**2)
-                    if dist < min_dist: min_dist = dist
-                    
-                if min_dist < distance_threshold:
-                    final_tiles.append(t1)
-        else:
-            final_tiles = raw_tiles
-            
-        final_tiles = sorted(final_tiles, key=lambda b: (b[1], b[0]))
+                    if i!=j:
+                        c2 = (t2[0]+t2[2]//2, t2[1]+t2[3]//2)
+                        d = math.sqrt((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2)
+                        if d < min_d: min_d = d
+                if min_d < thresh: final_tiles.append(t1)
+        else: final_tiles = raw_tiles
         
-        # 步骤 3: 识别 + 排除法兜底
-        detected_chars = []
+        detected_raw = [] # (cx, cy, char)
         
-        for i, (x, y, cw, ch) in enumerate(final_tiles):
-            center_x = x + cw // 2
-            center_y = y + ch // 2
-            # 参数: max(cw, ch) + 5
+        # 识别循环
+        for (x, y, cw, ch) in final_tiles:
+            cx, cy = x + cw//2, y + ch//2
             size = max(cw, ch) + 5
             half = size // 2
-            
-            y1, y2 = max(0, center_y - half), min(h, center_y + half)
-            x1, x2 = max(0, center_x - half), min(w, center_x + half)
+            y1, y2 = max(0, cy-half), min(h, cy+half)
+            x1, x2 = max(0, cx-half), min(w, cx+half)
             
             roi = img[y1:y2, x1:x2]
-            roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            if roi.size == 0: continue
             
-            # 二值化 + 瘦身
-            _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            kernel_thin = np.ones((2,2), np.uint8)
-            roi_thin = cv2.erode(roi_binary, kernel_thin, iterations=1)
-            # 参数: copyMakeBorder 10
-            roi_padded = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
+            roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            roi_thin = cv2.erode(roi_bin, np.ones((2,2), np.uint8), iterations=1)
+            roi_pad = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
             
             char = ""
-            safe_allowlist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-            
             try:
-                res = self.reader.readtext(roi_padded, detail=0, allowlist=safe_allowlist)
+                res = self.reader.readtext(roi_pad, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                 if res:
                     raw = res[0].upper()
                     if raw in self.correction_map: char = self.correction_map[raw]
-                    elif len(raw) > 1 and raw[0].isalpha(): char = raw[0]
+                    elif len(raw)>1 and raw[0].isalpha(): char = raw[0]
                     elif raw.isalpha(): char = raw
             except: pass
             
             if not char: char = 'O'
             elif char == '0': char = 'O'
-            
-            # 坐标映射 (简单假设 15x15)
-            # 这里需要一个映射逻辑，因为 test_board_ocr.py 只输出了列表，没做矩阵映射
-            # 我这里补充一个简单的映射以适配 main.py 的输出格式
-            cell_w_est = w / 15.0
-            cell_h_est = h / 15.0
-            r_idx = min(14, max(0, int(center_y / cell_h_est)))
-            c_idx = min(14, max(0, int(center_x / cell_w_est)))
-            
-            detected_chars.append((r_idx, c_idx, char))
-            
+            detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
+
+        # =========================================================
+        # 🧩 智能网格映射 (Smart Grid Mapping with Anti-Collision)
+        # =========================================================
         matrix = [['' for _ in range(15)] for _ in range(15)]
-        for r, c, val in detected_chars:
-            matrix[r][c] = val
+        cell_w = w / 15.0
+        cell_h = h / 15.0
+        
+        # 1. 计算相位偏移 (校准起点)
+        if detected_raw:
+            shifts_x = [(d['cx'] / cell_w) % 1.0 for d in detected_raw]
+            shifts_y = [(d['cy'] / cell_h) % 1.0 for d in detected_raw]
+            phase_x = sum(shifts_x) / len(shifts_x)
+            phase_y = sum(shifts_y) / len(shifts_y)
+        else:
+            phase_x, phase_y = 0.5, 0.5
+
+        # 2. 先按行归类 (Cluster by Row)
+        rows_bucket = {}
+        for d in detected_raw:
+            # 算出它大概在哪一行
+            r_est = int((d['cy'] / cell_h) - phase_y + 0.5)
+            r_est = max(0, min(14, r_est))
+            if r_est not in rows_bucket: rows_bucket[r_est] = []
+            rows_bucket[r_est].append(d)
+
+        debug_viz = img.copy()
+
+        # 3. 行内处理 (排斥算法)
+        for r_idx, items in rows_bucket.items():
+            # 按 x 坐标排序
+            items.sort(key=lambda item: item['cx'])
             
+            last_c_idx = -1
+            
+            for item in items:
+                # 原始算出的列号
+                raw_c_idx = int((item['cx'] / cell_w) - phase_x + 0.5)
+                
+                # 🛡️ 冲突排斥逻辑
+                # 如果当前字母算出来的位置 <= 上一个字母的位置
+                # 说明发生了挤压，强制往后推一格
+                final_c_idx = max(raw_c_idx, last_c_idx + 1)
+                
+                # 边界保护
+                final_c_idx = max(0, min(14, final_c_idx))
+                
+                # 写入矩阵
+                matrix[r_idx][final_c_idx] = item['char']
+                
+                # 更新 last_c_idx
+                last_c_idx = final_c_idx
+                
+                # Debug绘图
+                x, y = int(item['cx']), int(item['cy'])
+                cv2.rectangle(debug_viz, (x-10, y-10), (x+10, y+10), (0, 255, 0), 2)
+                cv2.putText(debug_viz, f"{item['char']}", (x, y-15), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # 画网格线验证
+        for i in range(16):
+            x_line = int(i * cell_w)
+            y_line = int(i * cell_h)
+            cv2.line(debug_viz, (x_line, 0), (x_line, h), (255, 255, 0), 1)
+            cv2.line(debug_viz, (0, y_line), (w, y_line), (255, 255, 0), 1)
+
+        cv2.imwrite(f"{self.out_dir}/debug_board_grid.png", debug_viz)
         return matrix
 
 # ==============================================================================
@@ -357,13 +332,13 @@ if __name__ == "__main__":
         solver = ScrabbleSolver(gaddag)
         
         print("\n📸 开始视觉分析...")
-        # 必须传入 logo 路径
         board, rack = vision.process_full_pipeline("./test.png", "./test_logo.png")
         
         print("\n🧩 识别到的棋盘:")
         for r in board:
             print(" ".join([c if c else '.' for c in r]))
         print(f"\n🔠 识别到的字母架: {rack}")
+        print(f"🖼️ 调试图已生成: ./output/combined/debug_board_grid.png")
         
     except Exception as e:
         print(f"❌ 程序中断: {e}")
