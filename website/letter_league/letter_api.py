@@ -300,7 +300,12 @@ class LetterLeagueVision:
         return board_matrix, rack_letters
 
     def _img_to_base64(self, img):
-        _, buffer = cv2.imencode('.png', img)
+        # Handle both color and grayscale images
+        if len(img.shape) == 2:  # Grayscale image
+            img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        else:
+            img_bgr = img
+        _, buffer = cv2.imencode('.png', img_bgr)
         return f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
 
     def segment_image(self, img, logo_path):
@@ -361,40 +366,206 @@ class LetterLeagueVision:
         enhanced_gray = clahe.apply(gray)
         binary_map = cv2.adaptiveThreshold(enhanced_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
         binary_map = cv2.erode(binary_map, np.ones((3,3), np.uint8), iterations=1)
+        
+        # === 统一：保存这个二值化图像，轮廓检测也用这个 ===
+        self.debug_info['rack_binary_map'] = self._img_to_base64(binary_map)
+        
+        # 直接在这个 binary_map 上进行轮廓检测
         cnts, _ = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # 生成轮廓检测调试图像 - 叠加到原图上
+        rack_contour_debug = img.copy()
+        
+        # === 同时生成轮廓叠加到二值化图像上的版本 ===
+        binary_contour_debug = cv2.cvtColor(binary_map, cv2.COLOR_GRAY2BGR)
+        
         valid_boxes = []
-        for c in cnts:
+        rejected_boxes = []
+        
+        for i, c in enumerate(cnts):
             x, y, cw, ch = cv2.boundingRect(c)
-            if 30 < cw < 150 and 30 < ch < 150 and 0.8 < cw/float(ch) < 1.2:
+            # 使用test.py中的更严格过滤条件
+            area = cw * ch
+            ratio = cw / float(ch)
+            
+            if (30 < cw < 150 and 30 < ch < 150 and 
+                0.8 < ratio < 1.2):  # 更严格的正方形比例
                 valid_boxes.append((x, y, cw, ch))
+                # 绘制绿色框表示接受 - 同时画到两个图上
+                cv2.rectangle(rack_contour_debug, (x, y), (x+cw, y+ch), (0, 255, 0), 2)
+                cv2.rectangle(binary_contour_debug, (x, y), (x+cw, y+ch), (0, 255, 0), 2)
+                cv2.putText(rack_contour_debug, f"OK{len(valid_boxes)}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(binary_contour_debug, f"OK{len(valid_boxes)}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            else:
+                # 绘制红色框表示拒绝 - 同时画到两个图上
+                cv2.rectangle(rack_contour_debug, (x, y), (x+cw, y+ch), (0, 0, 255), 2)
+                cv2.rectangle(binary_contour_debug, (x, y), (x+cw, y+ch), (0, 0, 255), 2)
+                if not (30 < cw < 150 and 30 < ch < 150):
+                    reason = f"size({cw}x{ch})"
+                elif not (0.8 < ratio < 1.2):
+                    reason = f"ratio({ratio:.2f})"
+                else:
+                    reason = "other"
+                cv2.putText(rack_contour_debug, f"X{reason}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                cv2.putText(binary_contour_debug, f"X{reason}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                rejected_boxes.append((x, y, cw, ch, reason))
+        
+        # 保存两种轮廓检测调试图像
+        self.debug_info['rack_contour_debug'] = self._img_to_base64(rack_contour_debug)
+        self.debug_info['rack_binary_contour_debug'] = self._img_to_base64(binary_contour_debug)
+        
+        # --- 新增逻辑：基于 Y 轴对齐过滤 ---
+        y_filtered_boxes = []
+        y_filter_reason = "no_valid_boxes"
+        
+        if valid_boxes:
+            import statistics
+            # 1. 计算所有候选框 Y 坐标的中位数
+            y_coords = [b[1] for b in valid_boxes]
+            median_y = statistics.median(y_coords)
+            
+            # 2. 设定容差（例如允许上下浮动 20 像素）
+            y_tolerance = 20 
+            
+            # 3. 过滤掉偏离中位数太远的框 (可能是上下的噪点)
+            y_filtered_boxes = []
+            y_rejected_boxes = []
+            
+            for box in valid_boxes:
+                y_deviation = abs(box[1] - median_y)
+                if y_deviation < y_tolerance:
+                    y_filtered_boxes.append(box)
+                else:
+                    y_rejected_boxes.append((box, y_deviation))
+            
+            y_filter_reason = f"median_y={median_y:.1f}, tolerance={y_tolerance}, " + \
+                            f"kept={len(y_filtered_boxes)}, rejected={len(y_rejected_boxes)}"
+            
+            # 更新 valid_boxes
+            valid_boxes = y_filtered_boxes
+        
+        # --- 新增逻辑：基于面积中位数过滤 ---
+        area_filtered_boxes = []
+        area_filter_reason = "no_valid_boxes"
+        
+        if valid_boxes:
+            # 1. 计算所有候选框的面积
+            areas = [b[2] * b[3] for b in valid_boxes]
+            median_area = statistics.median(areas)
+            
+            # 2. 允许面积差异在 0.6 到 1.4 倍之间 (根据实际情况调整)
+            area_filtered_boxes = []
+            area_rejected_boxes = []
+            
+            for box in valid_boxes:
+                area = box[2] * box[3]
+                area_ratio = area / median_area
+                if 0.6 < area_ratio < 1.4:
+                    area_filtered_boxes.append(box)
+                else:
+                    area_rejected_boxes.append((box, area, area_ratio))
+            
+            area_filter_reason = f"median_area={median_area:.0f}, range=0.6-1.4x, " + \
+                               f"kept={len(area_filtered_boxes)}, rejected={len(area_rejected_boxes)}"
+            
+            # 更新 valid_boxes
+            valid_boxes = area_filtered_boxes
+        
+        # Store Y-filter and Area-filter debug info
+        self.debug_info['rack_y_filter'] = {
+            'reason': y_filter_reason,
+            'before_count': len(y_filtered_boxes) if y_filtered_boxes else 0,
+            'after_count': len(valid_boxes)
+        }
+        
+        self.debug_info['rack_area_filter'] = {
+            'reason': area_filter_reason,
+            'before_count': len(area_filtered_boxes) + len([r for r in (area_rejected_boxes if 'area_rejected_boxes' in locals() else [])]),
+            'after_count': len(valid_boxes)
+        }
+        
+        # 按x坐标排序并去重 (来自test.py的逻辑)
         valid_boxes.sort(key=lambda b: b[0])
         final_boxes = []
         for box in valid_boxes:
-            if not final_boxes: final_boxes.append(box)
+            if not final_boxes: 
+                final_boxes.append(box)
             else:
                 last = final_boxes[-1]
                 if abs(box[0]-last[0]) < 20:
-                    if box[2]*box[3] > last[2]*last[3]: final_boxes[-1] = box
-                else: final_boxes.append(box)
+                    if box[2]*box[3] > last[2]*last[3]: 
+                        final_boxes[-1] = box
+                else: 
+                    final_boxes.append(box)
+        
         results = []
-        for (x, y, cw, ch) in final_boxes:
+        rack_debug_data = []
+        
+        # 记录轮廓检测统计 (更新统计信息)
+        rack_debug_data.append({
+            'index': -1,  # 特殊标记表示统计信息
+            'raw': f"总轮廓:{len(cnts)} 尺寸+比例:{len(valid_boxes)+len(rejected_boxes)} Y轴过滤后:{len(y_filtered_boxes)} 面积过滤后:{len(valid_boxes)} 最终去重:{len(final_boxes)}",
+            'final': 'STATS',
+            'process': f"Y轴: {y_filter_reason[:50]}... | 面积: {area_filter_reason[:50]}..."
+        })
+        
+        for i, (x, y, cw, ch) in enumerate(final_boxes):
+            # === 使用test.py的核心改进逻辑 ===
+            # 1. 获取整个方块 ROI
             pad = 2
             tile_roi = img[y+pad : y+ch-pad, x+pad : x+cw-pad]
             th, tw = tile_roi.shape[:2]
             if th==0 or tw==0: continue
-            roi = tile_roi[int(th*0.25):int(th*0.85), int(tw*0.15):int(tw*0.75)]
-            if roi.size == 0: continue
-            roi = cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            _, roi_bin = cv2.threshold(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # 2. 二次裁切：只保留中心字母区域，去除角落数字
+            # 上面切掉 25% (避开数字)，下面切掉 15%
+            # 左边切掉 15%，右边切掉 25% (避开数字)
+            crop_y1 = int(th * 0.25)
+            crop_y2 = int(th * 0.85)
+            crop_x1 = int(tw * 0.15)
+            crop_x2 = int(tw * 0.75)
+            
+            letter_roi = tile_roi[crop_y1:crop_y2, crop_x1:crop_x2]
+            if letter_roi.size == 0: continue
+            
+            # 3. 图像增强：放大3倍 + 灰度 + 二值化
+            roi_zoom = cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            roi_gray = cv2.cvtColor(roi_zoom, cv2.COLOR_BGR2GRAY)
+            
+            # Otsu二值化 (对粗体圆角字体效果好)
+            _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # 4. OCR识别
             char = "?"
+            raw_result = ""
             try:
-                res = self.reader.readtext(roi_bin, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                # 只允许大写字母，使用二值化图像
+                res = self.reader.readtext(roi_binary, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                
                 if res:
-                    c = res[0].upper()
-                    if c == 'I' and 'L' in c: c = 'L'
-                    char = c
-            except: pass
+                    raw_result = res[0].upper()
+                    char = raw_result
+                    
+                    # 应用修正规则 (保持兼容性)
+                    if char in self.correction_map:
+                        char = self.correction_map[char]
+                        
+            except Exception as e:
+                raw_result = f"error:{str(e)[:10]}"
+                
             results.append(char)
+            
+            # Store debug info
+            rack_debug_data.append({
+                'index': i,
+                'raw': raw_result,
+                'final': char,
+                'process': '二次裁切+放大3倍+Otsu二值化'
+            })
+        
+        # Store rack debug info
+        self.debug_info['rack_debug_data'] = rack_debug_data
+        
         return results
 
     def ocr_board(self, img):
@@ -403,13 +574,45 @@ class LetterLeagueVision:
         _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
         binary = cv2.dilate(binary, np.ones((3,3), np.uint8), iterations=2)
         cnts, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Initialize logs
+        logs = []
+        
+        # Stage 1: Initial contour filtering
         raw_tiles = []
+        rejected_contours = []
+        
         for c in cnts:
             x, y, cw, ch = cv2.boundingRect(c)
-            if 10 < cw < 150 and 10 < ch < 150 and 0.2 < cw/float(ch) < 2.0:
+            reason = ""
+            
+            # 放宽对细字母的限制，特别是字母I
+            if cw <= 6 or ch <= 6:  # 从10改为6，允许更细的字母
+                reason = "too_small"
+            elif cw >= 150 or ch >= 150:
+                reason = "too_large"
+            elif not (0.1 < cw/float(ch) < 5.0):  # 放宽宽高比，从0.2-2.0改为0.1-5.0
+                reason = f"bad_ratio_{cw/float(ch):.2f}"
+            else:
                 raw_tiles.append((x, y, cw, ch))
+                continue
+                
+            rejected_contours.append({
+                'bbox': (x, y, cw, ch),
+                'reason': reason,
+                'area': cw * ch
+            })
+        
+        logs.append(f"🔍 轮廓过滤: {len(cnts)} 总轮廓 → {len(raw_tiles)} 候选块, {len(rejected_contours)} 被拒绝")
+        for r in rejected_contours[:5]:  # Show first 5 rejections
+            logs.append(f"   拒绝: {r['bbox']} - {r['reason']} (area={r['area']})")
+        
+        # Sort raw tiles by position (top-to-bottom, left-to-right)
+        raw_tiles.sort(key=lambda t: (t[1], t[0]))
         
         final_tiles = []
+        all_debug_tiles = []  # Store ALL tiles for debug (including filtered ones)
+        
         if len(raw_tiles) > 1:
             # 1. Calculate centers and min distances for all raw tiles
             tile_data = []
@@ -424,7 +627,7 @@ class LetterLeagueVision:
                         d = math.sqrt((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2)
                         if d < min_d: min_d = d
                 
-                tile_data.append({'tile': t1, 'min_d': min_d})
+                tile_data.append({'tile': t1, 'min_d': min_d, 'index': i})
                 if min_d != float('inf'):
                     all_min_dists.append(min_d)
             
@@ -438,65 +641,209 @@ class LetterLeagueVision:
             
             # 3. Filter based on step size
             thresh = est_step * 2.5
-            print(f"🔍 过滤孤立块: Est Step={est_step:.1f}, Thresh={thresh:.1f}")
+            logs.append(f"🔍 距离过滤: Est Step={est_step:.1f}, Thresh={thresh:.1f}")
+            
+            kept_count = 0
+            filtered_count = 0
             
             for item in tile_data:
                 if item['min_d'] < thresh:
                     final_tiles.append(item['tile'])
+                    all_debug_tiles.append({'tile': item['tile'], 'filtered': False, 'min_d': item['min_d'], 'index': item['index']})
+                    kept_count += 1
+                else:
+                    all_debug_tiles.append({'tile': item['tile'], 'filtered': True, 'min_d': item['min_d'], 'index': item['index']})
+                    filtered_count += 1
+                    logs.append(f"   过滤块 #{item['index']}: min_d={item['min_d']:.1f} > thresh={thresh:.1f}")
+            
+            logs.append(f"🔍 最终结果: {kept_count} 保留, {filtered_count} 过滤")
         else: 
             final_tiles = raw_tiles
+            for i, t in enumerate(raw_tiles):
+                all_debug_tiles.append({'tile': t, 'filtered': False, 'min_d': 0, 'index': i})
         
         detected_raw = []
         debug_tiles_data = [] # Store debug info for each tile
 
-        for (x, y, cw, ch) in final_tiles:
+        logs.append(f"📝 开始 OCR 处理 {len(all_debug_tiles)} 个块...")
+        
+        # Process ALL tiles for debug (both filtered and unfiltered)
+        for debug_item in all_debug_tiles:
+            x, y, cw, ch = debug_item['tile']
             cx, cy = x + cw//2, y + ch//2
             size = max(cw, ch) + 5
             half = size // 2
             y1, y2 = max(0, cy-half), min(h, cy+half)
             x1, x2 = max(0, cx-half), min(w, cx+half)
             roi = img[y1:y2, x1:x2]
-            if roi.size == 0: continue
+            
+            if roi.size == 0: 
+                logs.append(f"   跳过块 #{debug_item['index']}: ROI 为空")
+                continue
             
             # Debug: Keep original ROI
             roi_orig = roi.copy()
-
-            roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            roi_thin = cv2.erode(roi_bin, np.ones((2,2), np.uint8), iterations=1)
-            roi_pad = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
             
             char = ""
             raw_ocr = ""
+            correction_step = ""
+            processing_steps = []
+            
+            # Step 1: Try with original ROI first (just resize)
             try:
-                res = self.reader.readtext(roi_pad, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                if res:
-                    raw = res[0].upper()
-                    raw_ocr = raw
-                    if raw in self.correction_map: char = self.correction_map[raw]
-                    elif len(raw)>1 and raw[0].isalpha(): char = raw[0]
-                    elif raw.isalpha(): char = raw
-            except: pass
+                roi_resized = cv2.resize(roi_orig, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+                res = self.reader.readtext(roi_resized, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                if res and len(res[0].strip()) > 0:
+                    raw_ocr = res[0].upper()
+                    processing_steps.append("原图×2")
+                    logs.append(f"   块 #{debug_item['index']}: 原图识别成功 '{raw_ocr}'")
+                else:
+                    processing_steps.append("原图×2(失败)")
+            except Exception as e:
+                processing_steps.append(f"原图×2(错误:{str(e)[:10]})")
             
-            if not char: char = 'O'
-            elif char == '0': char = 'O'
+            # Step 2: If failed, try with grayscale + threshold
+            if not raw_ocr:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    roi_bin_resized = cv2.resize(roi_bin, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                    res = self.reader.readtext(roi_bin_resized, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    if res and len(res[0].strip()) > 0:
+                        raw_ocr = res[0].upper()
+                        processing_steps.append("二值化×3")
+                        logs.append(f"   块 #{debug_item['index']}: 二值化识别成功 '{raw_ocr}'")
+                    else:
+                        processing_steps.append("二值化×3(失败)")
+                except Exception as e:
+                    processing_steps.append(f"二值化×3(错误:{str(e)[:10]})")
             
-            detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
+            # Step 3: If still failed, try with BINARY_INV + erosion
+            if not raw_ocr:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    _, roi_bin_inv = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    roi_thin = cv2.erode(roi_bin_inv, np.ones((2,2), np.uint8), iterations=1)
+                    roi_pad = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
+                    res = self.reader.readtext(roi_pad, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    if res and len(res[0].strip()) > 0:
+                        raw_ocr = res[0].upper()
+                        processing_steps.append("反色腐蚀+边框")
+                        logs.append(f"   块 #{debug_item['index']}: 反色腐蚀识别成功 '{raw_ocr}'")
+                    else:
+                        processing_steps.append("反色腐蚀+边框(失败)")
+                except Exception as e:
+                    processing_steps.append(f"反色腐蚀+边框(错误:{str(e)[:10]})")
             
-            # Collect debug data
+            # Step 4: If still failed, try with more aggressive preprocessing
+            if not raw_ocr:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+                    roi_enhanced = clahe.apply(roi_gray)
+                    _, roi_bin = cv2.threshold(roi_enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    # More aggressive erosion
+                    roi_thin = cv2.erode(roi_bin, np.ones((3,3), np.uint8), iterations=1)
+                    roi_pad = cv2.copyMakeBorder(roi_thin, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=(0,0,0))
+                    roi_pad_resized = cv2.resize(roi_pad, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+                    res = self.reader.readtext(roi_pad_resized, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    if res and len(res[0].strip()) > 0:
+                        raw_ocr = res[0].upper()
+                        processing_steps.append("CLAHE+强腐蚀")
+                        logs.append(f"   块 #{debug_item['index']}: 强化预处理识别成功 '{raw_ocr}'")
+                    else:
+                        processing_steps.append("CLAHE+强腐蚀(失败)")
+                except Exception as e:
+                    processing_steps.append(f"CLAHE+强腐蚀(错误:{str(e)[:10]})")
+            
+            # Apply character correction if OCR succeeded
+            if raw_ocr:
+                if raw_ocr in self.correction_map: 
+                    char = self.correction_map[raw_ocr]
+                    correction_step = f"{raw_ocr}→{char}"
+                elif len(raw_ocr)>1 and raw_ocr[0].isalpha(): 
+                    char = raw_ocr[0]
+                    correction_step = f"{raw_ocr}→{char}(first)"
+                elif raw_ocr.isalpha(): 
+                    char = raw_ocr
+                    correction_step = f"{raw_ocr}(direct)"
+                else:
+                    correction_step = f"{raw_ocr}→fallback"
+            else:
+                correction_step = "all_methods_failed"
+            
+            # Final fallback
+            if not char: 
+                char = 'O'
+                if not correction_step: correction_step = "empty→O"
+                else: correction_step += "→O"
+            elif char == '0': 
+                char = 'O'
+                correction_step += "→O"
+            
+            # Create combined processing info
+            process_info = " | ".join(processing_steps)
+            full_correction = f"{process_info} → {correction_step}"
+            
+            logs.append(f"   块 #{debug_item['index']}: 最终 '{raw_ocr}' → '{char}' ({process_info}) ({'过滤' if debug_item['filtered'] else '保留'})")
+            
+            # Only add to detected_raw if not filtered
+            if not debug_item['filtered']:
+                detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
+            
+            # For debug visualization, use the most processed image that gave results
+            debug_proc_img = roi_orig  # Default to original
+            if "反色腐蚀" in process_info:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    _, roi_bin_inv = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    roi_thin = cv2.erode(roi_bin_inv, np.ones((2,2), np.uint8), iterations=1)
+                    debug_proc_img = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
+                except: pass
+            elif "CLAHE" in process_info:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+                    roi_enhanced = clahe.apply(roi_gray)
+                    _, roi_bin = cv2.threshold(roi_enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    roi_thin = cv2.erode(roi_bin, np.ones((3,3), np.uint8), iterations=1)
+                    debug_proc_img = cv2.copyMakeBorder(roi_thin, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=(0,0,0))
+                except: pass
+            elif "二值化" in process_info:
+                try:
+                    roi_gray = cv2.cvtColor(roi_orig, cv2.COLOR_BGR2GRAY)
+                    _, debug_proc_img = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                except: pass
+            
+            # Collect debug data for ALL tiles
             debug_tiles_data.append({
                 'orig': roi_orig,
-                'proc': roi_pad,
+                'proc': debug_proc_img,
                 'raw': raw_ocr,
-                'final': char
+                'correction': full_correction,
+                'final': char,
+                'filtered': debug_item['filtered'],
+                'min_d': debug_item['min_d'],
+                'index': debug_item['index']
             })
+        
+        # Store debug statistics and logs
+        self.debug_info['ocr_stats'] = {
+            'total_contours': len(cnts),
+            'passed_size_filter': len(raw_tiles),
+            'rejected_contours': len(rejected_contours),
+            'passed_distance_filter': len([d for d in all_debug_tiles if not d['filtered']]),
+            'rejected_distance_filter': len([d for d in all_debug_tiles if d['filtered']])
+        }
+        self.debug_info['ocr_logs'] = logs
         
         # --- Generate Debug Image for OCR Tiles ---
         if VIS_SHOW_DEBUG and debug_tiles_data:
-            cols_per_row = 8
+            cols_per_row = 6
             rows_needed = math.ceil(len(debug_tiles_data) / cols_per_row)
-            cell_w = 120
-            cell_h = 80
+            cell_w = 140
+            cell_h = 100
             viz_w = cols_per_row * cell_w
             viz_h = rows_needed * cell_h
             
@@ -508,25 +855,44 @@ class LetterLeagueVision:
                 x_base = c * cell_w
                 y_base = r * cell_h
                 
+                # Color based on filter status
+                border_color = (50, 50, 200) if item['filtered'] else (50, 200, 50)
+                bg_color = (250, 250, 255) if item['filtered'] else (250, 255, 250)
+                
+                # Fill background
+                cv2.rectangle(viz_img, (x_base+2, y_base+2), (x_base+cell_w-2, y_base+cell_h-2), bg_color, -1)
+                
                 # Draw Original
                 try:
-                    orig_resized = cv2.resize(item['orig'], (40, 40))
-                    viz_img[y_base+5:y_base+45, x_base+5:x_base+45] = orig_resized
+                    orig_resized = cv2.resize(item['orig'], (35, 35))
+                    viz_img[y_base+5:y_base+40, x_base+5:x_base+40] = orig_resized
                 except: pass
                 
                 # Draw Processed
                 try:
-                    proc_resized = cv2.resize(item['proc'], (40, 40))
+                    proc_resized = cv2.resize(item['proc'], (35, 35))
                     proc_bgr = cv2.cvtColor(proc_resized, cv2.COLOR_GRAY2BGR)
-                    viz_img[y_base+5:y_base+45, x_base+50:x_base+90] = proc_bgr
+                    viz_img[y_base+5:y_base+40, x_base+50:x_base+85] = proc_bgr
                 except: pass
                 
-                # Draw Text
-                text_raw = f"Raw: {item['raw'] if item['raw'] else '_'}"
-                text_fin = f"Fin: {item['final']}"
-                cv2.putText(viz_img, text_raw, (x_base+5, y_base+60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (50, 50, 50), 1)
-                cv2.putText(viz_img, text_fin, (x_base+5, y_base+75), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
-                cv2.rectangle(viz_img, (x_base, y_base), (x_base+cell_w, y_base+cell_h), (200, 200, 200), 1)
+                # Draw Text Info
+                text_lines = [
+                    f"#{item['index']} Raw: {item['raw'] if item['raw'] else '_'}",
+                    f"Step: {item['correction']}",
+                    f"Final: {item['final']}",
+                    f"Dist: {item['min_d']:.1f}"
+                ]
+                
+                if item['filtered']:
+                    text_lines.append("FILTERED")
+                
+                for i, text in enumerate(text_lines):
+                    y_text = y_base + 50 + i * 10
+                    color = (200, 50, 50) if item['filtered'] and "FILTERED" in text else (30, 30, 30)
+                    cv2.putText(viz_img, text, (x_base+5, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+                
+                # Draw border
+                cv2.rectangle(viz_img, (x_base, y_base), (x_base+cell_w, y_base+cell_h), border_color, 2)
 
             self.debug_info['ocr_tiles_debug'] = self._img_to_base64(viz_img)
 
@@ -814,6 +1180,28 @@ def process_letter_image():
                 rack_letters = vision.ocr_rack(rack_img)
             
             yield json.dumps({"type": "debug", "data": {"rack_str": "".join(rack_letters)}}) + "\n"
+            
+            # Send rack debug info if available (including binary map)
+            rack_debug = vision.debug_info.get('rack_debug_data', [])
+            rack_contour_debug = vision.debug_info.get('rack_contour_debug')
+            rack_binary_map = vision.debug_info.get('rack_binary_map')
+            rack_binary_contour_debug = vision.debug_info.get('rack_binary_contour_debug')
+            rack_y_filter = vision.debug_info.get('rack_y_filter')  # 新增
+            rack_area_filter = vision.debug_info.get('rack_area_filter')  # 新增
+            debug_data = {"rack_str": "".join(rack_letters)}
+            if rack_debug:
+                debug_data['rack_debug'] = rack_debug
+            if rack_contour_debug:
+                debug_data['rack_contour_debug'] = rack_contour_debug
+            if rack_binary_map:
+                debug_data['rack_binary_map'] = rack_binary_map
+            if rack_binary_contour_debug:
+                debug_data['rack_binary_contour_debug'] = rack_binary_contour_debug
+            if rack_y_filter:  # 新增
+                debug_data['rack_y_filter'] = rack_y_filter
+            if rack_area_filter:  # 新增
+                debug_data['rack_area_filter'] = rack_area_filter
+            yield json.dumps({"type": "debug", "data": debug_data}) + "\n"
 
             # 3. OCR Board
             yield json.dumps({"type": "step", "msg": "正在识别棋盘布局..."}) + "\n"
@@ -824,11 +1212,15 @@ def process_letter_image():
             grid_fit_b64 = vision.debug_info.get('grid_fit')
             ocr_tiles_debug_b64 = vision.debug_info.get('ocr_tiles_debug') # Get new debug img
             grid_params = vision.debug_info.get('grid_params')
+            ocr_stats = vision.debug_info.get('ocr_stats')
+            ocr_logs = vision.debug_info.get('ocr_logs', [])
             
             yield json.dumps({"type": "debug", "data": {
                 "ocr_board_matrix": board_matrix,
                 "grid_fit": grid_fit_b64,
                 "ocr_tiles_debug": ocr_tiles_debug_b64, # Send it
+                "ocr_stats": ocr_stats, # Add stats
+                "ocr_logs": ocr_logs, # Add logs
                 "grid_params": grid_params
             }}) + "\n"
 

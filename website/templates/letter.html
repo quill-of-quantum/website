@@ -156,6 +156,38 @@
                     <div style="flex: 1; min-width: 300px;">
                         <h5>2. 字母架分割 (Rack Crop)</h5>
                         <img id="debugSegRack" style="max-width: 100%; border: 1px solid #999;">
+                        <!-- 新增：二值化图像显示 -->
+                        <div style="margin-top: 10px;">
+                            <h6 style="margin: 5px 0;">二值化预处理 (Binary Map)</h6>
+                            <img id="debugRackBinary" style="max-width: 100%; border: 1px solid #999; background: black;">
+                            <p style="font-size: 0.8em; color: #666; margin: 5px 0;">
+                                白色区域: 字母块 | 黑色区域: 背景
+                            </p>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <h6 style="margin: 5px 0;">轮廓检测 (Contour Detection)</h6>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 140px;">
+                                    <p style="font-size: 0.75em; color: #666; margin: 2px 0;">原图 + 轮廓</p>
+                                    <img id="debugRackContour" style="max-width: 100%; border: 1px solid #999;">
+                                </div>
+                                <div style="flex: 1; min-width: 140px;">
+                                    <p style="font-size: 0.75em; color: #666; margin: 2px 0;">二值化 + 轮廓</p>
+                                    <img id="debugRackBinaryContour" style="max-width: 100%; border: 1px solid #999; background: black;">
+                                </div>
+                            </div>
+                            <p style="font-size: 0.8em; color: #666; margin: 5px 0;">
+                                <span style="color: green;">绿框: 接受</span> | <span style="color: red;">红框: 拒绝</span>
+                            </p>
+                            <!-- 新增：Y轴过滤信息 -->
+                            <div id="debugRackYFilter" style="font-size: 0.75em; color: #555; margin: 5px 0; padding: 5px; background: #fff3cd; border-radius: 3px; display: none;">
+                                <strong>🎯 Y轴对齐过滤:</strong> <span id="debugRackYFilterDetails"></span>
+                            </div>
+                            <!-- 新增：面积过滤信息 -->
+                            <div id="debugRackAreaFilter" style="font-size: 0.75em; color: #555; margin: 5px 0; padding: 5px; background: #e7f3ff; border-radius: 3px; display: none;">
+                                <strong>📏 面积一致性过滤:</strong> <span id="debugRackAreaFilterDetails"></span>
+                            </div>
+                        </div>
                         <p style="margin-top: 5px;">
                             <strong>OCR 识别:</strong> 
                             <span id="debugRackText" style="font-family: monospace; font-size: 1.2em; background: #eee; padding: 2px 5px;"></span>
@@ -164,6 +196,7 @@
                             <strong>实际计算:</strong> 
                             <span id="debugFinalRackText" style="font-family: monospace; font-size: 1.2em; background: #e8f0fe; padding: 2px 5px; color: #007bff; font-weight: bold;"></span>
                         </p>
+                        <div id="debugRackDetails" style="margin-top: 10px; font-size: 0.75em; color: #555; font-family: monospace; background: #f8f9fa; padding: 8px; border-radius: 4px; display: none; max-height: 120px; overflow-y: auto;"></div>
                     </div>
                 </div>
 
@@ -175,7 +208,12 @@
 
                 <div style="margin-bottom: 20px;">
                     <h5>3.5. 字母识别详情 (OCR Details)</h5>
-                    <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">左: 原图 | 右: 二值化图 | 下: 识别结果</p>
+                    <div id="debugOcrStats" style="font-size: 0.8em; color: #666; margin-bottom: 5px; font-family: monospace; background: #fff3cd; padding: 5px; border-radius: 4px; display: none;"></div>
+                    <div id="debugOcrLogs" style="font-size: 0.75em; color: #333; margin-bottom: 10px; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; white-space: pre-line;"></div>
+                    <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">
+                        左上: 原图 | 右上: 二值化图 | 下方: 识别步骤 <br>
+                        <span style="color: green;">绿框: 保留</span> | <span style="color: red;">红框: 过滤</span>
+                    </p>
                     <img id="debugOcrTiles" style="max-width: 100%; border: 1px solid #999;">
                 </div>
 
@@ -250,8 +288,14 @@
             // Reset debug views
             document.getElementById('debugSegBoard').src = '';
             document.getElementById('debugSegRack').src = '';
+            document.getElementById('debugRackBinary').src = '';
+            document.getElementById('debugRackContour').src = '';
+            document.getElementById('debugRackBinaryContour').src = ''; // 新增重置
             document.getElementById('debugGridFit').src = '';
             document.getElementById('debugOcrTiles').src = ''; // Reset new image
+            document.getElementById('debugOcrStats').style.display = 'none';
+            document.getElementById('debugOcrLogs').style.display = 'none';
+            document.getElementById('debugRackDetails').style.display = 'none';
             document.getElementById('debugGridParams').style.display = 'none';
             document.getElementById('debugGridParams').innerHTML = '';
             document.getElementById('debugRackText').textContent = '';
@@ -314,8 +358,42 @@
                 const d = msg.data;
                 if (d.seg_board) document.getElementById('debugSegBoard').src = d.seg_board;
                 if (d.seg_rack) document.getElementById('debugSegRack').src = d.seg_rack;
-                if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
-                if (d.ocr_tiles_debug) document.getElementById('debugOcrTiles').src = d.ocr_tiles_debug; // Handle new image
+                if (d.rack_binary_map) document.getElementById('debugRackBinary').src = d.rack_binary_map;
+                if (d.rack_contour_debug) document.getElementById('debugRackContour').src = d.rack_contour_debug;
+                if (d.rack_binary_contour_debug) document.getElementById('debugRackBinaryContour').src = d.rack_binary_contour_debug;
+                
+                // 新增：Y轴过滤信息显示
+                if (d.rack_y_filter) {
+                    const yFilterDiv = document.getElementById('debugRackYFilter');
+                    const yFilterDetails = document.getElementById('debugRackYFilterDetails');
+                    yFilterDiv.style.display = 'block';
+                    yFilterDetails.textContent = d.rack_y_filter.reason;
+                }
+                
+                // 新增：面积过滤信息显示
+                if (d.rack_area_filter) {
+                    const areaFilterDiv = document.getElementById('debugRackAreaFilter');
+                    const areaFilterDetails = document.getElementById('debugRackAreaFilterDetails');
+                    areaFilterDiv.style.display = 'block';
+                    areaFilterDetails.textContent = d.rack_area_filter.reason;
+                }
+                
+                if (d.ocr_stats) {
+                    const stats = d.ocr_stats;
+                    const statsDiv = document.getElementById('debugOcrStats');
+                    statsDiv.style.display = 'block';
+                    statsDiv.innerHTML = 
+                        `📊 过滤统计: ${stats.total_contours} 总轮廓 → ` +
+                        `${stats.passed_size_filter} 通过尺寸过滤 → ` +
+                        `${stats.passed_distance_filter} 通过距离过滤 ` +
+                        `(拒绝: 尺寸${stats.rejected_contours}, 距离${stats.rejected_distance_filter})`;
+                }
+                
+                if (d.ocr_logs) {
+                    const logsDiv = document.getElementById('debugOcrLogs');
+                    logsDiv.style.display = 'block';
+                    logsDiv.textContent = d.ocr_logs.join('\n');
+                }
                 
                 if (d.grid_params) {
                     const p = d.grid_params;
@@ -328,6 +406,15 @@
                 
                 if (d.rack_str) document.getElementById('debugRackText').textContent = d.rack_str;
                 if (d.final_rack_str) document.getElementById('debugFinalRackText').textContent = d.final_rack_str;
+                
+                if (d.rack_debug) {
+                    const rackDetailsDiv = document.getElementById('debugRackDetails');
+                    rackDetailsDiv.style.display = 'block';
+                    const debugLines = d.rack_debug.map(item => 
+                        `Tile #${item.index}: '${item.raw || '_'}' → '${item.final}' (${item.process})`
+                    );
+                    rackDetailsDiv.textContent = debugLines.join('\n');
+                }
                 
                 if (d.logo_detection) {
                     const logoInfo = d.logo_detection;
