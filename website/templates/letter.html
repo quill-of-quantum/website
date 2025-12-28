@@ -169,6 +169,7 @@
 
                 <div style="margin-bottom: 20px;">
                     <h5>3. 网格拟合 (Grid Fit)</h5>
+                    <div id="debugGridParams" style="font-size: 0.85em; color: #666; margin-bottom: 5px; font-family: monospace; background: #f8f9fa; padding: 5px; border-radius: 4px; display: none;"></div>
                     <img id="debugGridFit" style="max-width: 100%; border: 1px solid #999;">
                 </div>
 
@@ -244,6 +245,8 @@
             document.getElementById('debugSegBoard').src = '';
             document.getElementById('debugSegRack').src = '';
             document.getElementById('debugGridFit').src = '';
+            document.getElementById('debugGridParams').style.display = 'none';
+            document.getElementById('debugGridParams').innerHTML = '';
             document.getElementById('debugRackText').textContent = '';
             document.getElementById('debugFinalRackText').textContent = '';
             document.getElementById('debugBoardMatrix').textContent = '';
@@ -305,6 +308,15 @@
                 if (d.seg_board) document.getElementById('debugSegBoard').src = d.seg_board;
                 if (d.seg_rack) document.getElementById('debugSegRack').src = d.seg_rack;
                 if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
+                
+                if (d.grid_params) {
+                    const p = d.grid_params;
+                    const gpDiv = document.getElementById('debugGridParams');
+                    gpDiv.style.display = 'block';
+                    gpDiv.innerHTML = 
+                        `<strong>Step:</strong> ${p.step_x.toFixed(1)} x ${p.step_y.toFixed(1)} <br>` + 
+                        `<strong>Origin:</strong> (${p.origin_x.toFixed(1)}, ${p.origin_y.toFixed(1)})`;
+                }
                 
                 if (d.rack_str) document.getElementById('debugRackText').textContent = d.rack_str;
                 if (d.final_rack_str) document.getElementById('debugFinalRackText').textContent = d.final_rack_str;

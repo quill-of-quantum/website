@@ -93,20 +93,24 @@ class GADDAG:
 class ScrabbleSolver:
     def __init__(self, gaddag):
         self.g = gaddag
-        self.board = [['' for _ in range(15)] for _ in range(15)]
+        self.board = []
         self.rack = []
         self.results = []
-        self.N = 15
-        self.cross_sets = [[set() for _ in range(15)] for _ in range(15)]
+        self.rows = 15
+        self.cols = 15
+        self.cross_sets = []
 
     def set_board(self, board_matrix):
         self.board = board_matrix
+        self.rows = len(board_matrix)
+        self.cols = len(board_matrix[0]) if self.rows > 0 else 0
+        self.cross_sets = [[set() for _ in range(self.cols)] for _ in range(self.rows)]
 
     def solve(self, rack_str):
         self.rack = list(rack_str.upper())
         self.results = []
         self._compute_cross_sets()
-        for row in range(self.N):
+        for row in range(self.rows):
             self._gen_row(row)
             
         unique = {}
@@ -119,24 +123,24 @@ class ScrabbleSolver:
 
     def _compute_cross_sets(self):
         full_set = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-        for r in range(self.N):
-            for c in range(self.N):
+        for r in range(self.rows):
+            for c in range(self.cols):
                 if self.board[r][c] == '':
                     self.cross_sets[r][c] = full_set.copy()
                 else:
                     self.cross_sets[r][c] = set()
         
-        for c in range(self.N):
-            for r in range(self.N):
+        for c in range(self.cols):
+            for r in range(self.rows):
                 if self.board[r][c] == '':
                     top = (r > 0 and self.board[r-1][c] != '')
-                    bottom = (r < self.N-1 and self.board[r+1][c] != '')
+                    bottom = (r < self.rows-1 and self.board[r+1][c] != '')
                     if top or bottom:
                         valid = set()
                         start = r
                         while start > 0 and self.board[start-1][c] != '': start -= 1
                         end = r
-                        while end < self.N-1 and self.board[end+1][c] != '': end += 1
+                        while end < self.rows-1 and self.board[end+1][c] != '': end += 1
                         
                         prefix = "".join([self.board[k][c] for k in range(start, r)])
                         suffix = "".join([self.board[k][c] for k in range(r+1, end+1)])
@@ -153,10 +157,10 @@ class ScrabbleSolver:
         for i, char in enumerate(word):
             c = col + i
             # 只检查原本是空格的位置（即我们新放牌的位置）
-            if 0 <= c < 15 and self.board[row][c] == '':
+            if 0 <= c < self.cols and self.board[row][c] == '':
                 # 检查上下是否有邻居
                 has_top = (row > 0 and self.board[row-1][c] != '')
-                has_bottom = (row < 14 and self.board[row+1][c] != '')
+                has_bottom = (row < self.rows-1 and self.board[row+1][c] != '')
                 if has_top or has_bottom:
                     cross_count += 1
         return cross_count
@@ -164,14 +168,14 @@ class ScrabbleSolver:
     def _gen_row(self, row):
         line = self.board[row]
         anchors = []
-        for i in range(self.N):
+        for i in range(self.cols):
             if line[i] == '':
-                if (i>0 and line[i-1]!='') or (i<14 and line[i+1]!='') or \
-                   (row>0 and self.board[row-1][i]!='') or (row<14 and self.board[row+1][i]!=''):
+                if (i>0 and line[i-1]!='') or (i<self.cols-1 and line[i+1]!='') or \
+                   (row>0 and self.board[row-1][i]!='') or (row<self.rows-1 and self.board[row+1][i]!=''):
                     anchors.append(i)
         
         if not anchors and all(c=='' for r_ in self.board for c in r_):
-            anchors.append(7)
+            anchors.append(self.cols // 2)
 
         for anchor in anchors:
             if anchor > 0 and line[anchor-1] != '': continue
@@ -220,9 +224,9 @@ class ScrabbleSolver:
 
         elif direction == "RIGHT":
             if node.is_end:
-                if (col >= 15 or self.board[row][col] == '') and tiles_placed > 0:
+                if (col >= self.cols or self.board[row][col] == '') and tiles_placed > 0:
                     start_col = col - len(word)
-                    if start_col >= 0 and col <= 15:
+                    if start_col >= 0 and col <= self.cols:
                          # 【核心】计算形成了多少个交叉词 (Cross Words)
                          cross_cnt = self._count_cross_words(word, row, start_col)
                          self.results.append({
@@ -232,7 +236,7 @@ class ScrabbleSolver:
                              'cross': cross_cnt # 存入结果
                          })
 
-            if col < 15:
+            if col < self.cols:
                 char_on_board = self.board[row][col]
                 if char_on_board != '':
                     if char_on_board in node.edges:
@@ -443,44 +447,100 @@ class LetterLeagueVision:
             if not char: char = 'O'
             elif char == '0': char = 'O'
             detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
-        matrix = [['' for _ in range(15)] for _ in range(15)]
-        est_step_x = w / 15.0
-        est_step_y = h / 15.0
-        grid_origin_x, grid_origin_y = est_step_x/2, est_step_y/2
-        true_step_x, true_step_y = est_step_x, est_step_y
-        if detected_raw:
-            xs = sorted([d['cx'] for d in detected_raw])
-            ys = sorted([d['cy'] for d in detected_raw])
-            gaps_x = [xs[i+1]-xs[i] for i in range(len(xs)-1)]
-            gaps_y = [ys[i+1]-ys[i] for i in range(len(ys)-1)]
-            valid_gaps_x = [g for g in gaps_x if 0.5*est_step_x < g < 1.5*est_step_x]
-            valid_gaps_y = [g for g in gaps_y if 0.5*est_step_y < g < 1.5*est_step_y]
-            if valid_gaps_x: true_step_x = np.median(valid_gaps_x)
-            if valid_gaps_y: true_step_y = np.median(valid_gaps_y)
-            print(f"📏 真实步长: {true_step_x:.1f} x {true_step_y:.1f}")
-            center_x, center_y = w/2, h/2
-            anchor_tile = min(detected_raw, key=lambda d: abs(d['cx']-center_x) + abs(d['cy']-center_y))
-            anchor_col_idx = int(anchor_tile['cx'] / est_step_x)
-            anchor_row_idx = int(anchor_tile['cy'] / est_step_y)
-            anchor_col_idx = max(0, min(14, anchor_col_idx))
-            anchor_row_idx = max(0, min(14, anchor_row_idx))
-            grid_origin_x = anchor_tile['cx'] - anchor_col_idx * true_step_x
-            grid_origin_y = anchor_tile['cy'] - anchor_row_idx * true_step_y
+        
+        # --- New Grid Fitting Logic ---
+        if not detected_raw:
+            return [['' for _ in range(15)] for _ in range(15)]
+
+        # 1. Calculate step size based on nearest neighbor distances
+        dists = []
+        for i, d1 in enumerate(detected_raw):
+            min_d = float('inf')
+            for j, d2 in enumerate(detected_raw):
+                if i == j: continue
+                d = math.sqrt((d1['cx']-d2['cx'])**2 + (d1['cy']-d2['cy'])**2)
+                if d < min_d: min_d = d
+            if min_d != float('inf'):
+                dists.append(min_d)
+        
+        if not dists:
+            step_size = w / 15.0
+        else:
+            dists.sort()
+            # Filter out very small distances (noise)
+            valid_dists = [d for d in dists if d > 10]
+            if valid_dists:
+                step_size = np.median(valid_dists)
+            else:
+                step_size = w / 15.0
+
+        true_step_x = step_size
+        true_step_y = step_size
+        print(f"📏 估算步长: {true_step_x:.1f}")
+
+        # 2. Determine Grid Bounds (Dynamic Size)
+        anchor = detected_raw[0]
+        min_c, max_c = 0, 0
+        min_r, max_r = 0, 0
+        
+        temp_coords = []
+        for d in detected_raw:
+            c_rel = int(round((d['cx'] - anchor['cx']) / true_step_x))
+            r_rel = int(round((d['cy'] - anchor['cy']) / true_step_y))
+            temp_coords.append((c_rel, r_rel, d))
+            min_c = min(min_c, c_rel)
+            max_c = max(max_c, c_rel)
+            min_r = min(min_r, r_rel)
+            max_r = max(max_r, r_rel)
             
-            debug_viz = img.copy() if VIS_SHOW_DEBUG else None
-            for d in detected_raw:
-                c_idx = int(round((d['cx'] - grid_origin_x) / true_step_x))
-                r_idx = int(round((d['cy'] - grid_origin_y) / true_step_y))
-                c_idx = max(0, min(14, c_idx))
-                r_idx = max(0, min(14, r_idx))
+        # Extend by 4 grids in all directions
+        pad = 4
+        start_c = min_c - pad
+        end_c = max_c + pad
+        start_r = min_r - pad
+        end_r = max_r + pad
+        
+        cols = end_c - start_c + 1
+        rows = end_r - start_r + 1
+        
+        grid_origin_x = anchor['cx'] + start_c * true_step_x
+        grid_origin_y = anchor['cy'] + start_r * true_step_y
+        
+        matrix = [['' for _ in range(cols)] for _ in range(rows)]
+        
+        debug_viz = img.copy() if VIS_SHOW_DEBUG else None
+        
+        if debug_viz is not None:
+            # Draw grid lines
+            for c in range(cols + 1):
+                x = int(grid_origin_x + c * true_step_x - true_step_x/2)
+                cv2.line(debug_viz, (x, 0), (x, h), (255, 255, 0), 1)
+            for r in range(rows + 1):
+                y = int(grid_origin_y + r * true_step_y - true_step_y/2)
+                cv2.line(debug_viz, (0, y), (w, y), (255, 255, 0), 1)
+
+        for (c_rel, r_rel, d) in temp_coords:
+            c_idx = c_rel - start_c
+            r_idx = r_rel - start_r
+            if 0 <= c_idx < cols and 0 <= r_idx < rows:
                 matrix[r_idx][c_idx] = d['char']
                 if debug_viz is not None:
                      cv2.rectangle(debug_viz, (int(d['cx'])-10, int(d['cy'])-10), (int(d['cx'])+10, int(d['cy'])+10), (0,255,0), 1)
-            if debug_viz is not None:
-                 # cv2.imwrite(f"{self.out_dir}/debug_grid_fit.png", debug_viz)
-                 self.debug_info['grid_fit'] = self._img_to_base64(debug_viz)
+                     cv2.putText(debug_viz, d['char'], (int(d['cx'])-5, int(d['cy'])+5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
 
-        self.grid_params = (grid_origin_x, grid_origin_y, true_step_x, true_step_y)
+        if debug_viz is not None:
+             # cv2.imwrite(f"{self.out_dir}/debug_grid_fit.png", debug_viz)
+             self.debug_info['grid_fit'] = self._img_to_base64(debug_viz)
+             self.debug_info['grid_params'] = {
+                 'step_x': float(true_step_x),
+                 'step_y': float(true_step_y),
+                 'origin_x': float(grid_origin_x),
+                 'origin_y': float(grid_origin_y),
+                 'rows': rows,
+                 'cols': cols
+             }
+
+        self.grid_params = (grid_origin_x, grid_origin_y, true_step_x, true_step_y, rows, cols)
         return matrix
 
     # 🎨 可视化 (增加多重得分类型支持)
@@ -489,7 +549,7 @@ class LetterLeagueVision:
             print("⚠️ 无法绘制，缺少网格参数或图片")
             return None
 
-        ox, oy, sx, sy = self.grid_params
+        ox, oy, sx, sy, rows, cols = self.grid_params
         img = self.seg_board_img.copy()
         h_img, w_img = img.shape[:2]
 
@@ -532,7 +592,7 @@ class LetterLeagueVision:
             
             for i, char in enumerate(word):
                 r, c = r_start, c_start + i
-                if 0 <= r < 15 and 0 <= c < 15 and board_matrix[r][c] == '':
+                if 0 <= r < rows and 0 <= c < cols and board_matrix[r][c] == '':
                     cx = ox + c * sx
                     cy = oy + r * sy
                     dx, dy = style['offset']
@@ -565,8 +625,8 @@ class LetterLeagueVision:
         
         x1 = int(ox - pad_x)
         y1 = int(oy - pad_y)
-        x2 = int(ox + 15 * sx + pad_x)
-        y2 = int(oy + 15 * sy + pad_y)
+        x2 = int(ox + cols * sx + pad_x)
+        y2 = int(oy + rows * sy + pad_y)
         
         # Clamp to image boundaries
         x1 = max(0, x1)
@@ -680,9 +740,11 @@ def process_letter_image():
                 board_matrix = vision.ocr_board(board_img)
             
             grid_fit_b64 = vision.debug_info.get('grid_fit')
+            grid_params = vision.debug_info.get('grid_params')
             yield json.dumps({"type": "debug", "data": {
                 "ocr_board_matrix": board_matrix,
-                "grid_fit": grid_fit_b64
+                "grid_fit": grid_fit_b64,
+                "grid_params": grid_params
             }}) + "\n"
 
             # 4. Solving
