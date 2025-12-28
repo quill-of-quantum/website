@@ -340,7 +340,7 @@ class LetterLeagueVision:
         game_height = int(game_width * 0.5)
         game_bottom = min(h_img, game_top + game_height)
         game_w = game_width
-        game_h = game_bottom - game_top
+        game_h = game_height
         def safe_crop(x0, y0, w0, h0):
             x = int(game_left + x0 * game_w)
             y = int(game_top  + y0 * game_h)
@@ -408,10 +408,13 @@ class LetterLeagueVision:
             x, y, cw, ch = cv2.boundingRect(c)
             if 10 < cw < 150 and 10 < ch < 150 and 0.2 < cw/float(ch) < 2.0:
                 raw_tiles.append((x, y, cw, ch))
+        
         final_tiles = []
         if len(raw_tiles) > 1:
-            avg_s = sum([max(t[2], t[3]) for t in raw_tiles]) / len(raw_tiles)
-            thresh = avg_s * 2.5
+            # 1. Calculate centers and min distances for all raw tiles
+            tile_data = []
+            all_min_dists = []
+            
             for i, t1 in enumerate(raw_tiles):
                 c1 = (t1[0]+t1[2]//2, t1[1]+t1[3]//2)
                 min_d = float('inf')
@@ -420,9 +423,32 @@ class LetterLeagueVision:
                         c2 = (t2[0]+t2[2]//2, t2[1]+t2[3]//2)
                         d = math.sqrt((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2)
                         if d < min_d: min_d = d
-                if min_d < thresh: final_tiles.append(t1)
-        else: final_tiles = raw_tiles
+                
+                tile_data.append({'tile': t1, 'min_d': min_d})
+                if min_d != float('inf'):
+                    all_min_dists.append(min_d)
+            
+            # 2. Estimate step size (median of nearest neighbor distances)
+            est_step = w / 15.0 # Default fallback
+            if all_min_dists:
+                # Filter out very small distances (overlapping noise)
+                valid_dists = [d for d in all_min_dists if d > 10] 
+                if valid_dists:
+                    est_step = np.median(valid_dists)
+            
+            # 3. Filter based on step size
+            thresh = est_step * 2.5
+            print(f"🔍 过滤孤立块: Est Step={est_step:.1f}, Thresh={thresh:.1f}")
+            
+            for item in tile_data:
+                if item['min_d'] < thresh:
+                    final_tiles.append(item['tile'])
+        else: 
+            final_tiles = raw_tiles
+        
         detected_raw = []
+        debug_tiles_data = [] # Store debug info for each tile
+
         for (x, y, cw, ch) in final_tiles:
             cx, cy = x + cw//2, y + ch//2
             size = max(cw, ch) + 5
@@ -431,23 +457,79 @@ class LetterLeagueVision:
             x1, x2 = max(0, cx-half), min(w, cx+half)
             roi = img[y1:y2, x1:x2]
             if roi.size == 0: continue
+            
+            # Debug: Keep original ROI
+            roi_orig = roi.copy()
+
             roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             roi_thin = cv2.erode(roi_bin, np.ones((2,2), np.uint8), iterations=1)
             roi_pad = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
+            
             char = ""
+            raw_ocr = ""
             try:
                 res = self.reader.readtext(roi_pad, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                 if res:
                     raw = res[0].upper()
+                    raw_ocr = raw
                     if raw in self.correction_map: char = self.correction_map[raw]
                     elif len(raw)>1 and raw[0].isalpha(): char = raw[0]
                     elif raw.isalpha(): char = raw
             except: pass
+            
             if not char: char = 'O'
             elif char == '0': char = 'O'
+            
             detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
+            
+            # Collect debug data
+            debug_tiles_data.append({
+                'orig': roi_orig,
+                'proc': roi_pad,
+                'raw': raw_ocr,
+                'final': char
+            })
         
+        # --- Generate Debug Image for OCR Tiles ---
+        if VIS_SHOW_DEBUG and debug_tiles_data:
+            cols_per_row = 8
+            rows_needed = math.ceil(len(debug_tiles_data) / cols_per_row)
+            cell_w = 120
+            cell_h = 80
+            viz_w = cols_per_row * cell_w
+            viz_h = rows_needed * cell_h
+            
+            viz_img = np.ones((viz_h, viz_w, 3), dtype=np.uint8) * 240 # Light gray bg
+            
+            for idx, item in enumerate(debug_tiles_data):
+                r = idx // cols_per_row
+                c = idx % cols_per_row
+                x_base = c * cell_w
+                y_base = r * cell_h
+                
+                # Draw Original
+                try:
+                    orig_resized = cv2.resize(item['orig'], (40, 40))
+                    viz_img[y_base+5:y_base+45, x_base+5:x_base+45] = orig_resized
+                except: pass
+                
+                # Draw Processed
+                try:
+                    proc_resized = cv2.resize(item['proc'], (40, 40))
+                    proc_bgr = cv2.cvtColor(proc_resized, cv2.COLOR_GRAY2BGR)
+                    viz_img[y_base+5:y_base+45, x_base+50:x_base+90] = proc_bgr
+                except: pass
+                
+                # Draw Text
+                text_raw = f"Raw: {item['raw'] if item['raw'] else '_'}"
+                text_fin = f"Fin: {item['final']}"
+                cv2.putText(viz_img, text_raw, (x_base+5, y_base+60), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (50, 50, 50), 1)
+                cv2.putText(viz_img, text_fin, (x_base+5, y_base+75), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                cv2.rectangle(viz_img, (x_base, y_base), (x_base+cell_w, y_base+cell_h), (200, 200, 200), 1)
+
+            self.debug_info['ocr_tiles_debug'] = self._img_to_base64(viz_img)
+
         # --- New Grid Fitting Logic ---
         if not detected_raw:
             return [['' for _ in range(15)] for _ in range(15)]
@@ -740,10 +822,13 @@ def process_letter_image():
                 board_matrix = vision.ocr_board(board_img)
             
             grid_fit_b64 = vision.debug_info.get('grid_fit')
+            ocr_tiles_debug_b64 = vision.debug_info.get('ocr_tiles_debug') # Get new debug img
             grid_params = vision.debug_info.get('grid_params')
+            
             yield json.dumps({"type": "debug", "data": {
                 "ocr_board_matrix": board_matrix,
                 "grid_fit": grid_fit_b64,
+                "ocr_tiles_debug": ocr_tiles_debug_b64, # Send it
                 "grid_params": grid_params
             }}) + "\n"
 

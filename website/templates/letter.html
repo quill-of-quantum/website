@@ -173,6 +173,12 @@
                     <img id="debugGridFit" style="max-width: 100%; border: 1px solid #999;">
                 </div>
 
+                <div style="margin-bottom: 20px;">
+                    <h5>3.5. 字母识别详情 (OCR Details)</h5>
+                    <p style="font-size: 0.8em; color: #666; margin-bottom: 5px;">左: 原图 | 右: 二值化图 | 下: 识别结果</p>
+                    <img id="debugOcrTiles" style="max-width: 100%; border: 1px solid #999;">
+                </div>
+
                 <div>
                     <h5>4. 识别到的棋盘矩阵</h5>
                     <pre id="debugBoardMatrix" style="background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; overflow-x: auto;"></pre>
@@ -245,6 +251,7 @@
             document.getElementById('debugSegBoard').src = '';
             document.getElementById('debugSegRack').src = '';
             document.getElementById('debugGridFit').src = '';
+            document.getElementById('debugOcrTiles').src = ''; // Reset new image
             document.getElementById('debugGridParams').style.display = 'none';
             document.getElementById('debugGridParams').innerHTML = '';
             document.getElementById('debugRackText').textContent = '';
@@ -308,6 +315,7 @@
                 if (d.seg_board) document.getElementById('debugSegBoard').src = d.seg_board;
                 if (d.seg_rack) document.getElementById('debugSegRack').src = d.seg_rack;
                 if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
+                if (d.ocr_tiles_debug) document.getElementById('debugOcrTiles').src = d.ocr_tiles_debug; // Handle new image
                 
                 if (d.grid_params) {
                     const p = d.grid_params;
