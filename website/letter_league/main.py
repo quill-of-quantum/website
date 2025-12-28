@@ -12,11 +12,13 @@ from collections import defaultdict
 
 INPUT_IMAGE = "./test.png"
 LOGO_IMAGE  = "./test_logo.png"
-DICT_FILE   = "./twl06_google10000.txt"
+DICT_FILE   = "./twl06_ENABLE.txt"
 OUTPUT_DIR  = "./output"
 
-REC_TOP_N   = 3    # 推荐前几名
-REC_SHORT_N = 3    # 推荐短词前几名
+REC_TOP_N   = 3    # 1. 最佳长词推荐数
+REC_SHORT_N = 3    # 2. 短词防守推荐数
+REC_MULTI_N = 3    # 3. 【新增】多重组词推荐数 (一箭多雕)
+
 MIN_DIST    = 3    # 走法间距
 SHORT_LEN   = 4    # 短词定义
 
@@ -36,7 +38,6 @@ class GADDAG:
     def __init__(self, dict_path=None):
         self.root = GADDAGNode()
         self.delimiter = '>'
-        
         words = []
         if dict_path and os.path.exists(dict_path):
             print(f"📖 正在加载字典: {dict_path} ...")
@@ -45,9 +46,8 @@ class GADDAG:
                     w = line.strip().upper()
                     if len(w) > 1: words.append(w)
         else:
-            print("⚠️ 使用内置微型字典 (建议下载 twl06.txt) ...")
+            print("⚠️ 使用内置微型字典...")
             words = ["APPLE", "BANANA", "CAT", "DOG", "HELLO", "WORLD", "TEST", "LETTER", "LEAGUE", "CODE", "DATA", "GAME", "BOARD", "RACK", "FROM", "FORM", "FA"]
-        
         for w in words:
             self.add_word(w)
             
@@ -69,7 +69,6 @@ class GADDAG:
         node.is_end = True
     
     def contains(self, word):
-        # 验证单词是否存在 (全大写)
         path = word.upper()[::-1] + self.delimiter
         node = self.root
         for c in path:
@@ -78,7 +77,7 @@ class GADDAG:
         return node.is_end
 
 # ==============================================================================
-# 🧠 第二部分：求解器 (修复万能牌 & 强制出牌逻辑)
+# 🧠 第二部分：求解器 (增加交叉词计数逻辑)
 # ==============================================================================
 
 class ScrabbleSolver:
@@ -96,21 +95,16 @@ class ScrabbleSolver:
     def solve(self, rack_str):
         self.rack = list(rack_str.upper())
         self.results = []
-        
-        # 1. 计算 Cross-Sets
         self._compute_cross_sets()
-        
-        # 2. 搜索
         for row in range(self.N):
             self._gen_row(row)
             
         unique = {}
         for res in self.results:
-            # key 包括单词、位置
             key = f"{res['word']}_{res['row']}_{res['col']}"
             if key not in unique: unique[key] = res
         
-        # 按长度排序
+        # 默认按长度排序，但保留了 'cross' 字段供后续筛选
         return sorted(unique.values(), key=lambda x: len(x['word']), reverse=True)
 
     def _compute_cross_sets(self):
@@ -127,7 +121,6 @@ class ScrabbleSolver:
                 if self.board[r][c] == '':
                     top = (r > 0 and self.board[r-1][c] != '')
                     bottom = (r < self.N-1 and self.board[r+1][c] != '')
-                    
                     if top or bottom:
                         valid = set()
                         start = r
@@ -143,6 +136,20 @@ class ScrabbleSolver:
                             if self.g.contains(candidate):
                                 valid.add(char)
                         self.cross_sets[r][c] = valid
+
+    # 【新增】辅助函数：计算放置这个词会形成几个额外的纵向单词
+    def _count_cross_words(self, word, row, col):
+        cross_count = 0
+        for i, char in enumerate(word):
+            c = col + i
+            # 只检查原本是空格的位置（即我们新放牌的位置）
+            if 0 <= c < 15 and self.board[row][c] == '':
+                # 检查上下是否有邻居
+                has_top = (row > 0 and self.board[row-1][c] != '')
+                has_bottom = (row < 14 and self.board[row+1][c] != '')
+                if has_top or has_bottom:
+                    cross_count += 1
+        return cross_count
 
     def _gen_row(self, row):
         line = self.board[row]
@@ -161,35 +168,21 @@ class ScrabbleSolver:
             
             allowed = self.cross_sets[row][anchor]
             unique_rack = set(self.rack)
-            
-            # 候选集：Rack里的字 OR (如果有问号 ? 则允许所有 CrossSet 里的字)
-            if '?' in unique_rack:
-                candidates = allowed
-            else:
-                candidates = allowed.intersection(unique_rack)
+            candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
 
             for char in candidates:
                 if char in self.g.root.edges:
-                    # 决定消耗什么：优先消耗实名牌，没有则消耗 ?
                     to_remove = char if char in self.rack else '?'
-                    
                     if to_remove in self.rack:
                         self.rack.remove(to_remove)
-                        
-                        # 核心点：如果是问号变的，记录为小写字母，方便显示
                         display_char = char.lower() if to_remove == '?' else char
-                        
                         new_node = self.g.root.edges[char]
-                        # tiles_placed = 1 (因为我们在 anchor 放了一张牌)
                         self._gen(row, anchor-1, display_char, new_node, anchor, "LEFT", tiles_placed=1)
-                        
                         if self.g.delimiter in new_node.edges:
                             right_node = new_node.edges[self.g.delimiter]
                             self._gen(row, anchor+1, display_char, right_node, anchor, "RIGHT", tiles_placed=1)
-                        
                         self.rack.append(to_remove)
 
-    # 增加 tiles_placed 参数，用于统计使用了几张手牌
     def _gen(self, row, col, word, node, anchor_pos, direction, tiles_placed):
         if direction == "LEFT":
             if self.g.delimiter in node.edges:
@@ -199,11 +192,9 @@ class ScrabbleSolver:
             if col >= 0:
                 char_on_board = self.board[row][col]
                 if char_on_board != '': 
-                    # 板上有字：不消耗手牌
                     if char_on_board in node.edges:
                         self._gen(row, col - 1, char_on_board + word, node.edges[char_on_board], anchor_pos, "LEFT", tiles_placed)
                 else: 
-                    # 板上无字：尝试放牌
                     allowed = self.cross_sets[row][col]
                     unique_rack = set(self.rack)
                     candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
@@ -219,11 +210,17 @@ class ScrabbleSolver:
 
         elif direction == "RIGHT":
             if node.is_end:
-                # 只有当 (到达边界 OR 下一格为空) 且 (消耗了至少1张手牌) 时，才算有效
                 if (col >= 15 or self.board[row][col] == '') and tiles_placed > 0:
                     start_col = col - len(word)
                     if start_col >= 0 and col <= 15:
-                         self.results.append({'word': word, 'row': row, 'col': start_col})
+                         # 【核心】计算形成了多少个交叉词 (Cross Words)
+                         cross_cnt = self._count_cross_words(word, row, start_col)
+                         self.results.append({
+                             'word': word, 
+                             'row': row, 
+                             'col': start_col,
+                             'cross': cross_cnt # 存入结果
+                         })
 
             if col < 15:
                 char_on_board = self.board[row][col]
@@ -245,7 +242,7 @@ class ScrabbleSolver:
                                 self.rack.append(to_remove)
 
 # ==============================================================================
-# 👁️ 第三部分：可视化 (支持高亮万能牌)
+# 👁️ 第三部分：可视化 (颜色分组)
 # ==============================================================================
 
 class LetterLeagueVision:
@@ -441,6 +438,7 @@ class LetterLeagueVision:
         self.grid_params = (grid_origin_x, grid_origin_y, true_step_x, true_step_y)
         return matrix
 
+    # 🎨 可视化 (增加多重得分类型支持)
     def visualize_batch(self, moves_list, board_matrix):
         if not self.grid_params or self.seg_board_img is None:
             print("⚠️ 无法绘制，缺少网格参数或图片")
@@ -449,15 +447,40 @@ class LetterLeagueVision:
         ox, oy, sx, sy = self.grid_params
         img = self.seg_board_img.copy()
 
-        styles = [
-            {'offset': (-0.2, 0.2),  'color': (255, 100, 0),   'name': 'BL (1st)'}, # Blue
-            {'offset': (-0.2, -0.2), 'color': (0, 165, 255),   'name': 'TL (2nd)'}, # Orange
-            {'offset': (0.2, -0.2),  'color': (0, 200, 0),     'name': 'TR (3rd)'}, # Green
-            {'offset': (0.2, 0.2),   'color': (128, 0, 128),   'name': 'BR (4th)'}  # Purple
+        # 颜色配置: BGR
+        # 1. Best Moves (Long/High Score) -> Blue/Green tones
+        # 2. Short Moves -> Purple/Dark tones
+        # 3. Multi-Word Moves -> Pink/Cyan tones (Bright!)
+        
+        # 这里的 moves_list 已经是混合了三种类型的列表
+        # 我们根据 tag 来区分颜色 (需要在 moves 字典里加 tag)
+        # 如果没有 tag，就 fallback 到原来的四角轮换
+        
+        default_styles = [
+            {'offset': (-0.2, 0.2),  'color': (255, 100, 0),   'name': 'BL'},
+            {'offset': (-0.2, -0.2), 'color': (0, 165, 255),   'name': 'TL'},
+            {'offset': (0.2, -0.2),  'color': (0, 200, 0),     'name': 'TR'},
+            {'offset': (0.2, 0.2),   'color': (128, 0, 128),   'name': 'BR'}
         ]
+        
+        # 特定类型的颜色重写 (覆盖 style['color'])
+        type_colors = {
+            'best': (255, 100, 0),    # Blue
+            'short': (128, 0, 128),   # Purple
+            'multi': (180, 105, 255)  # Hot Pink (BGR) -> 醒目!
+        }
 
-        for rank, move in enumerate(moves_list):
-            style = styles[rank % 4]
+        # 计数器，用于轮换位置
+        pos_counter = 0
+
+        for move in moves_list:
+            style = default_styles[pos_counter % 4]
+            pos_counter += 1
+            
+            # 确定颜色
+            m_type = move.get('type', 'best')
+            bg_color = type_colors.get(m_type, style['color'])
+            
             word = move['word']
             r_start, c_start = move['row'], move['col']
             
@@ -466,7 +489,6 @@ class LetterLeagueVision:
                 if 0 <= r < 15 and 0 <= c < 15 and board_matrix[r][c] == '':
                     cx = ox + c * sx
                     cy = oy + r * sy
-                    
                     dx, dy = style['offset']
                     px = int(cx + dx * sx)
                     py = int(cy + dy * sy)
@@ -475,13 +497,11 @@ class LetterLeagueVision:
                     x1, y1 = px - box_size//2, py - box_size//2
                     x2, y2 = x1 + box_size, y1 + box_size
                     
-                    # 背景颜色：始终使用当前排名的颜色
-                    bg_color = style['color']
-                    
+                    # 背景
                     cv2.rectangle(img, (x1, y1), (x2, y2), bg_color, -1)
                     cv2.rectangle(img, (x1, y1), (x2, y2), (255, 255, 255), 1)
                     
-                    # 绘制字母 (转回大写显示)
+                    # 文字
                     font_scale = 0.5
                     thickness = 1
                     display_char = char.upper()
@@ -489,13 +509,13 @@ class LetterLeagueVision:
                     tx = px - tw // 2
                     ty = py + th // 2
                     
-                    # 万能牌用黑色字，普通牌用白色字
+                    # 万能牌黑字，普通牌白字
                     text_color = (0, 0, 0) if char.islower() else (255, 255, 255)
                     cv2.putText(img, display_char, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, thickness)
 
         out_path = f"{self.out_dir}/board_result_final.png"
         cv2.imwrite(out_path, img)
-        print(f"✨ 结果已保存: {out_path} (BL=Rank1, TL=Rank2, TR=Rank3, BR=Rank4)")
+        print(f"✨ 结果已保存: {out_path}")
 
 # ==============================================================================
 # 🚀 辅助函数
@@ -541,25 +561,42 @@ if __name__ == "__main__":
         print(f"\n✅ 计算完成! 耗时 {time.time()-start_t:.3f}s, 找到 {len(moves)} 种走法")
         
         if moves:
-            # 1. 筛选 Top N
-            diverse_top = get_diverse_moves(moves, top_n=REC_TOP_N, min_dist=MIN_DIST)
-            print(f"\n🏆 Top {REC_TOP_N} 最佳推荐:")
-            for i, m in enumerate(diverse_top):
-                # 如果包含小写字母，说明用了万能牌，打印提示
-                wildcard_info = " (含万能牌)" if any(c.islower() for c in m['word']) else ""
-                print(f"  {i+1}. {m['word'].upper()}{wildcard_info} (Row {m['row']}, Col {m['col']}, Len {len(m['word'])})")
+            final_viz_list = []
 
-            # 2. 筛选 短词 Top N
+            # 1. 🏆 Top Best
+            diverse_top = get_diverse_moves(moves, top_n=REC_TOP_N, min_dist=MIN_DIST)
+            print(f"\n🏆 Top {REC_TOP_N} 最佳推荐 (蓝色):")
+            for i, m in enumerate(diverse_top):
+                m['type'] = 'best' # 标记类型
+                info = "(含万能牌)" if any(c.islower() for c in m['word']) else ""
+                print(f"  {i+1}. {m['word'].upper()}{info} (Pos: {m['row']},{m['col']} | Cross: {m['cross']})")
+                final_viz_list.append(m)
+
+            # 2. 🐣 Top Short
             short_moves = [m for m in moves if len(m['word']) <= SHORT_LEN]
             diverse_short = get_diverse_moves(short_moves, top_n=REC_SHORT_N, min_dist=MIN_DIST)
-            
-            print(f"\n🐣 Top {REC_SHORT_N} 短走法 (<= {SHORT_LEN}):")
+            print(f"\n🐣 Top {REC_SHORT_N} 短走法 (紫色):")
             for i, m in enumerate(diverse_short):
-                 print(f"  {i+1}. {m['word'].upper()} (Row {m['row']}, Col {m['col']})")
+                m['type'] = 'short'
+                print(f"  {i+1}. {m['word'].upper()} (Pos: {m['row']},{m['col']})")
+                final_viz_list.append(m)
 
-            # 3. 批量可视化
-            final_visualization_list = diverse_top + diverse_short
-            vision.visualize_batch(final_visualization_list, board)
+            # 3. 🔱 Top Multi-Word (一箭多雕)
+            # 筛选标准：cross > 0，且按 cross 倒序排
+            multi_moves = [m for m in moves if m['cross'] > 0]
+            multi_moves.sort(key=lambda x: x['cross'], reverse=True)
+            diverse_multi = get_diverse_moves(multi_moves, top_n=REC_MULTI_N, min_dist=MIN_DIST)
+            
+            print(f"\n🔱 Top {REC_MULTI_N} 一箭多雕 (粉色):")
+            for i, m in enumerate(diverse_multi):
+                m['type'] = 'multi'
+                print(f"  {i+1}. {m['word'].upper()} (Cross Words: {m['cross']})")
+                # 只有当它不在上面的列表里时才加进去，避免重复画
+                if m not in final_viz_list:
+                    final_viz_list.append(m)
+
+            # 4. 可视化
+            vision.visualize_batch(final_viz_list, board)
         else:
             print("❌ 未找到任何合法走法")
             
