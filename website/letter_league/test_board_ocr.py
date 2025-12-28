@@ -3,6 +3,7 @@ import numpy as np
 import easyocr
 import os
 import shutil
+import math
 
 # 1. 初始化
 reader = easyocr.Reader(['en'], gpu=False, verbose=False)
@@ -15,138 +16,142 @@ if not os.path.exists(img_path):
 img = cv2.imread(img_path)
 h, w, _ = img.shape
 
-output_dir = "./output/board_final_opt"
+# 准备输出目录
+output_dir = "./output/board_final_v3"
 if os.path.exists(output_dir):
     shutil.rmtree(output_dir)
 os.makedirs(output_dir)
 
 # ==========================================================
-# 步骤 1: 定位 (还是用最稳的"黑字提取法")
+# 步骤 1: 定位 (Dark Ink Extraction)
 # ==========================================================
+print("🚀 1. 开始定位黑色图块...")
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-# 提取黑色墨水 (背景是白的，字是黑的 -> 反转后字是白的)
 _, binary_finder = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
-# 稍微连通一下，保证能找到完整的字块
 kernel_finder = np.ones((3,3), np.uint8)
 binary_finder = cv2.dilate(binary_finder, kernel_finder, iterations=2)
 
 cnts, _ = cv2.findContours(binary_finder, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-print(f"🔍 定位到 {len(cnts)} 个目标")
 
-final_tiles = []
+raw_tiles = []
 for c in cnts:
     x, y, cw, ch = cv2.boundingRect(c)
-    # 尺寸筛选
+    # 基础过滤
     if not (10 < cw < 150 and 10 < ch < 150): continue
-    # 形状筛选
     ratio = cw / float(ch)
     if not (0.2 < ratio < 2.0): continue
-    final_tiles.append((x, y, cw, ch))
+    raw_tiles.append((x, y, cw, ch))
+
+print(f"🔍 初步找到 {len(raw_tiles)} 个目标")
+
+# ==========================================================
+# 步骤 2: 剔除离群点 (Outlier Removal) - 新增核心逻辑
+# ==========================================================
+final_tiles = []
+debug_img_outlier = img.copy()
+
+if len(raw_tiles) > 1:
+    # 1. 计算平均方块大小 (用作距离单位)
+    avg_size = sum([max(t[2], t[3]) for t in raw_tiles]) / len(raw_tiles)
+    
+    # 设定阈值：如果最近的邻居距离超过 2.5 个格子宽，认为是噪点
+    # (Scrabble 允许对角线相邻吗？通常不允许，但视觉上2.5倍足够包容对角线了)
+    distance_threshold = avg_size * 2.5
+    
+    print(f"📏 平均方块大小: {avg_size:.1f}px, 连通阈值: {distance_threshold:.1f}px")
+
+    for i, t1 in enumerate(raw_tiles):
+        c1_x = t1[0] + t1[2] // 2
+        c1_y = t1[1] + t1[3] // 2
+        
+        # 寻找最近邻居的距离
+        min_dist = float('inf')
+        
+        for j, t2 in enumerate(raw_tiles):
+            if i == j: continue # 不和自己比
+            
+            c2_x = t2[0] + t2[2] // 2
+            c2_y = t2[1] + t2[3] // 2
+            
+            # 欧几里得距离
+            dist = math.sqrt((c1_x - c2_x)**2 + (c1_y - c2_y)**2)
+            if dist < min_dist:
+                min_dist = dist
+        
+        # 判定
+        if min_dist < distance_threshold:
+            final_tiles.append(t1)
+        else:
+            print(f"🗑️ 剔除离群点 @ ({t1[0]},{t1[1]}), 最近邻居距离: {min_dist:.1f}")
+            # 画蓝色叉叉表示被剔除
+            cv2.drawMarker(debug_img_outlier, (c1_x, c1_y), (255, 0, 0), cv2.MARKER_CROSS, 20, 2)
+else:
+    # 如果一共就1个或0个，没法算邻居，直接保留 (或者直接认为空)
+    final_tiles = raw_tiles
 
 # 排序
 final_tiles = sorted(final_tiles, key=lambda b: (b[1], b[0]))
-print(f"✅ 锁定 {len(final_tiles)} 个字母块")
+print(f"✅ 剔除后剩余 {len(final_tiles)} 个有效字母块")
 
 # ==========================================================
-# 步骤 2: 增强识别 (瘦身 + 原色)
+# 步骤 3: 识别 + 排除法兜底 (Recognition)
 # ==========================================================
 results = []
 debug_img = img.copy()
 
-# 易混淆字符修正表 (针对粗体字)
-correction_map = {
-    '0': 'O', '8': 'B', '6': 'G', '5': 'S', '1': 'I', '2': 'Z'
-}
+# 把刚才剔除的标记也画在最终图上，方便调试
+for t in raw_tiles:
+    if t not in final_tiles:
+        cx, cy = t[0]+t[2]//2, t[1]+t[3]//2
+        cv2.drawMarker(debug_img, (cx, cy), (255, 0, 0), cv2.MARKER_CROSS, 20, 2)
+
+correction_map = {'0': 'O', '8': 'B', '6': 'G', '5': 'S', '1': 'I', '2': 'Z'}
 
 for i, (x, y, cw, ch) in enumerate(final_tiles):
-    # 1. 切出包含字母的方块 (从原图切，保留颜色细节)
-    center_x = x + cw // 2
-    center_y = y + ch // 2
-    size = max(cw, ch) + 16 # 多留点边距
+    # 切片
+    center_x, center_y = x + cw // 2, y + ch // 2
+    size = max(cw, ch) + 5
     half = size // 2
+    y1, y2 = max(0, center_y - half), min(h, center_y + half)
+    x1, x2 = max(0, center_x - half), min(w, center_x + half)
     
-    y1 = max(0, center_y - half)
-    y2 = min(h, center_y + half)
-    x1 = max(0, center_x - half)
-    x2 = min(w, center_x + half)
+    roi = img[y1:y2, x1:x2]
+    roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     
-    roi_color = img[y1:y2, x1:x2]
-    roi_gray = cv2.cvtColor(roi_color, cv2.COLOR_BGR2GRAY)
-    
-    # ---------------------------------------------------------
-    # 方案 A: "瘦身"二值化 (Eroded Binary) - 专治 B 和 O
-    # ---------------------------------------------------------
-    # 先做二值化 (黑底白字)
+    # 二值化 + 瘦身 (针对 B/O)
     _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # 【关键操作】腐蚀 (Erode)
-    # 就像拿砂纸把字的边缘磨掉一层，让中间的洞变大
-    kernel_thin = np.ones((2,2), np.uint8) # 2x2 的核，轻微腐蚀
+    kernel_thin = np.ones((2,2), np.uint8)
     roi_thin = cv2.erode(roi_binary, kernel_thin, iterations=1)
+    roi_padded = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
     
-    # 加边框防止贴边
-    roi_thin = cv2.copyMakeBorder(roi_thin, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
-    cv2.imwrite(f"{output_dir}/tile_{i}_thin.png", roi_thin)
-
-    # ---------------------------------------------------------
-    # 方案 B: 高清反转灰度 (Inverted Grayscale) - 保留细节
-    # ---------------------------------------------------------
-    # 很多时候二值化会把细节搞丢，灰度图保留了抗锯齿信息
-    # EasyOCR 喜欢白底黑字，或者黑底白字，这里我们反转一下让字变亮
-    roi_inverted_gray = cv2.bitwise_not(roi_gray)
-    
-    # 稍微拉高对比度 (直方图均衡化)
-    roi_inverted_gray = cv2.equalizeHist(roi_inverted_gray)
-    
-    # 加边框
-    roi_inverted_gray = cv2.copyMakeBorder(roi_inverted_gray, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(0,0,0))
-    cv2.imwrite(f"{output_dir}/tile_{i}_gray.png", roi_inverted_gray)
-    
-    # ---------------------------------------------------------
-    # 3. 混合识别逻辑
-    # ---------------------------------------------------------
+    # 识别
     char = ""
-    # 允许数字，方便我们把 8 救回来变成 B
     safe_allowlist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
     
     try:
-        # 优先尝试【瘦身版】，因为它对 B/O 最有效
-        res = reader.readtext(roi_thin, detail=0, allowlist=safe_allowlist)
-        
-        # 如果瘦身版没认出来，或者置信度低，尝试【灰度版】
-        if not res:
-            res = reader.readtext(roi_inverted_gray, detail=0, allowlist=safe_allowlist)
-            
+        res = reader.readtext(roi_padded, detail=0, allowlist=safe_allowlist)
         if res:
-            raw_char = res[0].upper()
-            
-            # --- 字符修正 (Mapping) ---
-            # 如果识别出 8，大概率是 B；如果识别出 0，大概率是 O
-            if raw_char in correction_map:
-                char = correction_map[raw_char]
-            # 过滤掉多余字符 (比如 "D2" -> "D")
-            elif len(raw_char) > 1 and raw_char[0].isalpha():
-                char = raw_char[0]
-            elif raw_char.isalpha():
-                char = raw_char
-                
-    except Exception as e:
-        print(f"Error tile {i}: {e}")
+            raw = res[0].upper()
+            if raw in correction_map: char = correction_map[raw]
+            elif len(raw) > 1 and raw[0].isalpha(): char = raw[0]
+            elif raw.isalpha(): char = raw
+    except: pass
 
-    # ---------------------------------------------------------
-    # 4. 结果绘制
-    # ---------------------------------------------------------
-    if char:
-        # 还原坐标画框
-        cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        # 字体加粗一点，用黄色显示，显眼
-        cv2.putText(debug_img, char, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
-        results.append(char)
-        print(f"Tile {i}: {char}")
-    else:
-        cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    # --- 兜底逻辑 ---
+    if not char:
+        print(f"Tile {i}: OCR failed -> Force 'O'")
+        char = 'O'
+    elif char == '0':
+        char = 'O'
+        
+    results.append(char)
+    
+    # 绘图
+    color = (0, 0, 255) if not res else (0, 255, 0)
+    cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    cv2.putText(debug_img, char, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
 
-# 保存最终结果
-cv2.imwrite("./output/board_final_thin.png", debug_img)
+cv2.imwrite("./output/board_result_v3.png", debug_img)
 print("-" * 30)
-print(f"🎉 识别结果: {' '.join(results)}")
+print(f"🎉 最终结果: {' '.join(results)}")
+print(f"请检查: ./output/board_result_v3.png (蓝叉=被剔除的噪点, 红字=强制认定的O)")
