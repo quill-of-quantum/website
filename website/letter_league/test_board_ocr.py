@@ -16,12 +16,6 @@ if not os.path.exists(img_path):
 img = cv2.imread(img_path)
 h, w, _ = img.shape
 
-# 准备输出目录
-output_dir = "./output/board_final_v3"
-if os.path.exists(output_dir):
-    shutil.rmtree(output_dir)
-os.makedirs(output_dir)
-
 # ==========================================================
 # 步骤 1: 定位 (Dark Ink Extraction)
 # ==========================================================
