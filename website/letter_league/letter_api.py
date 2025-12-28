@@ -604,10 +604,15 @@ def process_letter_image():
         if not data or 'image' not in data:
             return jsonify({"status": "error", "message": "No image data provided"}), 400
 
-        # 获取参数
+        # 获取参数 (使用默认常量作为后备)
         image_data = data['image']
-        prompt_count = int(data.get('prompt_count', 5))
         use_wildcard = data.get('use_wildcard', False)
+        
+        rec_top_n = int(data.get('rec_top_n', REC_TOP_N))
+        rec_short_n = int(data.get('rec_short_n', REC_SHORT_N))
+        rec_multi_n = int(data.get('rec_multi_n', REC_MULTI_N))
+        min_dist = int(data.get('min_dist', MIN_DIST))
+        short_len = int(data.get('short_len', SHORT_LEN))
 
         # 处理 Base64 图片
         if "," in image_data:
@@ -653,7 +658,7 @@ def process_letter_image():
         
         if moves:
             # 1. Top Best
-            diverse_top = get_diverse_moves(moves, top_n=prompt_count, min_dist=MIN_DIST)
+            diverse_top = get_diverse_moves(moves, top_n=rec_top_n, min_dist=min_dist)
             for m in diverse_top:
                 m['type'] = 'best'
                 final_viz_list.append(m)
@@ -665,8 +670,8 @@ def process_letter_image():
                 })
 
             # 2. Top Short
-            short_moves = [m for m in moves if len(m['word']) <= SHORT_LEN]
-            diverse_short = get_diverse_moves(short_moves, top_n=REC_SHORT_N, min_dist=MIN_DIST)
+            short_moves = [m for m in moves if len(m['word']) <= short_len]
+            diverse_short = get_diverse_moves(short_moves, top_n=rec_short_n, min_dist=min_dist)
             for m in diverse_short:
                 m['type'] = 'short'
                 final_viz_list.append(m)
@@ -679,7 +684,7 @@ def process_letter_image():
             # 3. Top Multi
             multi_moves = [m for m in moves if m['cross'] > 0]
             multi_moves.sort(key=lambda x: x['cross'], reverse=True)
-            diverse_multi = get_diverse_moves(multi_moves, top_n=REC_MULTI_N, min_dist=MIN_DIST)
+            diverse_multi = get_diverse_moves(multi_moves, top_n=rec_multi_n, min_dist=min_dist)
             for m in diverse_multi:
                 m['type'] = 'multi'
                 if m not in final_viz_list:

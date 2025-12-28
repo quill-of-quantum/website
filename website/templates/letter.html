@@ -41,10 +41,32 @@
         }
         .controls {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             margin-bottom: 20px;
             align-items: center;
             justify-content: center;
+            flex-wrap: wrap;
+            background: #fafafa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #eee;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .control-group label {
+            font-size: 0.85em;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        .control-group input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            text-align: center;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
         .result-area {
             margin-top: 20px;
@@ -73,14 +95,29 @@
         <p style="text-align: center; color: #666;">直接粘贴 (Ctrl+V) 或拖拽图片到下方区域</p>
         
         <div class="controls">
-            <div>
-                <label for="promptCount">提示词数量:</label>
-                <input type="number" id="promptCount" value="5" min="1" max="20" style="width: 60px; padding: 5px;">
+            <div class="control-group">
+                <label title="最佳长词推荐数">最佳推荐 (Top N)</label>
+                <input type="number" id="recTopN" value="3" min="1" max="10">
             </div>
-            <div>
-                <label>
-                    <input type="checkbox" id="useWildcard"> 使用万能替换字母
-                </label>
+            <div class="control-group">
+                <label title="短词防守推荐数">短词推荐 (Short N)</label>
+                <input type="number" id="recShortN" value="3" min="1" max="10">
+            </div>
+            <div class="control-group">
+                <label title="多重组词推荐数">一箭多雕 (Multi N)</label>
+                <input type="number" id="recMultiN" value="3" min="1" max="10">
+            </div>
+            <div class="control-group">
+                <label title="走法间距">最小间距 (Min Dist)</label>
+                <input type="number" id="minDist" value="3" min="0" max="10">
+            </div>
+            <div class="control-group">
+                <label title="短词最大长度">短词长度 (Max Len)</label>
+                <input type="number" id="shortLen" value="4" min="2" max="8">
+            </div>
+            <div class="control-group" style="flex-direction: row; align-items: center; margin-left: 10px;">
+                <input type="checkbox" id="useWildcard" style="width: auto; margin-right: 5px; cursor: pointer;">
+                <label for="useWildcard" style="margin: 0; cursor: pointer;">使用万能替换 (?)</label>
             </div>
         </div>
 
@@ -194,8 +231,16 @@
             resultArea.style.display = 'none';
             debugSection.style.display = 'none'; // Reset debug
             
-            const promptCount = document.getElementById('promptCount').value;
-            const useWildcard = document.getElementById('useWildcard').checked;
+            // 获取所有参数
+            const params = {
+                image: base64Image,
+                rec_top_n: document.getElementById('recTopN').value,
+                rec_short_n: document.getElementById('recShortN').value,
+                rec_multi_n: document.getElementById('recMultiN').value,
+                min_dist: document.getElementById('minDist').value,
+                short_len: document.getElementById('shortLen').value,
+                use_wildcard: document.getElementById('useWildcard').checked
+            };
 
             try {
                 const response = await fetch('/api/letter/process', {
@@ -203,11 +248,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        image: base64Image,
-                        prompt_count: promptCount,
-                        use_wildcard: useWildcard
-                    })
+                    body: JSON.stringify(params)
                 });
 
                 const data = await response.json();
