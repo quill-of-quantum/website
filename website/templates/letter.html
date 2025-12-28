@@ -23,13 +23,290 @@
             color: #333;
             text-align: center;
         }
+        
+        /* 新增样式 */
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: border-color 0.3s;
+            background-color: #fafafa;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        .result-area {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            display: none;
+            background-color: #fff;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            color: #666;
+        }
+        img.preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin-top: 10px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>字母游戏</h1>
-        <p>欢迎来到字母游戏页面！</p>
-        <!-- 在这里添加你的游戏内容 -->
+        <h1>字母游戏助手</h1>
+        <p style="text-align: center; color: #666;">直接粘贴 (Ctrl+V) 或拖拽图片到下方区域</p>
+        
+        <div class="controls">
+            <div>
+                <label for="promptCount">提示词数量:</label>
+                <input type="number" id="promptCount" value="5" min="1" max="20" style="width: 60px; padding: 5px;">
+            </div>
+            <div>
+                <label>
+                    <input type="checkbox" id="useWildcard"> 使用万能替换字母
+                </label>
+            </div>
+        </div>
+
+        <div class="upload-area" id="dropZone">
+            <p>点击上传，或将图片拖拽/粘贴到此处</p>
+            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+            <div id="previewContainer"></div>
+        </div>
+
+        <div class="loading" id="loading">正在计算中...</div>
+        
+        <div class="result-area" id="resultArea">
+            <h3>计算结果</h3>
+            <div id="resultContent"></div>
+            
+            <!-- Debug Section -->
+            <div id="debugSection" style="margin-top: 30px; border-top: 2px dashed #ccc; padding-top: 20px; display: none;">
+                <h4 style="color: #d9534f;">🐞 Debug 信息</h4>
+                
+                <!-- New Logo Info Block -->
+                <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
+                    <h5 style="margin-top:0;">0. 分割参考点 (Logo Detection)</h5>
+                    <p style="margin-bottom: 5px;">
+                        <strong>状态:</strong> <span id="debugLogoStatus"></span> 
+                        <span style="color:#999; font-size:0.9em;">(Score: <span id="debugLogoScore"></span>)</span>
+                    </p>
+                    <p style="margin:0; font-size:0.85em; color:#666;">Logo Path: <span id="debugLogoPath"></span></p>
+                </div>
+                
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <h5>1. 棋盘分割 (Board Crop)</h5>
+                        <img id="debugSegBoard" style="max-width: 100%; border: 1px solid #999;">
+                    </div>
+                    <div style="flex: 1; min-width: 300px;">
+                        <h5>2. 字母架分割 (Rack Crop)</h5>
+                        <img id="debugSegRack" style="max-width: 100%; border: 1px solid #999;">
+                        <p><strong>识别字母:</strong> <span id="debugRackText" style="font-family: monospace; font-size: 1.2em; background: #eee; padding: 2px 5px;"></span></p>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <h5>3. 网格拟合 (Grid Fit)</h5>
+                    <img id="debugGridFit" style="max-width: 100%; border: 1px solid #999;">
+                </div>
+
+                <div>
+                    <h5>4. 识别到的棋盘矩阵</h5>
+                    <pre id="debugBoardMatrix" style="background: #333; color: #0f0; padding: 10px; font-family: monospace; font-size: 12px; overflow-x: auto;"></pre>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const loading = document.getElementById('loading');
+        const resultArea = document.getElementById('resultArea');
+        const resultContent = document.getElementById('resultContent');
+        const debugSection = document.getElementById('debugSection');
+
+        // 点击上传
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        });
+
+        // 拖拽上传
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+
+        // 粘贴上传
+        document.addEventListener('paste', (e) => {
+            const items = e.clipboardData.items;
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    handleFile(blob);
+                    break;
+                }
+            }
+        });
+
+        function handleFile(file) {
+            // 预览图片
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewContainer.innerHTML = `<img src="${e.target.result}" class="preview">`;
+                uploadAndProcess(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function uploadAndProcess(base64Image) {
+            loading.style.display = 'block';
+            resultArea.style.display = 'none';
+            debugSection.style.display = 'none'; // Reset debug
+            
+            const promptCount = document.getElementById('promptCount').value;
+            const useWildcard = document.getElementById('useWildcard').checked;
+
+            try {
+                const response = await fetch('/api/letter/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: base64Image,
+                        prompt_count: promptCount,
+                        use_wildcard: useWildcard
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    resultArea.style.display = 'block';
+                    const res = data.result;
+                    let html = '';
+
+                    // 1. 显示结果图片
+                    if (res.result_image) {
+                        html += `<div style="text-align:center; margin-bottom:20px;">
+                            <img src="${res.result_image}" style="max-width:100%; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                        </div>`;
+                    }
+
+                    // 2. 辅助函数生成列表
+                    const createList = (title, items, icon, color) => {
+                        if (!items || items.length === 0) return '';
+                        let listHtml = `<div style="margin-bottom: 20px;">
+                            <h4 style="color:${color}; margin: 10px 0; border-bottom: 2px solid ${color}; padding-bottom: 5px;">${icon} ${title}</h4>
+                            <ul style="list-style:none; padding-left:0;">`;
+                        
+                        items.forEach((item, index) => {
+                            let details = [];
+                            if (item.cross !== undefined && item.cross > 0) details.push(`Cross: ${item.cross}`);
+                            if (item.row !== undefined) details.push(`Pos: [${item.row}, ${item.col}]`);
+                            
+                            const detailStr = details.length ? `<span style="color:#666; font-size:0.85em; margin-left:10px;">(${details.join(' | ')})</span>` : '';
+
+                            listHtml += `<li style="padding:8px 10px; background-color:${index%2===0?'#f8f9fa':'#fff'}; border-radius:4px; margin-bottom:2px;">
+                                <span style="font-weight:bold; color:#333; width:20px; display:inline-block;">${index + 1}.</span>
+                                <span style="font-weight:bold; font-size:1.1em; color:#000;">${item.word}</span>
+                                ${detailStr}
+                            </li>`;
+                        });
+                        listHtml += '</ul></div>';
+                        return listHtml;
+                    };
+
+                    // 3. 生成各部分内容
+                    html += createList('最佳推荐 (Best)', res.best, '🏆', '#007bff'); // Blue
+                    html += createList('短词防守 (Short)', res.short, '🐣', '#6f42c1'); // Purple
+                    html += createList('一箭多雕 (Multi)', res.multi, '🔱', '#e83e8c'); // Pink
+
+                    if (!res.best.length && !res.short.length && !res.multi.length) {
+                        html += '<div style="text-align:center; padding:20px; color:#666;">❌ 未找到任何合法走法</div>';
+                    }
+
+                    resultContent.innerHTML = html;
+
+                    // --- Debug Display Logic ---
+                    if (res.debug) {
+                        debugSection.style.display = 'block';
+                        
+                        // Logo Info
+                        const logoInfo = res.debug.logo_detection || {};
+                        const logoStatus = document.getElementById('debugLogoStatus');
+                        const logoScore = document.getElementById('debugLogoScore');
+                        const logoPath = document.getElementById('debugLogoPath');
+                        
+                        if (logoInfo.found) {
+                            logoStatus.innerHTML = '<span style="color:green; font-weight:bold;">✅ 找到 Logo (定位成功)</span>';
+                        } else {
+                            let reason = logoInfo.exists ? "匹配度过低" : "文件不存在";
+                            logoStatus.innerHTML = `<span style="color:red; font-weight:bold;">❌ 未找到 Logo (${reason})</span> - 使用默认比例`;
+                        }
+                        logoScore.textContent = (logoInfo.score || 0).toFixed(4);
+                        logoPath.textContent = logoInfo.path || "N/A";
+                        
+                        // Images
+                        if (res.debug.seg_board) document.getElementById('debugSegBoard').src = res.debug.seg_board;
+                        if (res.debug.seg_rack) document.getElementById('debugSegRack').src = res.debug.seg_rack;
+                        if (res.debug.grid_fit) document.getElementById('debugGridFit').src = res.debug.grid_fit;
+                        
+                        // Text
+                        document.getElementById('debugRackText').textContent = res.debug.rack_str || "None";
+                        
+                        // Matrix
+                        if (res.debug.ocr_board_matrix) {
+                            const matrixStr = res.debug.ocr_board_matrix.map(row => 
+                                row.map(c => c ? c.padEnd(2) : '. ').join(' ')
+                            ).join('\n');
+                            document.getElementById('debugBoardMatrix').textContent = matrixStr;
+                        }
+                    }
+                    // ---------------------------
+
+                } else {
+                    alert('处理失败: ' + data.message);
+                    if (data.trace) console.error(data.trace);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('发生错误，请重试');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+    </script>
 </body>
 </html>
