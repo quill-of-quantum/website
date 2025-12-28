@@ -1473,6 +1473,223 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.348625212231,39.73255523655448;89.1972972460079,42.95698484877124;87.41602874517912,43.47708606579323&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T19:00:12.705441",
+      "origin_address": "武汉",
+      "destination_address": "沈阳",
+      "waypoint_addresses": [
+        "南京"
+      ],
+      "distance_km": 2053.262,
+      "duration_min": 1358.6666666666667,
+      "toll": 961,
+      "oil_cost": 1424.09,
+      "other": 0,
+      "total_cost": 2385.09,
+      "breakdown": {
+        "highway": {
+          "distance": 2017.0589999999993,
+          "cost": 1391.77071
+        },
+        "national": {
+          "distance": 24.889999999999997,
+          "cost": 20.608920000000005
+        },
+        "urban": {
+          "distance": 11.312999999999997,
+          "cost": 11.708955
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=114.31158155473231,30.598466736400987;118.80242172124585,32.06465288561847;123.47109664482264,41.68383006919066&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-24T19:01:12.400980",
+      "origin_address": "成都双流机场",
+      "destination_address": "成都双流机场",
+      "waypoint_addresses": [
+        "都江堰景区",
+        "青城山",
+        "都江堰市虹口深溪沟地震遗迹纪念地",
+        "北川县地震遗址",
+        "三星堆"
+      ],
+      "distance_km": 534.685,
+      "duration_min": 587.4833333333333,
+      "toll": 101,
+      "oil_cost": 429.94,
+      "other": 0,
+      "total_cost": 530.94,
+      "breakdown": {
+        "highway": {
+          "distance": 237.48900000000003,
+          "cost": 163.86741
+        },
+        "national": {
+          "distance": 200.62899999999993,
+          "cost": 166.12081199999997
+        },
+        "urban": {
+          "distance": 96.56700000000002,
+          "cost": 99.946845
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-25T10:43:36.334273",
+      "origin_address": "成都双流机场",
+      "destination_address": "成都双流机场",
+      "waypoint_addresses": [
+        "都江堰景区",
+        "青城山",
+        "都江堰市虹口深溪沟地震遗迹纪念地",
+        "北川县地震遗址",
+        "三星堆"
+      ],
+      "distance_km": 534.685,
+      "duration_min": 684.7666666666667,
+      "toll": 101,
+      "oil_cost": 429.94,
+      "other": 0,
+      "total_cost": 530.94,
+      "breakdown": {
+        "highway": {
+          "distance": 237.48900000000003,
+          "cost": 163.86741
+        },
+        "national": {
+          "distance": 200.62899999999993,
+          "cost": 166.12081199999997
+        },
+        "urban": {
+          "distance": 96.56700000000002,
+          "cost": 99.946845
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-25T11:12:31.137285",
+      "origin_address": "成都双流机场",
+      "destination_address": "成都双流机场",
+      "waypoint_addresses": [
+        "都江堰景区",
+        "青城山",
+        "都江堰市虹口深溪沟地震遗迹纪念地",
+        "北川县地震遗址",
+        "三星堆",
+        "成都大熊猫繁育基地"
+      ],
+      "distance_km": 558.297,
+      "duration_min": 740.15,
+      "toll": 99,
+      "oil_cost": 449.0,
+      "other": 0,
+      "total_cost": 548.0,
+      "breakdown": {
+        "highway": {
+          "distance": 258.91200000000003,
+          "cost": 178.64928
+        },
+        "national": {
+          "distance": 190.86499999999995,
+          "cost": 158.03622
+        },
+        "urban": {
+          "distance": 108.52,
+          "cost": 112.31820000000002
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.60137705272497,30.905449192960912;103.63687470841042,31.096964113943894;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;104.15091620259044,30.74331946444828;103.94538264427979,30.598883430224486&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-25T11:41:28.562459",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫镇",
+      "waypoint_addresses": [
+        "南山滑雪场"
+      ],
+      "distance_km": 4325.055,
+      "duration_min": 2802.483333333333,
+      "toll": 2136,
+      "oil_cost": 2987.11,
+      "other": 0,
+      "total_cost": 5123.11,
+      "breakdown": {
+        "highway": {
+          "distance": 4313.163999999996,
+          "cost": 2976.08316
+        },
+        "national": {
+          "distance": 6.1850000000000005,
+          "cost": 5.12118
+        },
+        "urban": {
+          "distance": 5.706,
+          "cost": 5.905709999999999
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;113.92751883447714,22.530836097843814;116.44296085519188,39.81874813494845&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-25T11:41:42.525782",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫镇",
+      "waypoint_addresses": [
+        "密云南山滑雪场"
+      ],
+      "distance_km": 183.16,
+      "duration_min": 206.56666666666666,
+      "toll": 55,
+      "oil_cost": 129.55,
+      "other": 0,
+      "total_cost": 184.55,
+      "breakdown": {
+        "highway": {
+          "distance": 170.52799999999996,
+          "cost": 117.66432000000003
+        },
+        "national": {
+          "distance": 5.744,
+          "cost": 4.756032000000001
+        },
+        "urban": {
+          "distance": 6.888,
+          "cost": 7.12908
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;116.44296085519188,39.81874813494845&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2025-12-25T11:44:42.087003",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫镇",
+      "waypoint_addresses": [
+        "密云南山滑雪场",
+        "渔阳滑雪场"
+      ],
+      "distance_km": 299.585,
+      "duration_min": 324.6333333333333,
+      "toll": 62,
+      "oil_cost": 225.73,
+      "other": 0,
+      "total_cost": 287.73,
+      "breakdown": {
+        "highway": {
+          "distance": 240.94799999999995,
+          "cost": 166.25411999999997
+        },
+        "national": {
+          "distance": 5.850000000000001,
+          "cost": 4.843800000000001
+        },
+        "urban": {
+          "distance": 52.78699999999998,
+          "cost": 54.634544999999996
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;117.41337706208667,40.04033856814049;116.44296085519188,39.81874813494845&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }
