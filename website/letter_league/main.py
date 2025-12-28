@@ -4,6 +4,7 @@ import easyocr
 import os
 import math
 import time
+from collections import defaultdict
 
 # ==============================================================================
 # 🎯 第一部分：GADDAG 数据结构 & 求解器
@@ -57,11 +58,10 @@ class ScrabbleSolver:
         self.board = board_matrix
     def solve(self, rack_str):
         print(f"🧠 (Solver收到 Rack: {rack_str}，准备计算...)")
-        # 这里是求解逻辑的入口，目前仅返回空列表作为框架
         return []
 
 # ==============================================================================
-# 👁️ 第二部分：OCR 视觉层 (带智能排斥算法)
+# 👁️ 第二部分：OCR 视觉层 (基于字母位置重建网格)
 # ==============================================================================
 
 class LetterLeagueVision:
@@ -147,6 +147,7 @@ class LetterLeagueVision:
         return board, rack
 
     def ocr_rack(self, img):
+        # 严格复刻 test_rack_ocr.py
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced_gray = clahe.apply(gray)
@@ -161,7 +162,7 @@ class LetterLeagueVision:
                 valid_boxes.append((x, y, cw, ch))
         valid_boxes.sort(key=lambda b: b[0])
         
-        final_boxes = []
+        final_boxes = [] 
         for box in valid_boxes:
             if not final_boxes: final_boxes.append(box)
             else:
@@ -222,9 +223,8 @@ class LetterLeagueVision:
                 if min_d < thresh: final_tiles.append(t1)
         else: final_tiles = raw_tiles
         
-        detected_raw = [] # (cx, cy, char)
+        detected_raw = [] # 暂存识别结果
         
-        # 识别循环
         for (x, y, cw, ch) in final_tiles:
             cx, cy = x + cw//2, y + ch//2
             size = max(cw, ch) + 5
@@ -255,68 +255,94 @@ class LetterLeagueVision:
             detected_raw.append({'cx': cx, 'cy': cy, 'char': char})
 
         # =========================================================
-        # 🧩 智能网格映射 (Smart Grid Mapping with Anti-Collision)
+        # 🧩 算法升级: "Letter-Centric Grid Fitting"
+        # 直接利用识别出的字母位置来重建网格，无视图片切割误差
         # =========================================================
         matrix = [['' for _ in range(15)] for _ in range(15)]
-        cell_w = w / 15.0
-        cell_h = h / 15.0
         
-        # 1. 计算相位偏移 (校准起点)
-        if detected_raw:
-            shifts_x = [(d['cx'] / cell_w) % 1.0 for d in detected_raw]
-            shifts_y = [(d['cy'] / cell_h) % 1.0 for d in detected_raw]
-            phase_x = sum(shifts_x) / len(shifts_x)
-            phase_y = sum(shifts_y) / len(shifts_y)
-        else:
-            phase_x, phase_y = 0.5, 0.5
+        if not detected_raw:
+            return matrix
 
-        # 2. 先按行归类 (Cluster by Row)
-        rows_bucket = {}
-        for d in detected_raw:
-            # 算出它大概在哪一行
-            r_est = int((d['cy'] / cell_h) - phase_y + 0.5)
-            r_est = max(0, min(14, r_est))
-            if r_est not in rows_bucket: rows_bucket[r_est] = []
-            rows_bucket[r_est].append(d)
+        # 1. 聚类 (Clustering) 确定"活跃列"和"活跃行"
+        # 我们假设大概率 w/15 是一个合理的初始步长估计，用于判定"是否属于同一列"
+        est_step_x = w / 15.0
+        est_step_y = h / 15.0
+        
+        # 提取所有 X 坐标并排序
+        xs = sorted([d['cx'] for d in detected_raw])
+        ys = sorted([d['cy'] for d in detected_raw])
+        
+        # 计算字母间的真实间距 (Gap Analysis)
+        # 我们寻找最近邻间距的中位数，这通常就是 1 个格子的真实宽度
+        gaps_x = [xs[i+1]-xs[i] for i in range(len(xs)-1)]
+        gaps_y = [ys[i+1]-ys[i] for i in range(len(ys)-1)]
+        
+        # 过滤掉太大的间距 (跨列了) 和太小的间距 (同一列的微小抖动)
+        valid_gaps_x = [g for g in gaps_x if 0.5*est_step_x < g < 1.5*est_step_x]
+        valid_gaps_y = [g for g in gaps_y if 0.5*est_step_y < g < 1.5*est_step_y]
+        
+        # 如果找不到 valid gaps (比如字母太稀疏)，回退到估计值
+        true_step_x = np.median(valid_gaps_x) if valid_gaps_x else est_step_x
+        true_step_y = np.median(valid_gaps_y) if valid_gaps_y else est_step_y
+        
+        print(f"📏 网格重建: 估算步长 {est_step_x:.1f}px -> 真实步长 {true_step_x:.1f}px")
 
+        # 2. 锚点对齐 (Anchor Alignment)
+        # 找一个靠近图片中心的字母作为"绝对锚点"，以它为基准向四周推导
+        # 这样可以消除边缘切割误差带来的整体漂移
+        center_x, center_y = w/2, h/2
+        
+        # 找到离中心最近的那个字母
+        anchor_tile = min(detected_raw, key=lambda d: abs(d['cx']-center_x) + abs(d['cy']-center_y))
+        
+        # 估算这个锚点在 15x15 网格里的绝对坐标 (approximate)
+        # 这里我们仍然需要依赖一次 w/15 来确定锚点大概是第几列
+        # 但是只用这一次！一旦确定它是 (7,7) 或 (8,6)，后续所有坐标都相对于它计算
+        anchor_col_idx = int(anchor_tile['cx'] / est_step_x)
+        anchor_row_idx = int(anchor_tile['cy'] / est_step_y)
+        
+        # 修正锚点坐标 (Clamp to 0-14)
+        anchor_col_idx = max(0, min(14, anchor_col_idx))
+        anchor_row_idx = max(0, min(14, anchor_row_idx))
+        
+        # 推导网格的"真实零点" (Grid Origin)
+        # Origin = AnchorPixel - AnchorIndex * TrueStep
+        grid_origin_x = anchor_tile['cx'] - anchor_col_idx * true_step_x
+        grid_origin_y = anchor_tile['cy'] - anchor_row_idx * true_step_y
+        
         debug_viz = img.copy()
-
-        # 3. 行内处理 (排斥算法)
-        for r_idx, items in rows_bucket.items():
-            # 按 x 坐标排序
-            items.sort(key=lambda item: item['cx'])
+        
+        # 3. 映射所有字母
+        for d in detected_raw:
+            # 公式: Index = round( (Pixel - Origin) / TrueStep )
+            c_idx = int(round((d['cx'] - grid_origin_x) / true_step_x))
+            r_idx = int(round((d['cy'] - grid_origin_y) / true_step_y))
             
-            last_c_idx = -1
+            # 边界保护
+            c_idx = max(0, min(14, c_idx))
+            r_idx = max(0, min(14, r_idx))
             
-            for item in items:
-                # 原始算出的列号
-                raw_c_idx = int((item['cx'] / cell_w) - phase_x + 0.5)
-                
-                # 🛡️ 冲突排斥逻辑
-                # 如果当前字母算出来的位置 <= 上一个字母的位置
-                # 说明发生了挤压，强制往后推一格
-                final_c_idx = max(raw_c_idx, last_c_idx + 1)
-                
-                # 边界保护
-                final_c_idx = max(0, min(14, final_c_idx))
-                
-                # 写入矩阵
-                matrix[r_idx][final_c_idx] = item['char']
-                
-                # 更新 last_c_idx
-                last_c_idx = final_c_idx
-                
-                # Debug绘图
-                x, y = int(item['cx']), int(item['cy'])
-                cv2.rectangle(debug_viz, (x-10, y-10), (x+10, y+10), (0, 255, 0), 2)
-                cv2.putText(debug_viz, f"{item['char']}", (x, y-15), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            matrix[r_idx][c_idx] = d['char']
+            
+            # Debug
+            cv2.circle(debug_viz, (int(d['cx']), int(d['cy'])), 5, (0,0,255), -1)
+            cv2.putText(debug_viz, f"{r_idx},{c_idx}", (int(d['cx']), int(d['cy'])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
 
-        # 画网格线验证
+        # 画出推导出的网格线
         for i in range(16):
-            x_line = int(i * cell_w)
-            y_line = int(i * cell_h)
-            cv2.line(debug_viz, (x_line, 0), (x_line, h), (255, 255, 0), 1)
-            cv2.line(debug_viz, (0, y_line), (w, y_line), (255, 255, 0), 1)
+            x = int(grid_origin_x + (i - 0.5) * true_step_x) # -0.5 是因为 grid_origin 是 col 0 的中心
+            y = int(grid_origin_y + (i - 0.5) * true_step_y)
+            # x, y 是格子的边界线
+            # 修正一下显示: 我们的 grid_origin 是 col 0 的中心点坐标
+            # 所以 col 0 的左边界是 origin - 0.5 * step
+            # col i 的左边界是 origin + (i - 0.5) * step
+            
+            # 简单的画线逻辑
+            vx = int(grid_origin_x + (i - 0.5) * true_step_x)
+            vy = int(grid_origin_y + (i - 0.5) * true_step_y)
+            
+            cv2.line(debug_viz, (vx, 0), (vx, h), (0, 255, 255), 1)
+            cv2.line(debug_viz, (0, vy), (w, vy), (0, 255, 255), 1)
 
         cv2.imwrite(f"{self.out_dir}/debug_board_grid.png", debug_viz)
         return matrix
