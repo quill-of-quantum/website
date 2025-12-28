@@ -2,7 +2,7 @@ import cv2, os
 import numpy as np
 
 IMG = "./test.png"
-LOGO_L = "./logo_l.png"
+LOGO_L = "./test_logo.png"
 OUT = "./output"
 os.makedirs(OUT, exist_ok=True)
 
