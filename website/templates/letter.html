@@ -101,15 +101,15 @@
             </div>
             <div class="control-group">
                 <label title="短词防守推荐数">短词推荐 (Short N)</label>
-                <input type="number" id="recShortN" value="3" min="1" max="10">
+                <input type="number" id="recShortN" value="5" min="1" max="10">
             </div>
             <div class="control-group">
                 <label title="多重组词推荐数">一箭多雕 (Multi N)</label>
-                <input type="number" id="recMultiN" value="3" min="1" max="10">
+                <input type="number" id="recMultiN" value="5" min="1" max="10">
             </div>
             <div class="control-group">
                 <label title="走法间距">最小间距 (Min Dist)</label>
-                <input type="number" id="minDist" value="3" min="0" max="10">
+                <input type="number" id="minDist" value="1" min="0" max="10">
             </div>
             <div class="control-group">
                 <label title="短词最大长度">短词长度 (Max Len)</label>
@@ -195,6 +195,10 @@
                         <p style="margin-top: 5px;">
                             <strong>实际计算:</strong> 
                             <span id="debugFinalRackText" style="font-family: monospace; font-size: 1.2em; background: #e8f0fe; padding: 2px 5px; color: #007bff; font-weight: bold;"></span>
+                            <!-- 新增：万能牌提示 -->
+                            <span id="wildcardHint" style="font-size: 0.85em; color: #28a745; margin-left: 10px; display: none;">
+                                ✨ (已添加万能牌)
+                            </span>
                         </p>
                         <div id="debugRackDetails" style="margin-top: 10px; font-size: 0.75em; color: #555; font-family: monospace; background: #f8f9fa; padding: 8px; border-radius: 4px; display: none; max-height: 300px; overflow-y: auto;">
                             <!-- Multi-step rack details will be rendered here -->
@@ -407,7 +411,18 @@
                 }
                 
                 if (d.rack_str) document.getElementById('debugRackText').textContent = d.rack_str;
-                if (d.final_rack_str) document.getElementById('debugFinalRackText').textContent = d.final_rack_str;
+                if (d.final_rack_str) {
+                    const finalRackEl = document.getElementById('debugFinalRackText');
+                    const wildcardHint = document.getElementById('wildcardHint');
+                    finalRackEl.textContent = d.final_rack_str;
+                    
+                    // 检查后端是否真的添加了通配符
+                    if (d.wildcard_added === true) {
+                        wildcardHint.style.display = 'inline';
+                    } else {
+                        wildcardHint.style.display = 'none';
+                    }
+                }
                 
                 if (d.rack_debug) {
                     const rackDetailsDiv = document.getElementById('debugRackDetails');

@@ -1316,15 +1316,15 @@ def process_letter_image():
             solver = ScrabbleSolver(get_gaddag())
             solver.set_board(board_matrix)
             
-            rack_str = "".join(rack_letters).replace("?", "?")
+            # 基础 rack 字符串（OCR 识别的结果）
+            rack_str = "".join(rack_letters)
             
-            # Logic: If user checks "Use Wildcard", we append a wildcard.
-            # This allows the user to manually add a blank tile if OCR missed it.
+            # 【修复】只有在用户勾选时才添加通配符
             if use_wildcard:
-                rack_str += "?" 
-            
-            # Send debug update about the final rack used
-            yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str}}) + "\n"
+                rack_str += "?"
+                yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": True}}) + "\n"
+            else:
+                yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": False}}) + "\n"
             
             moves = solver.solve(rack_str)
             
