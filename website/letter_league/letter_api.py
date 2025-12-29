@@ -336,7 +336,7 @@ class LetterLeagueVision:
             if tpl_l is not None:
                 res = cv2.matchTemplate(gray, tpl_l, cv2.TM_CCOEFF_NORMED)
                 _, maxv, _, maxloc = cv2.minMaxLoc(res)
-                if maxv > 0.7:
+                if maxv > 0.4:  # 从0.7降低到0.4，更容易检测到logo
                     lx, ly = maxloc
                     lh, lw = tpl_l.shape
                     found_logo = True
@@ -369,7 +369,9 @@ class LetterLeagueVision:
             if x2 <= x1 or y2 <= y1: return np.array([])
             return img[y1:y2, x1:x2]
         board = safe_crop(0.00, 0.13, 0.9, 0.70)
-        rack  = safe_crop(0.35, 0.87, 0.28, 0.11)
+        # 调整rack截取位置的4个参数: (x_offset, y_offset, width, height)
+        # 当前: x=0.35(35%右移), y=0.87(87%下移), w=0.28(28%宽度), h=0.11(11%高度)
+        rack  = safe_crop(0.30, 0.85, 0.35, 0.12)  # 示例调整
         # Removed file writing for web context, handled in process_full_pipeline
         return board, rack
 
