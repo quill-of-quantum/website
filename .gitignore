@@ -1,0 +1,22 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# logs
+*.log
+
+# databases
+*.db
+*.sqlite3
+
+# runtime / generated data
+website/tracker.db
+website/tracker_last.json
+
+# weather outputs
+website/weather/*.csv
+website/weather/*.svg
+website/weather/*.txt
+
+# local backup / private dirs
+website_new/
