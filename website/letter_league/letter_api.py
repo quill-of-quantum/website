@@ -628,11 +628,11 @@ class LetterLeagueVision:
                 elif raw_result.isalpha(): 
                     char = raw_result
                 else:
-                    char = 'O'  # Fallback
-                    success_step += f" → 兜底({raw_result}→O)"
+                    char = '?'  # Changed: fallback to wildcard instead of O
+                    success_step += f" → 兜底({raw_result}→?)"
             else:
-                char = 'O'  # Ultimate fallback
-                success_step = "全部失败 → 兜底(O)"
+                char = '?'  # Changed: default to wildcard when OCR completely fails
+                success_step = "全部失败 → 兜底(?)"
             
             # 最终兜底修正
             if char == '0': 
@@ -862,9 +862,9 @@ class LetterLeagueVision:
             
             # Final fallback
             if not char: 
-                char = 'O'
-                if not correction_step: correction_step = "empty→O"
-                else: correction_step += "→O"
+                char = '?'
+                if not correction_step: correction_step = "empty→?"
+                else: correction_step += "→?"
             elif char == '0': 
                 char = 'O'
                 correction_step += "→O"
