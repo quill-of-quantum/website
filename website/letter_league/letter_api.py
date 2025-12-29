@@ -182,12 +182,17 @@ class ScrabbleSolver:
             
             allowed = self.cross_sets[row][anchor]
             unique_rack = set(self.rack)
-            candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
+            # 【修复】只在实际有?时才将allowed设为全集
+            candidates = allowed.intersection(unique_rack)
+            # 如果手牌里有?，则可以尝试所有allowed中的字母
+            if '?' in self.rack:
+                candidates = candidates.union(allowed)
 
             for char in candidates:
                 if char in self.g.root.edges:
-                    to_remove = char if char in self.rack else '?'
-                    if to_remove in self.rack:
+                    # 【修复】优先使用实际字母，只在没有时才用?
+                    to_remove = char if char in self.rack else ('?' if '?' in self.rack else None)
+                    if to_remove and to_remove in self.rack:
                         self.rack.remove(to_remove)
                         display_char = char.lower() if to_remove == '?' else char
                         new_node = self.g.root.edges[char]
@@ -211,12 +216,16 @@ class ScrabbleSolver:
                 else: 
                     allowed = self.cross_sets[row][col]
                     unique_rack = set(self.rack)
-                    candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
+                    # 【修复】只在实际有?时才将allowed设为全集
+                    candidates = allowed.intersection(unique_rack)
+                    if '?' in self.rack:
+                        candidates = candidates.union(allowed)
 
                     for char in candidates:
                         if char in node.edges:
-                            to_remove = char if char in self.rack else '?'
-                            if to_remove in self.rack:
+                            # 【修复】优先使用实际字母，只在没有时才用?
+                            to_remove = char if char in self.rack else ('?' if '?' in self.rack else None)
+                            if to_remove and to_remove in self.rack:
                                 self.rack.remove(to_remove)
                                 display_char = char.lower() if to_remove == '?' else char
                                 self._gen(row, col - 1, display_char + word, node.edges[char], anchor_pos, "LEFT", tiles_placed + 1)
@@ -244,12 +253,16 @@ class ScrabbleSolver:
                 else:
                     allowed = self.cross_sets[row][col]
                     unique_rack = set(self.rack)
-                    candidates = allowed if '?' in unique_rack else allowed.intersection(unique_rack)
+                    # 【修复】只在实际有?时才将allowed设为全集
+                    candidates = allowed.intersection(unique_rack)
+                    if '?' in self.rack:
+                        candidates = candidates.union(allowed)
                         
                     for char in candidates:
                         if char in node.edges:
-                            to_remove = char if char in self.rack else '?'
-                            if to_remove in self.rack:
+                            # 【修复】优先使用实际字母，只在没有时才用?
+                            to_remove = char if char in self.rack else ('?' if '?' in self.rack else None)
+                            if to_remove and to_remove in self.rack:
                                 self.rack.remove(to_remove)
                                 display_char = char.lower() if to_remove == '?' else char
                                 self._gen(row, col + 1, word + display_char, node.edges[char], anchor_pos, "RIGHT", tiles_placed + 1)
@@ -1319,12 +1332,17 @@ def process_letter_image():
             # 基础 rack 字符串（OCR 识别的结果）
             rack_str = "".join(rack_letters)
             
-            # 【修复】只有在用户勾选时才添加通配符
-            if use_wildcard:
-                rack_str += "?"
-                yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": True}}) + "\n"
-            else:
+            # 【逻辑修正】根据用户反馈调整万能牌逻辑
+            # 不勾选：忽略 OCR 识别出的 '?' (视为误识别或用户不想用)
+            # 勾选：保留 OCR 识别出的 '?' (直接使用 OCR 结果)
+            if not use_wildcard:
+                rack_str = rack_str.replace("?", "")
                 yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": False}}) + "\n"
+            else:
+                # 勾选时直接使用 OCR 结果，不再额外添加 '?'
+                # 只有当字符串中确实包含 '?' 时，才通知前端显示万能牌提示
+                has_wildcard = '?' in rack_str
+                yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": has_wildcard}}) + "\n"
             
             moves = solver.solve(rack_str)
             
