@@ -414,20 +414,16 @@ class LetterLeagueVision:
         self.debug_info['rack_contour_debug'] = self._img_to_base64(rack_contour_debug)
         self.debug_info['rack_binary_contour_debug'] = self._img_to_base64(binary_contour_debug)
         
-        # --- 新增逻辑：基于 Y 轴对齐过滤 ---
+        # --- Y轴对齐过滤 ---
         y_filtered_boxes = []
         y_filter_reason = "no_valid_boxes"
         
         if valid_boxes:
             import statistics
-            # 1. 计算所有候选框 Y 坐标的中位数
             y_coords = [b[1] for b in valid_boxes]
             median_y = statistics.median(y_coords)
-            
-            # 2. 设定容差（例如允许上下浮动 20 像素）
             y_tolerance = 20 
             
-            # 3. 过滤掉偏离中位数太远的框 (可能是上下的噪点)
             y_filtered_boxes = []
             y_rejected_boxes = []
             
@@ -441,19 +437,16 @@ class LetterLeagueVision:
             y_filter_reason = f"median_y={median_y:.1f}, tolerance={y_tolerance}, " + \
                             f"kept={len(y_filtered_boxes)}, rejected={len(y_rejected_boxes)}"
             
-            # 更新 valid_boxes
             valid_boxes = y_filtered_boxes
         
-        # --- 新增逻辑：基于面积中位数过滤 ---
+        # --- 面积中位数过滤 ---
         area_filtered_boxes = []
         area_filter_reason = "no_valid_boxes"
         
         if valid_boxes:
-            # 1. 计算所有候选框的面积
             areas = [b[2] * b[3] for b in valid_boxes]
             median_area = statistics.median(areas)
             
-            # 2. 允许面积差异在 0.6 到 1.4 倍之间 (根据实际情况调整)
             area_filtered_boxes = []
             area_rejected_boxes = []
             
@@ -468,10 +461,9 @@ class LetterLeagueVision:
             area_filter_reason = f"median_area={median_area:.0f}, range=0.6-1.4x, " + \
                                f"kept={len(area_filtered_boxes)}, rejected={len(area_rejected_boxes)}"
             
-            # 更新 valid_boxes
             valid_boxes = area_filtered_boxes
         
-        # Store Y-filter and Area-filter debug info
+        # Store filter debug info
         self.debug_info['rack_y_filter'] = {
             'reason': y_filter_reason,
             'before_count': len(y_filtered_boxes) if y_filtered_boxes else 0,
@@ -484,7 +476,7 @@ class LetterLeagueVision:
             'after_count': len(valid_boxes)
         }
         
-        # 按x坐标排序并去重 (来自test.py的逻辑)
+        # 按x坐标排序并去重
         valid_boxes.sort(key=lambda b: b[0])
         final_boxes = []
         for box in valid_boxes:
@@ -501,66 +493,148 @@ class LetterLeagueVision:
         results = []
         rack_debug_data = []
         
-        # 记录轮廓检测统计 (更新统计信息)
+        # 记录轮廓检测统计
         rack_debug_data.append({
-            'index': -1,  # 特殊标记表示统计信息
+            'index': -1,
             'raw': f"总轮廓:{len(cnts)} 尺寸+比例:{len(valid_boxes)+len(rejected_boxes)} Y轴过滤后:{len(y_filtered_boxes)} 面积过滤后:{len(valid_boxes)} 最终去重:{len(final_boxes)}",
             'final': 'STATS',
-            'process': f"Y轴: {y_filter_reason[:50]}... | 面积: {area_filter_reason[:50]}..."
+            'process': f"Y轴: {y_filter_reason[:50]}... | 面积: {area_filter_reason[:50]}...",
+            'steps': []  # No steps for stats row
         })
         
+        # === 新的渐进式OCR识别流程 ===
         for i, (x, y, cw, ch) in enumerate(final_boxes):
-            # === 使用test.py的核心改进逻辑 ===
-            # 1. 获取整个方块 ROI
+            # 1. 基础裁切：获取完整的方块区域（含边框）
             pad = 2
             tile_roi = img[y+pad : y+ch-pad, x+pad : x+cw-pad]
             th, tw = tile_roi.shape[:2]
             if th==0 or tw==0: continue
             
-            # 2. 二次裁切：只保留中心字母区域，去除角落数字
-            # 上面切掉 25% (避开数字)，下面切掉 15%
-            # 左边切掉 15%，右边切掉 25% (避开数字)
+            # 2. 二次裁切：聚焦字母区域
             crop_y1 = int(th * 0.25)
             crop_y2 = int(th * 0.85)
-            crop_x1 = int(tw * 0.15)
+            crop_x1 = int(tw * 0.20)
             crop_x2 = int(tw * 0.75)
             
             letter_roi = tile_roi[crop_y1:crop_y2, crop_x1:crop_x2]
             if letter_roi.size == 0: continue
             
-            # 3. 图像增强：放大3倍 + 灰度 + 二值化
-            roi_zoom = cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-            roi_gray = cv2.cvtColor(roi_zoom, cv2.COLOR_BGR2GRAY)
-            
-            # Otsu二值化 (对粗体圆角字体效果好)
-            _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            # 4. OCR识别
-            char = "?"
+            # === 渐进式识别（早停）===
+            char = ""
             raw_result = ""
+            success_step = ""
+            attempt_steps = []
+            
+            # Step 1: 原图放大识别
             try:
-                # 只允许大写字母，使用二值化图像
-                res = self.reader.readtext(roi_binary, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                roi_zoom = cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                res = self.reader.readtext(roi_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
                 
-                if res:
+                # Store attempt
+                attempt_steps.append({
+                    'name': '原图×3',
+                    'image': self._img_to_base64(roi_zoom),
+                    'result': res[0].upper() if res else '(empty)',
+                    'success': bool(res and res[0].strip())
+                })
+                
+                if res and res[0].strip():
                     raw_result = res[0].upper()
-                    char = raw_result
-                    
-                    # 应用修正规则 (保持兼容性)
-                    if char in self.correction_map:
-                        char = self.correction_map[char]
-                        
+                    success_step = "原图×3"
             except Exception as e:
-                raw_result = f"error:{str(e)[:10]}"
-                
+                attempt_steps.append({
+                    'name': '原图×3',
+                    'image': self._img_to_base64(cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)),
+                    'result': f'error:{str(e)[:10]}',
+                    'success': False
+                })
+            
+            # Step 2: 如果原图失败，尝试二值化
+            if not raw_result:
+                try:
+                    roi_gray = cv2.cvtColor(letter_roi, cv2.COLOR_BGR2GRAY)
+                    _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    roi_binary_zoom = cv2.resize(roi_binary, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                    
+                    res = self.reader.readtext(roi_binary_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    
+                    attempt_steps.append({
+                        'name': 'Otsu二值化×3',
+                        'image': self._img_to_base64(roi_binary_zoom),
+                        'result': res[0].upper() if res else '(empty)',
+                        'success': bool(res and res[0].strip())
+                    })
+                    
+                    if res and res[0].strip():
+                        raw_result = res[0].upper()
+                        success_step = "Otsu二值化×3"
+                except Exception as e:
+                    attempt_steps.append({
+                        'name': 'Otsu二值化×3',
+                        'image': '',
+                        'result': f'error:{str(e)[:10]}',
+                        'success': False
+                    })
+            
+            # Step 3: 如果仍然失败，尝试腐蚀
+            if not raw_result:
+                try:
+                    roi_gray = cv2.cvtColor(letter_roi, cv2.COLOR_BGR2GRAY)
+                    _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    roi_eroded = cv2.erode(roi_binary, np.ones((2,2), np.uint8), iterations=1)
+                    roi_eroded_zoom = cv2.resize(roi_eroded, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                    
+                    res = self.reader.readtext(roi_eroded_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    
+                    attempt_steps.append({
+                        'name': '腐蚀处理×3',
+                        'image': self._img_to_base64(roi_eroded_zoom),
+                        'result': res[0].upper() if res else '(empty)',
+                        'success': bool(res and res[0].strip())
+                    })
+                    
+                    if res and res[0].strip():
+                        raw_result = res[0].upper()
+                        success_step = "腐蚀处理×3"
+                except Exception as e:
+                    attempt_steps.append({
+                        'name': '腐蚀处理×3',
+                        'image': '',
+                        'result': f'error:{str(e)[:10]}',
+                        'success': False
+                    })
+            
+            # 字符修正和最终确定
+            if raw_result:
+                if raw_result in self.correction_map: 
+                    char = self.correction_map[raw_result]
+                    success_step += f" → 修正({raw_result}→{char})"
+                elif len(raw_result)>1 and raw_result[0].isalpha(): 
+                    char = raw_result[0]
+                    success_step += f" → 取首字母({raw_result}→{char})"
+                elif raw_result.isalpha(): 
+                    char = raw_result
+                else:
+                    char = 'O'  # Fallback
+                    success_step += f" → 兜底({raw_result}→O)"
+            else:
+                char = 'O'  # Ultimate fallback
+                success_step = "全部失败 → 兜底(O)"
+            
+            # 最终兜底修正
+            if char == '0': 
+                char = 'O'
+                success_step += " → 0修正为O"
+            
             results.append(char)
             
-            # Store debug info
+            # Store debug info with all attempts
             rack_debug_data.append({
                 'index': i,
-                'raw': raw_result,
+                'raw': raw_result if raw_result else '(failed)',
                 'final': char,
-                'process': '二次裁切+放大3倍+Otsu二值化'
+                'process': success_step,
+                'steps': attempt_steps  # Store all processing attempts
             })
         
         # Store rack debug info

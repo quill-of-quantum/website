@@ -196,7 +196,9 @@
                             <strong>实际计算:</strong> 
                             <span id="debugFinalRackText" style="font-family: monospace; font-size: 1.2em; background: #e8f0fe; padding: 2px 5px; color: #007bff; font-weight: bold;"></span>
                         </p>
-                        <div id="debugRackDetails" style="margin-top: 10px; font-size: 0.75em; color: #555; font-family: monospace; background: #f8f9fa; padding: 8px; border-radius: 4px; display: none; max-height: 120px; overflow-y: auto;"></div>
+                        <div id="debugRackDetails" style="margin-top: 10px; font-size: 0.75em; color: #555; font-family: monospace; background: #f8f9fa; padding: 8px; border-radius: 4px; display: none; max-height: 300px; overflow-y: auto;">
+                            <!-- Multi-step rack details will be rendered here -->
+                        </div>
                     </div>
                 </div>
 
@@ -362,7 +364,7 @@
                 if (d.rack_contour_debug) document.getElementById('debugRackContour').src = d.rack_contour_debug;
                 if (d.rack_binary_contour_debug) document.getElementById('debugRackBinaryContour').src = d.rack_binary_contour_debug;
                 
-                // 新增：Y轴过滤信息显示
+                // Y轴过滤信息显示
                 if (d.rack_y_filter) {
                     const yFilterDiv = document.getElementById('debugRackYFilter');
                     const yFilterDetails = document.getElementById('debugRackYFilterDetails');
@@ -370,7 +372,7 @@
                     yFilterDetails.textContent = d.rack_y_filter.reason;
                 }
                 
-                // 新增：面积过滤信息显示
+                // 面积过滤信息显示
                 if (d.rack_area_filter) {
                     const areaFilterDiv = document.getElementById('debugRackAreaFilter');
                     const areaFilterDetails = document.getElementById('debugRackAreaFilterDetails');
@@ -410,10 +412,51 @@
                 if (d.rack_debug) {
                     const rackDetailsDiv = document.getElementById('debugRackDetails');
                     rackDetailsDiv.style.display = 'block';
-                    const debugLines = d.rack_debug.map(item => 
-                        `Tile #${item.index}: '${item.raw || '_'}' → '${item.final}' (${item.process})`
-                    );
-                    rackDetailsDiv.textContent = debugLines.join('\n');
+                    
+                    // Render multi-step debug info
+                    let html = '';
+                    d.rack_debug.forEach(item => {
+                        if (item.index === -1) {
+                            // Stats row
+                            html += `<div style="background:#fff3cd; padding:8px; margin-bottom:10px; border-radius:4px; border-left:4px solid #ffc107;">
+                                <strong>📊 ${item.final}:</strong> ${item.raw}<br>
+                                <span style="font-size:0.9em;">${item.process}</span>
+                            </div>`;
+                        } else {
+                            // Regular tile with steps
+                            html += `<div style="border:1px solid #ddd; padding:10px; margin-bottom:15px; border-radius:4px; background:#fff;">
+                                <div style="margin-bottom:8px;">
+                                    <strong style="color:#007bff;">Tile #${item.index}:</strong> 
+                                    <span style="background:#e8f0fe; padding:2px 6px; border-radius:3px; font-weight:bold;">'${item.final}'</span>
+                                    <span style="color:#666; margin-left:10px;">(Raw: ${item.raw})</span>
+                                </div>
+                                <div style="font-size:0.85em; color:#555; margin-bottom:8px;">
+                                    <strong>识别过程:</strong> ${item.process}
+                                </div>`;
+                            
+                            // Display processing steps if available
+                            if (item.steps && item.steps.length > 0) {
+                                html += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">`;
+                                item.steps.forEach(step => {
+                                    const borderColor = step.success ? '#28a745' : '#dc3545';
+                                    const bgColor = step.success ? '#d4edda' : '#f8d7da';
+                                    html += `<div style="border:2px solid ${borderColor}; padding:5px; border-radius:4px; background:${bgColor}; flex:1; min-width:120px;">
+                                        <div style="font-size:0.75em; font-weight:bold; margin-bottom:3px; color:${borderColor};">
+                                            ${step.success ? '✅' : '❌'} ${step.name}
+                                        </div>`;
+                                    if (step.image) {
+                                        html += `<img src="${step.image}" style="width:100%; max-width:80px; border:1px solid #ccc; border-radius:2px; margin-bottom:3px;">`;
+                                    }
+                                    html += `<div style="font-size:0.7em; color:#333; text-align:center; font-weight:bold;">${step.result}</div>
+                                    </div>`;
+                                });
+                                html += `</div>`;
+                            }
+                            
+                            html += `</div>`;
+                        }
+                    });
+                    rackDetailsDiv.innerHTML = html;
                 }
                 
                 if (d.logo_detection) {
