@@ -502,6 +502,9 @@ class LetterLeagueVision:
             'steps': []  # No steps for stats row
         })
         
+        # === 定义宽松的白名单：允许 OCR 把 I 识别成 1/l/|/! ===
+        safe_allowlist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1l|!'
+        
         # === 新的渐进式OCR识别流程 ===
         for i, (x, y, cw, ch) in enumerate(final_boxes):
             # 1. 基础裁切：获取完整的方块区域（含边框）
@@ -511,10 +514,10 @@ class LetterLeagueVision:
             if th==0 or tw==0: continue
             
             # 2. 二次裁切：聚焦字母区域
-            crop_y1 = int(th * 0.25)
+            crop_y1 = int(th * 0.20)
             crop_y2 = int(th * 0.85)
             crop_x1 = int(tw * 0.20)
-            crop_x2 = int(tw * 0.75)
+            crop_x2 = int(tw * 0.80)
             
             letter_roi = tile_roi[crop_y1:crop_y2, crop_x1:crop_x2]
             if letter_roi.size == 0: continue
@@ -525,10 +528,10 @@ class LetterLeagueVision:
             success_step = ""
             attempt_steps = []
             
-            # Step 1: 原图放大识别
+            # Step 1: 原图放大识别（使用宽松白名单）
             try:
                 roi_zoom = cv2.resize(letter_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-                res = self.reader.readtext(roi_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                res = self.reader.readtext(roi_zoom, detail=0, allowlist=safe_allowlist)
                 
                 # Store attempt
                 attempt_steps.append({
@@ -549,14 +552,14 @@ class LetterLeagueVision:
                     'success': False
                 })
             
-            # Step 2: 如果原图失败，尝试二值化
+            # Step 2: 如果原图失败，尝试二值化（使用宽松白名单）
             if not raw_result:
                 try:
                     roi_gray = cv2.cvtColor(letter_roi, cv2.COLOR_BGR2GRAY)
                     _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                     roi_binary_zoom = cv2.resize(roi_binary, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
                     
-                    res = self.reader.readtext(roi_binary_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    res = self.reader.readtext(roi_binary_zoom, detail=0, allowlist=safe_allowlist)
                     
                     attempt_steps.append({
                         'name': 'Otsu二值化×3',
@@ -576,15 +579,15 @@ class LetterLeagueVision:
                         'success': False
                     })
             
-            # Step 3: 如果仍然失败，尝试腐蚀
+            # Step 3: 如果仍然失败，尝试腐蚀（使用宽松白名单）
             if not raw_result:
                 try:
                     roi_gray = cv2.cvtColor(letter_roi, cv2.COLOR_BGR2GRAY)
                     _, roi_binary = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                    roi_eroded = cv2.erode(roi_binary, np.ones((2,2), np.uint8), iterations=1)
+                    roi_eroded = cv2.erode(roi_binary, np.ones((4,4), np.uint8), iterations=1)
                     roi_eroded_zoom = cv2.resize(roi_eroded, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
                     
-                    res = self.reader.readtext(roi_eroded_zoom, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    res = self.reader.readtext(roi_eroded_zoom, detail=0, allowlist=safe_allowlist)
                     
                     attempt_steps.append({
                         'name': '腐蚀处理×3',
@@ -604,14 +607,24 @@ class LetterLeagueVision:
                         'success': False
                     })
             
-            # 字符修正和最终确定
+            # === 后处理修正：将错就错，最后扶正 ===
             if raw_result:
-                if raw_result in self.correction_map: 
+                # 强制修正：1/l/|/! 统统认为是 I
+                if raw_result in ['1', 'L', '|', '!']:  # Note: uppercase L after .upper()
+                    char = 'I'
+                    success_step += f" → 强制修正({raw_result}→I)"
+                elif raw_result in self.correction_map: 
                     char = self.correction_map[raw_result]
                     success_step += f" → 修正({raw_result}→{char})"
                 elif len(raw_result)>1 and raw_result[0].isalpha(): 
-                    char = raw_result[0]
-                    success_step += f" → 取首字母({raw_result}→{char})"
+                    # Multi-char result, take first letter and check if it needs I correction
+                    first_char = raw_result[0]
+                    if first_char in ['1', 'L', '|', '!']:
+                        char = 'I'
+                        success_step += f" → 取首字母+修正({raw_result}→{first_char}→I)"
+                    else:
+                        char = first_char
+                        success_step += f" → 取首字母({raw_result}→{char})"
                 elif raw_result.isalpha(): 
                     char = raw_result
                 else:
