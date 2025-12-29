@@ -368,6 +368,9 @@
                 if (d.rack_contour_debug) document.getElementById('debugRackContour').src = d.rack_contour_debug;
                 if (d.rack_binary_contour_debug) document.getElementById('debugRackBinaryContour').src = d.rack_binary_contour_debug;
                 
+                if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
+                if (d.ocr_tiles_debug) document.getElementById('debugOcrTiles').src = d.ocr_tiles_debug;
+                
                 // Y轴过滤信息显示
                 if (d.rack_y_filter) {
                     const yFilterDiv = document.getElementById('debugRackYFilter');
