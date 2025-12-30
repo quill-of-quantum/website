@@ -21,7 +21,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ==============================================================================
 
 INPUT_IMAGE = os.path.join(BASE_DIR, "test.png")
-LOGO_IMAGE  = os.path.join(BASE_DIR, "test_logo.png")
+LOGO_IMAGE  = os.path.join(BASE_DIR, "logo.png")
 DICT_FILE   = os.path.join(BASE_DIR, "twl06_ENABLE.txt")
 OUTPUT_DIR  = os.path.join(BASE_DIR, "output")
 
