@@ -18,5 +18,8 @@ website/weather/*.csv
 website/weather/*.svg
 website/weather/*.txt
 
+# uploads directory
+website/uploads/
+
 # local backup / private dirs
 website_new/
