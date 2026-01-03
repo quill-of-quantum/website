@@ -13,7 +13,7 @@ import os, sys, requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import PchipInterpolator  # ✅ 引入新工具
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -75,7 +75,7 @@ if not records:
 
 df = pd.DataFrame(records, columns=['ts', 'cum']).sort_values('ts').reset_index(drop=True)
 
-# ----------------------------- 2️⃣ 插值生成小时数据 -----------------------------
+# ----------------------------- 2️⃣ 插值生成小时数据 (修正版) -----------------------------
 start_hour = df['ts'].iloc[0].replace(minute=0, second=0, microsecond=0)
 end_hour = df['ts'].iloc[-1].replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 hour_edges = pd.date_range(start=start_hour, end=end_hour, freq='H')
@@ -83,20 +83,20 @@ hour_edges = pd.date_range(start=start_hour, end=end_hour, freq='H')
 x = df['ts'].astype(np.int64) / 1e9
 y = df['cum'].to_numpy()
 
-# ✅ 使用平滑样条，限制偏移范围 ±0.5
-# s 参数基于数据的标准偏差和点数计算
-# 确保拟合曲线不会离数据点超过 0.5
-n_points = len(x)
-# 计算允许的误差平方和：n_points * (0.5)^2 = n_points * 0.25
-max_deviation = 0.5
-smoothing_factor = n_points * (max_deviation ** 2)
-f = UnivariateSpline(x, y, s=smoothing_factor, k=3)
+# ✅ 使用 PchipInterpolator
+# PCHIP (Piecewise Cubic Hermite Interpolating Polynomial)
+# 特性：保形插值。如果数据是单调的，插值结果也是单调的。绝不会出现过冲。
+f = PchipInterpolator(x, y)
 
 xe = hour_edges.astype(np.int64) / 1e9
 c_edge = f(xe)
 
 interp_df = pd.DataFrame({'datetime': hour_edges, 'cumulative_total': c_edge}).set_index('datetime')
 interp_df['hourly_usage'] = interp_df['cumulative_total'].diff()
+
+# 修正第一个点的 NaN (可选)
+interp_df['hourly_usage'].iloc[0] = 0 
+
 hourly = interp_df.iloc[1:]
 hourly.to_csv(os.path.join(BASE_DIR, "hourly_usage.csv"), float_format='%.3f', encoding='utf-8-sig')
 
