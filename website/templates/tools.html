@@ -40,6 +40,36 @@
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+    }
+    .thumbnail {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      object-fit: cover;
+      border: 2px solid #ddd;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .thumbnail:hover {
+      transform: scale(1.1);
+      border-color: #0074D9;
+    }
+    .file-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e9ecef;
+      border-radius: 6px;
+      font-size: 1.2rem;
     }
     a { text-decoration: none; color: #0074D9; margin-right: 0.5rem; }
     #uploadStatus { margin-top: 1rem; font-size: 0.95rem; }
@@ -255,16 +285,36 @@
       const timeStr = formatTime(f.create_time);
       const typeDisplay = getFileTypeDisplay(f.ext, f.name);
 
+      // 生成缩略图或图标
+      let thumbnailHtml = '';
+      if (isImg && f.has_thumbnail) {
+        thumbnailHtml = `<img class="thumbnail" src="/thumbnails/thumb_${encodeURIComponent(f.name)}" 
+                         alt="${f.name}" onclick="openImageViewer(${imageFiles.findIndex(im=>im.name===f.name)})"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                         <div class="file-icon" style="display:none;">🖼️</div>`;
+      } else {
+        const iconMap = {
+          '🖼️ 图片': '🖼️',
+          '🎥 视频': '🎥',
+          '📄 文档': '📄',
+          '💻 代码': '💻',
+          '📎 其他': '📎'
+        };
+        const icon = iconMap[typeDisplay] || '📄';
+        thumbnailHtml = `<div class="file-icon">${icon}</div>`;
+      }
+
       div.innerHTML = `
-        <label style="display:flex;align-items:center;gap:0.5rem;">
+        <div class="file-info">
           <input type="checkbox" class="file-checkbox" data-name="${f.name}" data-size="${parseFloat(f.size)}">
+          ${thumbnailHtml}
           <span>
             ${currentSort === "name" ? typeDisplay + " " : ""}${f.name}
             <small style="color:#777;">
               (${f.size}${currentSort === "time" ? " - " + timeStr : ""})
             </small>
           </span>
-        </label>
+        </div>
         <span>
           <a href="/api/tools/download/${encodeURIComponent(f.name)}">下载</a>
           ${isImg

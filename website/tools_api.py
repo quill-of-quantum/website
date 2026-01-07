@@ -2,11 +2,42 @@ from flask import Blueprint, request, jsonify, send_from_directory, session
 import os
 import shutil
 import time
+from PIL import Image
+import io
 
 bp = Blueprint("tools", __name__)
 UPLOAD_FOLDER = "/home/bbdwz/projects/website/uploads"
+THUMBNAIL_FOLDER = "/home/bbdwz/projects/website/thumbnails"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
 
+# 判断是否为图片文件
+def is_image_file(filename):
+    return filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'))
+
+# 生成缩略图
+def generate_thumbnail(file_path, filename):
+    try:
+        if not is_image_file(filename):
+            return False
+        
+        # 打开原图
+        with Image.open(file_path) as img:
+            # 转换为RGB模式（处理RGBA等格式）
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGB')
+            
+            # 计算缩略图尺寸（最大120x120，保持比例）
+            img.thumbnail((120, 120), Image.Resampling.LANCZOS)
+            
+            # 保存缩略图
+            thumb_name = f"thumb_{filename}"
+            thumb_path = os.path.join(THUMBNAIL_FOLDER, thumb_name)
+            img.save(thumb_path, 'JPEG', quality=80, optimize=True)
+            return True
+    except Exception as e:
+        print(f"生成缩略图失败: {e}")
+        return False
 
 # 上传文件（仅保存）
 @bp.route("/api/tools/upload", methods=["POST"])
@@ -18,6 +49,10 @@ def upload_file():
     filename = file.filename
     save_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(save_path)
+
+    # 如果是图片文件，生成缩略图
+    if is_image_file(filename):
+        generate_thumbnail(save_path, filename)
 
     message = f"✅ 文件已上传：{filename}"
     print(f"[UPLOAD] 文件已保存: {save_path}")
@@ -45,11 +80,18 @@ def list_files():
             # 获取文件扩展名用于分类排序
             ext = os.path.splitext(f)[1].lower()
             
+            # 检查是否有缩略图
+            has_thumbnail = False
+            if is_image_file(f):
+                thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{f}")
+                has_thumbnail = os.path.exists(thumb_path)
+            
             files.append({
                 "name": f,
                 "size": f"{size_mb:.2f} MB",
                 "create_time": create_time,
-                "ext": ext
+                "ext": ext,
+                "has_thumbnail": has_thumbnail
             })
     
     # 排序逻辑
@@ -98,3 +140,8 @@ def download_file(filename):
 @bp.route("/uploads/<path:filename>")
 def serve_upload(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+# 缩略图访问
+@bp.route("/thumbnails/<path:filename>")
+def serve_thumbnail(filename):
+    return send_from_directory(THUMBNAIL_FOLDER, filename)
