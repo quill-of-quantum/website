@@ -20,6 +20,7 @@ website/weather/*.txt
 
 # uploads directory
 website/uploads/
+website/thumbnails/
 
 # local backup / private dirs
 website_new/
