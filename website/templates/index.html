@@ -66,9 +66,64 @@
       color: #555;
     }
 
+    /* 工具按钮样式 */
+    .tool-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .tool-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+      min-width: 140px;
+      justify-content: center;
+    }
+    .tool-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      text-decoration: none;
+      color: white;
+    }
+    .tool-btn:active {
+      transform: translateY(0);
+    }
+    
+    /* 不同工具的配色 */
+    .tool-btn.upload {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      box-shadow: 0 2px 8px rgba(240, 147, 251, 0.3);
+    }
+    .tool-btn.upload:hover {
+      box-shadow: 0 4px 12px rgba(240, 147, 251, 0.4);
+    }
+    
+    .tool-btn.map {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      box-shadow: 0 2px 8px rgba(79, 172, 254, 0.3);
+    }
+    .tool-btn.map:hover {
+      box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+    }
+
     /* 📱 手机屏幕一列显示 */
     @media (max-width: 768px) {
       .chart-item { flex: 1 1 100%; }
+      .tool-buttons {
+        flex-direction: column;
+      }
+      .tool-btn {
+        min-width: auto;
+      }
     }
   </style>
 </head>
@@ -96,8 +151,18 @@
   <div class="card">
     <h2>🧰 工具区</h2>
     <p>你可以在这里上传 iPhone 备忘录文件或执行小工具功能。</p>
-    <p><a href="/tools">进入工具区</a></p>
-    <p><a href="/map">🗺️ 路线规划计价器</a></p>
+    
+    <div class="tool-buttons">
+      <a href="/tools" class="tool-btn">
+        <span>🔧</span>
+        <span>进入工具区</span>
+      </a>
+      
+      <a href="/map" class="tool-btn map">
+        <span>🗺️</span>
+        <span>路线规划计价器</span>
+      </a>
+    </div>
   </div>
 
   <!-- 汇率走势 -->
