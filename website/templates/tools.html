@@ -66,6 +66,25 @@
       background: linear-gradient(90deg, #0074D9, #33a0ff);
       border-radius: 10px;
     }
+    .sort-controls {
+      margin-bottom: 1rem;
+      padding: 0.8rem;
+      background: #f8f9fb;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .sort-controls button {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      background: #6c757d;
+      margin: 0;
+    }
+    .sort-controls button.active {
+      background: #0074D9;
+    }
   </style>
 </head>
 <body>
@@ -85,6 +104,17 @@
     <div id="diskInfo" class="disk-info">💾 正在获取存储空间信息...</div>
 
     <h2>📋 已上传文件</h2>
+    
+    <!-- 排序控制 -->
+    <div class="sort-controls">
+      <span>排序方式：</span>
+      <button id="sortByTime" class="active">⏰ 时间</button>
+      <button id="sortByName">📁 类型+名称</button>
+      <span style="margin-left: 1rem;">排序：</span>
+      <button id="orderDesc" class="active">⬇️ 降序</button>
+      <button id="orderAsc">⬆️ 升序</button>
+    </div>
+    
     <div id="fileList" class="file-list"></div>
   </div>
 
@@ -102,6 +132,9 @@
   let imageFiles = [];
   let currentImageIndex = -1;
 
+  let currentSort = "time";
+  let currentOrder = "desc";
+
   // 初始化认证系统
   document.addEventListener('DOMContentLoaded', function() {
     authManager.createLoginStatusWidget();
@@ -111,6 +144,31 @@
   // --- 格式化大小 ---
   function formatSize(mb) {
     return mb >= 1024 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(2) + " MB";
+  }
+
+  // --- 格式化时间 ---
+  function formatTime(timestamp) {
+    return new Date(timestamp * 1000).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  // --- 获取文件类型显示名称 ---
+  function getFileTypeDisplay(ext, name) {
+    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+    const videoExts = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv'];
+    const docExts = ['.txt', '.doc', '.docx', '.pdf', '.xls', '.xlsx', '.ppt', '.pptx'];
+    const codeExts = ['.js', '.html', '.css', '.py', '.java', '.cpp', '.c'];
+    
+    if (imageExts.includes(ext)) return '🖼️ 图片';
+    if (videoExts.includes(ext)) return '🎥 视频';
+    if (docExts.includes(ext)) return '📄 文档';
+    if (codeExts.includes(ext)) return '💻 代码';
+    return '📎 其他';
   }
 
   // --- 更新选中信息 ---
@@ -164,7 +222,7 @@
 
   // --- 加载文件列表 ---
   async function loadFiles() {
-    const res = await fetch("/api/tools/files");
+    const res = await fetch(`/api/tools/files?sort=${currentSort}&order=${currentOrder}`);
     const data = await res.json();
     totalFiles = data.files || [];
     imageFiles = totalFiles.filter(f => isImageFile(f.name));
@@ -194,11 +252,18 @@
       const div = document.createElement("div");
       div.className = "file-item";
       const isImg = isImageFile(f.name);
+      const timeStr = formatTime(f.create_time);
+      const typeDisplay = getFileTypeDisplay(f.ext, f.name);
 
       div.innerHTML = `
         <label style="display:flex;align-items:center;gap:0.5rem;">
           <input type="checkbox" class="file-checkbox" data-name="${f.name}" data-size="${parseFloat(f.size)}">
-          <span>${f.name} <small style="color:#777;">(${f.size})</small></span>
+          <span>
+            ${currentSort === "name" ? typeDisplay + " " : ""}${f.name}
+            <small style="color:#777;">
+              (${f.size}${currentSort === "time" ? " - " + timeStr : ""})
+            </small>
+          </span>
         </label>
         <span>
           <a href="/api/tools/download/${encodeURIComponent(f.name)}">下载</a>
@@ -393,6 +458,41 @@
     } catch (e) {
       statusDiv.textContent = `❌ 删除失败: ${e.message}`;
     }
+  }
+
+  // --- 排序事件监听器 ---
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById("sortByTime").addEventListener("click", () => {
+      currentSort = "time";
+      updateSortButtons();
+      loadFiles();
+    });
+    
+    document.getElementById("sortByName").addEventListener("click", () => {
+      currentSort = "name";
+      updateSortButtons();
+      loadFiles();
+    });
+    
+    document.getElementById("orderDesc").addEventListener("click", () => {
+      currentOrder = "desc";
+      updateSortButtons();
+      loadFiles();
+    });
+    
+    document.getElementById("orderAsc").addEventListener("click", () => {
+      currentOrder = "asc";
+      updateSortButtons();
+      loadFiles();
+    });
+  });
+
+  // --- 更新排序按钮状态 ---
+  function updateSortButtons() {
+    document.getElementById("sortByTime").classList.toggle("active", currentSort === "time");
+    document.getElementById("sortByName").classList.toggle("active", currentSort === "name");
+    document.getElementById("orderDesc").classList.toggle("active", currentOrder === "desc");
+    document.getElementById("orderAsc").classList.toggle("active", currentOrder === "asc");
   }
 
   document.getElementById("uploadBtn").addEventListener("click", uploadFile);

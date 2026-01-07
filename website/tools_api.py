@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, send_from_directory, session
 import os
 import shutil
+import time
 
 bp = Blueprint("tools", __name__)
 UPLOAD_FOLDER = "/home/bbdwz/projects/website/uploads"
@@ -31,16 +32,33 @@ def upload_file():
 # 列出文件 + 存储空间信息
 @bp.route("/api/tools/files")
 def list_files():
+    sort_by = request.args.get("sort", "time")  # time 或 name
+    order = request.args.get("order", "desc")   # asc 或 desc
+    
     files = []
-    for f in sorted(os.listdir(UPLOAD_FOLDER)):
+    for f in os.listdir(UPLOAD_FOLDER):
         path = os.path.join(UPLOAD_FOLDER, f)
         if os.path.isfile(path):
             size_mb = os.path.getsize(path) / (1024 * 1024)
+            create_time = os.path.getctime(path)
+            
+            # 获取文件扩展名用于分类排序
+            ext = os.path.splitext(f)[1].lower()
+            
             files.append({
                 "name": f,
-                "size": f"{size_mb:.2f} MB"
+                "size": f"{size_mb:.2f} MB",
+                "create_time": create_time,
+                "ext": ext
             })
-
+    
+    # 排序逻辑
+    if sort_by == "time":
+        files.sort(key=lambda x: x["create_time"], reverse=(order == "desc"))
+    elif sort_by == "name":
+        # 先按扩展名排序，再按文件名排序
+        files.sort(key=lambda x: (x["ext"], x["name"].lower()), reverse=(order == "desc"))
+    
     # 计算磁盘使用情况
     total, used, free = shutil.disk_usage(UPLOAD_FOLDER)
     info = {
