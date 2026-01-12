@@ -2,40 +2,17 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>📂 工具区 - 文件上传</title>
+  <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
   <style>
-    body {
-      font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-      background: #f8f9fb;
-      margin: 0;
-      padding: 2rem;
-      color: #333;
-    }
-    .container {
-      max-width: 800px;
-      margin: auto;
-      background: white;
-      padding: 2rem;
-      border-radius: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    h1 { color: #0074D9; }
-    button {
-      padding: 0.6rem 1.2rem;
-      background: #0074D9;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-    }
-    button:hover { background: #005fa3; }
     .file-list { margin-top: 1rem; }
     .file-item {
-      background: #f1f1f1;
+      background: #f8fafc;
       margin: 4px 0;
       padding: 8px 10px;
-      border-radius: 8px;
+      border-radius: var(--r);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -51,15 +28,15 @@
     .thumbnail {
       width: 40px;
       height: 40px;
-      border-radius: 6px;
+      border-radius: var(--r-sm);
       object-fit: cover;
-      border: 2px solid #ddd;
+      border: 1px solid var(--border);
       cursor: pointer;
       transition: transform 0.2s ease;
     }
     .thumbnail:hover {
       transform: scale(1.1);
-      border-color: #0074D9;
+      border-color: var(--primary);
     }
     .file-icon {
       width: 40px;
@@ -67,15 +44,15 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #e9ecef;
-      border-radius: 6px;
+      background: #eef2f7;
+      border-radius: var(--r-sm);
       font-size: 1.2rem;
     }
-    a { text-decoration: none; color: #0074D9; margin-right: 0.5rem; }
+    a { text-decoration: none; color: var(--primary); margin-right: 0.5rem; }
     #uploadStatus { margin-top: 1rem; font-size: 0.95rem; }
     .disk-info {
       margin-top: 1rem;
-      background: #eef3ff;
+      background: #f3f6ff;
       padding: 0.8rem 1rem;
       border-radius: 10px;
       font-size: 0.9rem;
@@ -93,59 +70,68 @@
       border-radius: 10px;
     }
     progress::-webkit-progress-value {
-      background: linear-gradient(90deg, #0074D9, #33a0ff);
+      background: linear-gradient(90deg, #2563eb, #60a5fa);
       border-radius: 10px;
     }
     .sort-controls {
       margin-bottom: 1rem;
       padding: 0.8rem;
-      background: #f8f9fb;
-      border-radius: 10px;
+      background: #f8fafc;
+      border-radius: var(--r);
       display: flex;
       align-items: center;
       gap: 0.5rem;
       flex-wrap: wrap;
     }
     .sort-controls button {
-      padding: 0.4rem 0.8rem;
-      font-size: 0.85rem;
-      background: #6c757d;
+      padding: 6px 10px;
+      font-size: 13px;
+      background: #fff;
+      border: 1px solid var(--border);
       margin: 0;
     }
     .sort-controls button.active {
-      background: #0074D9;
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
     }
   </style>
 </head>
 <body>
 
-  <div class="container">
-    <h1>📂 工具区 - 文件上传</h1>
-    <p>可上传任意文件，系统将保存到服务器，可在下方下载或删除。</p>
+  <div class="page">
+    <div class="container card">
+      <div class="page-header">
+        <h1>📂 工具区 - 文件上传</h1>
+        <p>可上传任意文件，系统将保存到服务器，可在下方下载或删除。</p>
+      </div>
 
-    <input type="file" id="fileInput" multiple />
-    <button id="uploadBtn">上传</button>
-    <a href="/" style="margin-left:1rem;">🏠 返回首页</a>
+      <div class="toolbar">
+        <input class="input" type="file" id="fileInput" multiple />
+        <button class="btn btn-primary" id="uploadBtn">上传</button>
+        <a class="btn btn-ghost" href="/">🏠 返回首页</a>
+      </div>
 
-    <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
-    <div id="speedText" style="margin-top:0.5rem;font-size:0.9rem;color:#555;"></div>
-    <div id="uploadStatus"></div>
+      <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
+      <div id="speedText" style="margin-top:0.5rem;font-size:0.9rem;color:#555;"></div>
+      <div id="uploadStatus"></div>
 
-    <div id="diskInfo" class="disk-info">💾 正在获取存储空间信息...</div>
+      <div id="diskInfo" class="disk-info">💾 正在获取存储空间信息...</div>
 
-    <h2>📋 已上传文件</h2>
+      <h2 class="section-title">📋 已上传文件</h2>
     
-    <!-- 排序控制 -->
-    <div class="sort-controls">
-      <span>排序方式：</span>
-      <button id="sortByTime" class="active">⏰ 时间</button>
-      <button id="sortByName">📁 类型+名称</button>
-      <span style="margin-left: 1rem;">排序：</span>
-      <button id="orderDesc" class="active">⬇️ 降序</button>
-      <button id="orderAsc">⬆️ 升序</button>
+      <!-- 排序控制 -->
+      <div class="sort-controls">
+        <span>排序方式：</span>
+        <button id="sortByTime" class="active">⏰ 时间</button>
+        <button id="sortByName">📁 类型+名称</button>
+        <span style="margin-left: 1rem;">排序：</span>
+        <button id="orderDesc" class="active">⬇️ 降序</button>
+        <button id="orderAsc">⬆️ 升序</button>
+      </div>
+    
+      <div id="fileList" class="file-list"></div>
     </div>
-    
-    <div id="fileList" class="file-list"></div>
   </div>
 
   <!-- 引入统一的认证模块 -->
@@ -161,6 +147,7 @@
   let totalFiles = [];
   let imageFiles = [];
   let currentImageIndex = -1;
+  let keyListenerAttached = false;
 
   let currentSort = "time";
   let currentOrder = "desc";
@@ -228,6 +215,7 @@
     caption.textContent = `${f.name} (${f.size})`;
 
     overlay.style.display = "flex";
+    attachViewerKeyListener();
   }
 
   // --- 关闭预览 ---
@@ -250,6 +238,27 @@
     openImageViewer(currentImageIndex);
   }
 
+  function attachViewerKeyListener() {
+    if (keyListenerAttached) return;
+    keyListenerAttached = true;
+    document.addEventListener("keydown", handleViewerKeys);
+  }
+
+  function handleViewerKeys(e) {
+    const overlay = document.getElementById("imageOverlay");
+    if (!overlay || overlay.style.display !== "flex") return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeViewer();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      prevImage();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextImage();
+    }
+  }
+
   // --- 加载文件列表 ---
   async function loadFiles() {
     const res = await fetch(`/api/tools/files?sort=${currentSort}&order=${currentOrder}`);
@@ -269,10 +278,10 @@
     toolbar.style.marginBottom = "0.8rem";
     toolbar.innerHTML = `
       <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-        <button id="selectAllBtn">全选</button>
-        <button id="clearSelectBtn">取消全选</button>
-        <button id="batchDeleteBtn" style="background:#dc3545;">批量删除</button>
-        <button id="batchDownloadBtn" style="background:#28a745;">批量下载</button>
+        <button class="btn btn-sm" id="selectAllBtn">全选</button>
+        <button class="btn btn-sm" id="clearSelectBtn">取消全选</button>
+        <button class="btn btn-sm btn-danger" id="batchDeleteBtn">批量删除</button>
+        <button class="btn btn-sm" id="batchDownloadBtn">批量下载</button>
         <span id="selectionInfo" style="margin-left:auto;font-size:0.9rem;color:#444;">未选择文件</span>
       </div>
     `;
@@ -321,7 +330,7 @@
             ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.name===f.name)})">查看</a>`
             : `<a href="/uploads/${encodeURIComponent(f.name)}" target="_blank">查看</a>`
           }
-          <button onclick="deleteFile('${f.name}')">删除</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.name}')">删除</button>
         </span>`;
       list.appendChild(div);
     });

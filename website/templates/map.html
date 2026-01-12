@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🗺️ 路线规划计价器</title>
+  <link rel="stylesheet" href="/static/css/base.css">
   <style>
     * {
       margin: 0;
@@ -1263,6 +1264,7 @@
   </div>
 </div>
 
+<script src="/static/js/auth.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
@@ -1994,6 +1996,14 @@ function showMessage(msg, type) {
 // 检查登录状态
 async function checkLoginStatus() {
   try {
+    if (window.authManager) {
+      const data = await authManager.checkLoginStatus();
+      if (data) {
+        isLoggedIn = data.logged_in;
+        currentUser = data.user;
+      }
+      return;
+    }
     const res = await fetch('/api/auth/status');
     const data = await res.json();
     isLoggedIn = data.logged_in;
@@ -2006,8 +2016,10 @@ async function checkLoginStatus() {
 // 需要登录的操作包装器
 function requireLogin(action) {
   if (!isLoggedIn) {
-    if (confirm('此操作需要登录，是否跳转到登录页面？')) {
-      window.open('/1/login', '_blank');
+    if (window.authManager) {
+      authManager.showLoginModal();
+    } else {
+      alert('此操作需要登录，请先登录。');
     }
     return false;
   }
@@ -2129,7 +2141,9 @@ async function clearHistory() {
     
     if (res.status === 403 && data.require_login) {
       alert('需要登录后才能清除历史记录');
-      window.open('/1/login', '_blank');
+      if (window.authManager) {
+        authManager.showLoginModal();
+      }
       return;
     }
     
@@ -2150,6 +2164,9 @@ async function clearHistory() {
 }
 
 // 初始化
+if (window.authManager) {
+  authManager.createLoginStatusWidget();
+}
 checkLoginStatus();
 loadFormData();
 </script>

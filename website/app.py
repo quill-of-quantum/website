@@ -52,18 +52,6 @@ USER_DB = {
 }
 
 # ===============================
-# 装饰器：需要登录才能访问的页面
-# ===============================
-def login_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect(url_for("admin_login"))
-        return f(*args, **kwargs)
-    return wrapper
-
-
-# ===============================
 # ----------- 普通区 ------------
 # ===============================
 
@@ -382,31 +370,11 @@ def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         if not session.get("logged_in"):
-            return redirect(url_for("admin_login"))
+            if request.path.startswith(ADMIN_PREFIX + "/api") or request.path.startswith("/api/"):
+                return jsonify({"require_login": True}), 403
+            return redirect(url_for("index"))
         return f(*args, **kwargs)
     return wrapper
-
-@app.route(ADMIN_PREFIX + "/login", methods=["GET", "POST"])
-def admin_login():
-    """管理员登录"""
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-
-        user_hash = USER_DB.get(username)
-        if user_hash and check_password_hash(user_hash, password):
-            session["logged_in"] = True
-            session["user"] = username
-            session["login_time"] = int(time.time())
-            return redirect(ADMIN_PREFIX + "/")
-        else:
-            # Get client IP for display
-            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            return render_template("login.html", error="用户名或密码错误", ip=client_ip)
-
-    # Get client IP for display
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    return render_template("login.html", ip=client_ip)
 
 @app.route(ADMIN_PREFIX + "/api/mijia_qr")
 @login_required
@@ -446,7 +414,7 @@ def mijia_qr():
 def admin_logout():
     """管理员退出"""
     session.clear()
-    return redirect(ADMIN_PREFIX + "/login")
+    return redirect(url_for("index"))
 
 @app.route(ADMIN_PREFIX + "/")
 @login_required

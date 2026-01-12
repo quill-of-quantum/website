@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>物流任务管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/css/base.css">
 <style>
   /* === 设计变量 === */
   :root {
@@ -637,7 +638,7 @@ async function loadTasks(){
 
 // 操作：启用/停用
 async function toggle(id){
-  await fetch(`/api/tracker/toggle/${id}`, { method: 'POST' });
+  const res = await fetch(`/api/tracker/toggle/${id}`, { method: 'POST' });
   await loadTasks();
 }
 
@@ -661,29 +662,26 @@ async function run(id){
   }
 }
 
-// 登录相关变量
-let isLoggedIn = false;
-let currentUser = null;
-
 // 检查登录状态
 async function checkLoginStatus() {
   try {
-    const res = await fetch('/api/auth/status');
-    const data = await res.json();
-    isLoggedIn = data.logged_in;
-    currentUser = data.user;
+    if (window.authManager) {
+      await authManager.checkLoginStatus();
+      return;
+    }
+    await fetch('/api/auth/status');
   } catch (e) {
     console.error('检查登录状态失败:', e);
   }
 }
 
 // 需要登录的操作包装器
-function requireLogin(action) {
-  if (!isLoggedIn) {
-    authManager.showLoginModal();
-    return false;
+function requireLogin() {
+  if (window.authManager) {
+    return authManager.requireLogin();
   }
-  return true;
+  alert('此操作需要登录，请先登录。');
+  return false;
 }
 
 // 操作：删除
@@ -725,6 +723,9 @@ $('#btnAdd').onclick = async () => {
 $('#btnReload').onclick = loadTasks;
 
 // 初次加载 & 周期刷新
+if (window.authManager) {
+  authManager.createLoginStatusWidget();
+}
 checkLoginStatus();
 loadTasks();
 setInterval(async () => {

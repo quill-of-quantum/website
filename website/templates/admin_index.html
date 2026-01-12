@@ -1,34 +1,59 @@
-<a href="/1/logout"
-   style="display:inline-block;margin-bottom:10px;
-          padding:6px 12px;background:#e74c3c;
-          color:white;border-radius:6px;text-decoration:none;">
-    退出登录
-</a>
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理员面板</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="page-header">
+        <h1>管理员面板</h1>
+        <p class="muted">米家扫码登录</p>
+      </div>
 
-<h2>米家扫码登录</h2>
-<div id="qr_box">加载中...</div>
+      <div class="toolbar" style="justify-content:flex-end; margin-bottom: 16px;">
+        <button class="btn" onclick="authManager.doLogout()">退出登录</button>
+      </div>
 
-<script>
-async function loadQR() {
-    const res = await fetch("/1/api/mijia_qr")
-    const data = await res.json()
+      <div class="card">
+        <h2 class="card-title">米家扫码登录</h2>
+        <div id="qr_box">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    authManager.createLoginStatusWidget();
+    authManager.checkLoginStatus();
+  });
+
+  async function loadQR() {
+    const res = await fetch("/1/api/mijia_qr");
+    const data = await res.json();
     document.getElementById("qr_box").innerHTML =
-        `<img src="${data.qr}" style="width:260px">`
-    pollStatus(data.token)
-}
+      `<img src="${data.qr}" style="width:260px">`;
+    pollStatus(data.token);
+  }
 
-async function pollStatus(token) {
+  async function pollStatus(token) {
     const timer = setInterval(async () => {
-        const res = await fetch(`/1/api/mijia_status?token=${encodeURIComponent(token)}`)
-        const data = await res.json()
+      const res = await fetch(`/1/api/mijia_status?token=${encodeURIComponent(token)}`);
+      const data = await res.json();
 
-        if (data.status === "ok") {
-            clearInterval(timer)
-            alert("登录成功！")
-            location.reload()
-        }
-    }, 3000)
-}
+      if (data.status === "ok") {
+        clearInterval(timer);
+        alert("登录成功！");
+        location.reload();
+      }
+    }, 3000);
+  }
 
-loadQR()
-</script>
+  loadQR();
+  </script>
+</body>
+</html>

@@ -32,13 +32,7 @@ def list_tasks():
 # === 添加任务 ===
 @bp.route("/api/tracker/add", methods=["POST"])
 def add_task():
-    """添加任务 - 需要登录"""
-    from flask import session
-    
-    # 检查登录状态
-    if not session.get("logged_in"):
-        return jsonify({"error": "需要添加任务请先登录", "require_login": True}), 403
-    
+    """添加任务 - 不需要登录"""
     data = request.json
     num = data.get("tracking_number")
     interval = int(data.get("interval", 60))
@@ -57,13 +51,7 @@ def add_task():
 # === 启用 / 停用任务 ===
 @bp.route("/api/tracker/toggle/<int:task_id>", methods=["POST"])
 def toggle_task(task_id):
-    """切换任务状态 - 需要登录"""
-    from flask import session
-    
-    # 检查登录状态
-    if not session.get("logged_in"):
-        return jsonify({"error": "需要操作任务请先登录", "require_login": True}), 403
-    
+    """切换任务状态 - 不需要登录"""
     conn = db_conn()
     try:
         task = conn.execute(
@@ -85,13 +73,7 @@ def toggle_task(task_id):
 # === 手动执行任务 ===
 @bp.route("/api/tracker/run/<int:task_id>", methods=["POST"])
 def run_task(task_id):
-    """手动执行任务 - 需要登录"""
-    from flask import session
-    
-    # 检查登录状态
-    if not session.get("logged_in"):
-        return jsonify({"error": "需要执行任务请先登录", "require_login": True}), 403
-    
+    """手动执行任务 - 不需要登录"""
     conn = db_conn()
     try:
         task = conn.execute(
@@ -147,13 +129,7 @@ def run_task(task_id):
 # === 刷新所有任务 ===
 @bp.route("/api/tracker/refresh_all", methods=["POST"])
 def refresh_all_tasks():
-    """刷新所有任务 - 需要登录"""
-    from flask import session
-    
-    # 检查登录状态
-    if not session.get("logged_in"):
-        return jsonify({"error": "需要刷新任务请先登录", "require_login": True}), 403
-    
+    """刷新所有任务 - 不需要登录"""
     conn = db_conn()
     try:
         tasks = conn.execute("SELECT id FROM tracker_tasks WHERE enabled=1").fetchall()
@@ -206,13 +182,7 @@ def delete_completed_tasks():
 # === 刷新单个任务 ===
 @bp.route("/api/tracker/refresh/<int:task_id>", methods=["POST"])
 def refresh_single_task(task_id):
-    """刷新单个任务 - 需要登录"""
-    from flask import session
-    
-    # 检查登录状态
-    if not session.get("logged_in"):
-        return jsonify({"error": "需要刷新任务请先登录", "require_login": True}), 403
-    
+    """刷新单个任务 - 不需要登录"""
     # 调用现有的 run_task 逻辑
     return run_task(task_id)
 

@@ -40,7 +40,8 @@ async def run_task(task):
         if not parsed:
             status = "抓取失败（保持旧状态）"
         else:
-            status = compare_with_last(parsed)
+            info_path = f"/home/bbdwz/projects/website/tracker_data_{task['id']}.json"
+            status = compare_with_last(parsed, info_path)
 
         conn = db_conn()
         if "抓取失败" in status:
