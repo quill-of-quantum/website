@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Realtime Game Lobby</title>
+    <title>实时游戏大厅</title>
     <style>
       :root {
         --bg: #0f172a;
@@ -131,6 +131,15 @@
         color: var(--muted);
         font-size: 12px;
       }
+      .badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        font-size: 11px;
+        background: #1f2937;
+        color: var(--text);
+      }
       .row {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -148,74 +157,58 @@
   </head>
   <body>
     <header>
-      <h1>Realtime Game Lobby</h1>
-      <p>Rooms are the single source of truth. Join a room or create a new one.</p>
+      <h1>实时游戏大厅</h1>
+      <p>房间即状态来源。加入房间或创建新房间。</p>
     </header>
     <main>
       <section class="panel" id="lobbyPanel">
-        <h2>Lobby</h2>
-        <div class="status" id="connectionStatus">Not connected.</div>
-        <div class="status" id="onlineStatus">Online users: 0</div>
+        <h2>大厅</h2>
+        <div class="status" id="connectionStatus">未连接。</div>
+        <div class="status" id="onlineStatus">在线人数：0</div>
 
-        <label for="roomId">Create Room</label>
+        <label for="roomId">创建房间</label>
         <div class="row">
           <input id="roomId" type="text" placeholder="room-001" value="{{ room_id }}" />
-          <button id="generateRoomBtn" class="secondary" type="button">Generate</button>
+          <button id="generateRoomBtn" class="secondary" type="button">随机</button>
         </div>
-        <label for="roomPassword">Room Password (optional)</label>
-        <input id="roomPassword" type="password" placeholder="optional password" />
-        <button id="createBtn">Create and Join</button>
+        <label for="roomPassword">房间密码（可选）</label>
+        <input id="roomPassword" type="text" placeholder="可选密码" />
+        <button id="createBtn">创建并加入</button>
 
-        <label>Available Rooms</label>
+        <label>可加入房间</label>
         <div class="room-list" id="roomList"></div>
         <div class="status" id="lobbyStatus"></div>
       </section>
 
       <section class="panel hidden" id="roomPanel">
-        <h2>Room</h2>
-        <div class="status" id="roomStatus">Not in a room.</div>
+        <h2>房间</h2>
+        <div class="status" id="roomStatus">未加入房间。</div>
         <div class="status" id="seatStatus"></div>
 
-        <label for="gameType">Game Type</label>
+        <label for="gameType">游戏类型</label>
         <select id="gameType">
-          <option value="">Select</option>
-          <option value="xiangqi">Xiangqi</option>
-          <option value="go">Go</option>
-          <option value="gomoku">Gomoku</option>
-          <option value="custom">Custom</option>
+          <option value="">选择</option>
+          <option value="xiangqi">象棋</option>
+          <option value="go">围棋</option>
+          <option value="gomoku">五子棋</option>
+          <option value="custom">自定义</option>
         </select>
 
-        <label for="newRoomPassword">Update Room Password</label>
-        <input id="newRoomPassword" type="password" placeholder="leave empty to clear" />
-        <button id="updatePasswordBtn" class="secondary">Update Password</button>
-        <button id="leaveBtn" class="danger">Leave Room</button>
+        <label for="newRoomPassword">修改房间密码</label>
+        <input id="newRoomPassword" type="text" placeholder="留空则清除" />
+        <button id="updatePasswordBtn" class="secondary">更新密码</button>
+        <button id="leaveBtn" class="danger">离开房间</button>
 
-        <h3>Room State</h3>
+        <h3>房间状态</h3>
         <div class="state-box" id="stateBox">{}</div>
         <div class="actions">
-          <input id="actionInput" placeholder="Send a placeholder action (e.g. move)" />
-          <button id="sendActionBtn">Send</button>
+          <input id="actionInput" placeholder="发送占位动作（如 move）" />
+          <button id="sendActionBtn">发送</button>
         </div>
       </section>
     </main>
 
-    <script>
-      function loadSocketIoClient() {
-        return new Promise((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "https://cdn.socket.io/4.7.4/socket.io.min.js";
-          script.onload = resolve;
-          script.onerror = () => {
-            const fallback = document.createElement("script");
-            fallback.src = "/socket.io/socket.io.js";
-            fallback.onload = resolve;
-            fallback.onerror = reject;
-            document.head.appendChild(fallback);
-          };
-          document.head.appendChild(script);
-        });
-      }
-    </script>
+    <script src="/static/js/socket.io.min.js"></script>
     <script>
       let socket = null;
       const lobbyPanel = document.getElementById("lobbyPanel");
@@ -276,7 +269,7 @@
       function renderRooms(rooms) {
         roomList.innerHTML = "";
         if (!rooms.length) {
-          roomList.innerHTML = "<div class=\"status\">No active rooms.</div>";
+          roomList.innerHTML = "<div class=\"status\">当前没有房间。</div>";
           return;
         }
         rooms.forEach((room) => {
@@ -285,15 +278,15 @@
           const info = document.createElement("div");
           info.innerHTML = `
             <strong>${room.room_id}</strong>
-            <span class="meta">Players: ${room.players} ${room.has_password ? "[LOCK]" : ""}</span>
-            <span class="meta">Game: ${room.game_type || "unset"}</span>
+            <span class="meta">人数：${room.players} ${room.has_password ? '<span class="badge">有密码</span>' : ""}</span>
+            <span class="meta">游戏：${room.game_type || "未设置"}</span>
           `;
           const joinBtn = document.createElement("button");
-          joinBtn.textContent = "Join";
+          joinBtn.textContent = "加入";
           joinBtn.className = "secondary";
           joinBtn.addEventListener("click", () => {
             const password = room.has_password
-              ? window.prompt("Room password:")
+              ? window.prompt("请输入房间密码：")
               : "";
             socket.emit("join_room", {
               room_id: room.room_id,
@@ -312,7 +305,7 @@
       createBtn.addEventListener("click", () => {
         const roomId = roomIdInput.value.trim();
         if (!roomId) {
-          updateLobbyStatus("Room ID is required.");
+          updateLobbyStatus("请输入房间号。");
           return;
         }
         socket.emit("join_room", {
@@ -324,14 +317,14 @@
 
       updatePasswordBtn.addEventListener("click", () => {
         socket.emit("set_room_password", { password: newRoomPasswordInput.value });
-        newRoomPasswordInput.value = "";
       });
 
       leaveBtn.addEventListener("click", () => {
         socket.emit("leave_room", { force: true });
         currentRoomId = "";
         currentSeat = null;
-        updateRoomStatus("Left room.");
+        newRoomPasswordInput.value = "";
+        updateRoomStatus("已离开房间。");
         showLobby();
         socket.emit("request_lobby");
       });
@@ -339,7 +332,7 @@
       sendActionBtn.addEventListener("click", () => {
         const action = actionInput.value.trim();
         if (!action) {
-          updateRoomStatus("Action is empty.");
+          updateRoomStatus("动作不能为空。");
           return;
         }
         socket.emit("player_action", { action });
@@ -348,7 +341,7 @@
 
       function wireSocketEvents() {
         socket.on("connect", () => {
-          updateConnectionStatus("Connected. Ready to join a room.");
+          updateConnectionStatus("已连接，可加入房间。");
           socket.emit("request_lobby");
           if (currentRoomId) {
             socket.emit("join_room", {
@@ -360,55 +353,57 @@
         });
 
         socket.on("disconnect", () => {
-          updateConnectionStatus("Disconnected.");
-        });
+        updateConnectionStatus("连接已断开。");
+      });
 
         socket.on("lobby_rooms", (data) => {
           renderRooms(data.rooms || []);
         });
 
         socket.on("lobby_stats", (data) => {
-          onlineStatus.textContent = `Online users: ${data.connected}`;
-        });
+        onlineStatus.textContent = `在线人数：${data.connected}`;
+      });
 
         socket.on("join_ok", (data) => {
           currentRoomId = data.room_id;
           currentSeat = data.seat;
-          updateRoomStatus(`Joined ${data.room_id}. Players: ${data.players}`);
-          seatStatus.textContent = `Seat: ${data.seat || "pending"}`;
-          renderState(data.game_state);
-          showRoom();
-        });
+        updateRoomStatus(`已加入 ${data.room_id}。人数：${data.players}`);
+        seatStatus.textContent = `座位：${data.seat || "待分配"}`;
+        newRoomPasswordInput.value = data.room_password || "";
+        renderState(data.game_state);
+        showRoom();
+      });
 
         socket.on("join_error", (data) => {
-          updateLobbyStatus(`Join failed: ${data.reason}`);
-        });
+        updateLobbyStatus(`加入失败：${data.reason}`);
+      });
 
         socket.on("room_update", (data) => {
-          if (data.room_id === currentRoomId) {
-            updateRoomStatus(`Room ${data.room_id}: ${data.players} player(s) online.`);
-          }
-        });
+        if (data.room_id === currentRoomId) {
+          updateRoomStatus(`房间 ${data.room_id}：当前 ${data.players} 人在线。`);
+        }
+      });
 
         socket.on("room_password_updated", (data) => {
-          updateRoomStatus(`Room password updated. Locked: ${data.has_password}`);
-        });
+        updateRoomStatus(`房间密码已更新。加锁：${data.has_password}`);
+        newRoomPasswordInput.value = data.room_password || "";
+      });
 
         socket.on("room_error", (data) => {
-          updateRoomStatus(`Room error: ${data.reason}`);
-        });
+        updateRoomStatus(`房间错误：${data.reason}`);
+      });
 
         socket.on("state_update", (state) => {
           renderState(state);
         });
 
         socket.on("action_error", (data) => {
-          updateRoomStatus(`Action error: ${data.reason}`);
-        });
+        updateRoomStatus(`动作错误：${data.reason}`);
+      });
 
         socket.on("state_error", (data) => {
-          updateRoomStatus(`State error: ${data.reason}`);
-        });
+        updateRoomStatus(`状态错误：${data.reason}`);
+      });
 
         window.addEventListener("beforeunload", () => {
           socket.disconnect();
@@ -419,14 +414,12 @@
         generateRoomId();
       }
 
-      loadSocketIoClient()
-        .then(() => {
-          socket = io();
-          wireSocketEvents();
-        })
-        .catch(() => {
-          updateConnectionStatus("Socket.IO client failed to load.");
-        });
+      if (typeof io === "undefined") {
+        updateConnectionStatus("Socket.IO 客户端加载失败。");
+      } else {
+        socket = io();
+        wireSocketEvents();
+      }
     </script>
   </body>
 </html>

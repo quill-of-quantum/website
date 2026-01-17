@@ -6,7 +6,7 @@ from flask import Blueprint, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 bp = Blueprint("game", __name__, url_prefix="/game")
-socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent")
+socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent", serve_client=True)
 
 ROOM_LOCK = threading.Lock()
 rooms = {}
@@ -170,6 +170,7 @@ def handle_join(data):
                 "seat": seat,
                 "players": len(room["players"]),
                 "game_state": room["game_state"],
+                "room_password": room["password"],
             },
         )
         emit(
@@ -251,7 +252,14 @@ def handle_set_room_password(data):
             emit("room_error", {"reason": "not_in_room"})
             return
         rooms[room_id]["password"] = new_password
-        emit("room_password_updated", {"room_id": room_id, "has_password": bool(new_password)})
+        emit(
+            "room_password_updated",
+            {
+                "room_id": room_id,
+                "has_password": bool(new_password),
+                "room_password": new_password,
+            },
+        )
         _broadcast_lobby()
 
 
