@@ -1921,6 +1921,397 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=103.94538264427979,30.598883430224486;103.65353360443186,30.994256893542204;103.63687470841042,31.096964113943894;103.60137705272497,30.905449192960912;104.36158555316277,31.963084103414715;104.20934944889514,30.96739624759383;103.80135202186251,30.69322490455405&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-14T20:27:27.472369",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "王府奥莱",
+        "灵秀山庄"
+      ],
+      "distance_km": 2115.822,
+      "duration_min": 1362.8333333333333,
+      "toll": 949,
+      "oil_cost": 1467.73,
+      "other": 0,
+      "total_cost": 2416.73,
+      "breakdown": {
+        "highway": {
+          "distance": 2082.286999999999,
+          "cost": 1436.7780300000002
+        },
+        "national": {
+          "distance": 18.169,
+          "cost": 15.043932000000003
+        },
+        "urban": {
+          "distance": 15.366000000000003,
+          "cost": 15.903810000000007
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;112.1478566084528,32.01267895259669;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-14T20:27:49.911410",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "王府井奥莱",
+        "灵秀山庄"
+      ],
+      "distance_km": 81.257,
+      "duration_min": 94.8,
+      "toll": 0,
+      "oil_cost": 64.66,
+      "other": 0,
+      "total_cost": 64.66,
+      "breakdown": {
+        "highway": {
+          "distance": 53.451,
+          "cost": 36.881190000000004
+        },
+        "national": {
+          "distance": 4.8309999999999995,
+          "cost": 4.000068
+        },
+        "urban": {
+          "distance": 22.975,
+          "cost": 23.779124999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.50219916289461,40.04787583290893;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-14T20:28:02.697436",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府井奥莱",
+        "灵秀山庄"
+      ],
+      "distance_km": 81.257,
+      "duration_min": 94.86666666666666,
+      "toll": 0,
+      "oil_cost": 64.66,
+      "other": 0,
+      "total_cost": 64.66,
+      "breakdown": {
+        "highway": {
+          "distance": 53.451,
+          "cost": 36.881190000000004
+        },
+        "national": {
+          "distance": 4.8309999999999995,
+          "cost": 4.000068
+        },
+        "urban": {
+          "distance": 22.975,
+          "cost": 23.779124999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.50219916289461,40.04787583290893;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-14T20:28:19.000067",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.277,
+      "duration_min": 54.0,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.939999999999994,
+          "cost": 22.707899999999995
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:24:17.714478",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "密云南山滑雪场"
+      ],
+      "distance_km": 181.152,
+      "duration_min": 163.48333333333332,
+      "toll": 55,
+      "oil_cost": 129.13,
+      "other": 0,
+      "total_cost": 184.13,
+      "breakdown": {
+        "highway": {
+          "distance": 165.07199999999997,
+          "cost": 113.89968000000005
+        },
+        "national": {
+          "distance": 6.838,
+          "cost": 5.661864000000001
+        },
+        "urban": {
+          "distance": 9.242000000000003,
+          "cost": 9.56547
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:24:18.177429",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "密云南山滑雪场"
+      ],
+      "distance_km": 181.152,
+      "duration_min": 163.48333333333332,
+      "toll": 55,
+      "oil_cost": 129.13,
+      "other": 0,
+      "total_cost": 184.13,
+      "breakdown": {
+        "highway": {
+          "distance": 165.07199999999997,
+          "cost": 113.89968000000005
+        },
+        "national": {
+          "distance": 6.838,
+          "cost": 5.661864000000001
+        },
+        "urban": {
+          "distance": 9.242000000000003,
+          "cost": 9.56547
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:24:19.118491",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "密云南山滑雪场"
+      ],
+      "distance_km": 181.152,
+      "duration_min": 163.48333333333332,
+      "toll": 55,
+      "oil_cost": 129.13,
+      "other": 0,
+      "total_cost": 184.13,
+      "breakdown": {
+        "highway": {
+          "distance": 165.07199999999997,
+          "cost": 113.89968000000005
+        },
+        "national": {
+          "distance": 6.838,
+          "cost": 5.661864000000001
+        },
+        "urban": {
+          "distance": 9.242000000000003,
+          "cost": 9.56547
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:24:26.886292",
+      "origin_address": "旧宫",
+      "destination_address": "旧宫",
+      "waypoint_addresses": [
+        "密云南山滑雪场"
+      ],
+      "distance_km": 181.152,
+      "duration_min": 163.5,
+      "toll": 55,
+      "oil_cost": 129.13,
+      "other": 0,
+      "total_cost": 184.13,
+      "breakdown": {
+        "highway": {
+          "distance": 165.07199999999997,
+          "cost": 113.89968000000005
+        },
+        "national": {
+          "distance": 6.838,
+          "cost": 5.661864000000001
+        },
+        "urban": {
+          "distance": 9.242000000000003,
+          "cost": 9.56547
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.4550228524271,39.812111788087826;116.86519184319955,40.34345334746069;116.4550228524271,39.812111788087826&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:25:15.067391",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.278,
+      "duration_min": 61.5,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.940999999999995,
+          "cost": 22.708934999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:26:17.137920",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.278,
+      "duration_min": 62.43333333333333,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.940999999999995,
+          "cost": 22.708934999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:26:17.769579",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.278,
+      "duration_min": 62.43333333333333,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.940999999999995,
+          "cost": 22.708934999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-16T15:26:21.275618",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.278,
+      "duration_min": 62.43333333333333,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.940999999999995,
+          "cost": 22.708934999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-17T14:37:39.869361",
+      "origin_address": "北京德茂",
+      "destination_address": "徐州沛县蔺楼村",
+      "waypoint_addresses": [],
+      "distance_km": 643.538,
+      "duration_min": 404.06666666666666,
+      "toll": 308,
+      "oil_cost": 448.99,
+      "other": 0,
+      "total_cost": 756.99,
+      "breakdown": {
+        "highway": {
+          "distance": 623.0190000000002,
+          "cost": 429.8831099999999
+        },
+        "national": {
+          "distance": 10.284,
+          "cost": 8.515152
+        },
+        "urban": {
+          "distance": 10.235,
+          "cost": 10.593225
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.79909452377538,34.667614812044754&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }

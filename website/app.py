@@ -39,6 +39,11 @@ app.register_blueprint(map_bp)
 
 from letter_league.letter_api import bp as letter_bp
 app.register_blueprint(letter_bp)
+
+from game.game_api import bp as game_bp, socketio, start_room_cleaner
+app.register_blueprint(game_bp)
+socketio.init_app(app)
+start_room_cleaner()
 # ===============================
 # 基础配置
 # ===============================
@@ -479,5 +484,5 @@ if __name__ == "__main__":
     # 启动后台采集线程
     collect_thread = threading.Thread(target=collect_system_info, daemon=True)
     collect_thread.start()
-    
-    app.run(host="0.0.0.0", port=5000)
+
+    socketio.run(app, host="0.0.0.0", port=5000)

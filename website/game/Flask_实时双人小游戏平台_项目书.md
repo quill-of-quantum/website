@@ -48,17 +48,7 @@
 ## 4. 服务端架构设计
 ### 4.1 模块结构
 ```
-backend/
-├── app.py
-├── routes.py
-├── socket_events.py
-├── game/
-│   ├── room.py
-│   ├── base.py
-│   ├── chess.py
-│   └── billiards.py
-└── utils/
-    └── validator.py
+
 ```
 
 ### 4.2 Socket.IO 初始化
@@ -70,12 +60,7 @@ socketio.run(app, host="0.0.0.0", port=5000)
 ## 5. 房间系统设计
 ### 5.1 房间结构
 ```python
-Room {
-    room_id: str
-    players: dict
-    game: GameInstance
-    state: waiting | playing | ended
-}
+
 ```
 
 ### 5.2 设计原则

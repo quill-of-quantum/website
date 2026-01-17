@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Realtime Game Lobby</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --accent: #22c55e;
+        --muted: #94a3b8;
+        --text: #e2e8f0;
+        --danger: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Trebuchet MS", "Lucida Sans", Arial, sans-serif;
+        background: radial-gradient(circle at 10% 10%, #1e293b, #0f172a);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 24px 20px 0;
+      }
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) 2fr;
+        gap: 20px;
+        padding: 20px;
+        flex: 1;
+      }
+      .panel {
+        background: var(--panel);
+        border-radius: 16px;
+        padding: 18px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+      }
+      label {
+        display: block;
+        margin: 12px 0 6px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      input, select, button, textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #1f2937;
+        background: #0b1220;
+        color: var(--text);
+        font-size: 14px;
+      }
+      button {
+        cursor: pointer;
+        background: var(--accent);
+        color: #052e16;
+        font-weight: 700;
+        margin-top: 12px;
+        border: none;
+      }
+      button.secondary {
+        background: #0b1220;
+        color: var(--text);
+        border: 1px solid #1f2937;
+      }
+      button.danger {
+        background: var(--danger);
+        color: #450a0a;
+      }
+      .status {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+        word-break: break-word;
+      }
+      .state-box {
+        background: #020617;
+        padding: 14px;
+        border-radius: 12px;
+        min-height: 180px;
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        white-space: pre-wrap;
+        color: #e2e8f0;
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .actions button {
+        width: auto;
+        padding: 10px 16px;
+      }
+      .room-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .room-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid #1f2937;
+        background: #0b1220;
+      }
+      .room-item span {
+        display: block;
+        font-size: 13px;
+      }
+      .room-item .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Realtime Game Lobby</h1>
+      <p>Rooms are the single source of truth. Join a room or create a new one.</p>
+    </header>
+    <main>
+      <section class="panel" id="lobbyPanel">
+        <h2>Lobby</h2>
+        <div class="status" id="connectionStatus">Not connected.</div>
+        <div class="status" id="onlineStatus">Online users: 0</div>
+
+        <label for="roomId">Create Room</label>
+        <div class="row">
+          <input id="roomId" type="text" placeholder="room-001" value="{{ room_id }}" />
+          <button id="generateRoomBtn" class="secondary" type="button">Generate</button>
+        </div>
+        <label for="roomPassword">Room Password (optional)</label>
+        <input id="roomPassword" type="password" placeholder="optional password" />
+        <button id="createBtn">Create and Join</button>
+
+        <label>Available Rooms</label>
+        <div class="room-list" id="roomList"></div>
+        <div class="status" id="lobbyStatus"></div>
+      </section>
+
+      <section class="panel hidden" id="roomPanel">
+        <h2>Room</h2>
+        <div class="status" id="roomStatus">Not in a room.</div>
+        <div class="status" id="seatStatus"></div>
+
+        <label for="gameType">Game Type</label>
+        <select id="gameType">
+          <option value="">Select</option>
+          <option value="xiangqi">Xiangqi</option>
+          <option value="go">Go</option>
+          <option value="gomoku">Gomoku</option>
+          <option value="custom">Custom</option>
+        </select>
+
+        <label for="newRoomPassword">Update Room Password</label>
+        <input id="newRoomPassword" type="password" placeholder="leave empty to clear" />
+        <button id="updatePasswordBtn" class="secondary">Update Password</button>
+        <button id="leaveBtn" class="danger">Leave Room</button>
+
+        <h3>Room State</h3>
+        <div class="state-box" id="stateBox">{}</div>
+        <div class="actions">
+          <input id="actionInput" placeholder="Send a placeholder action (e.g. move)" />
+          <button id="sendActionBtn">Send</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      function loadSocketIoClient() {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://cdn.socket.io/4.7.4/socket.io.min.js";
+          script.onload = resolve;
+          script.onerror = () => {
+            const fallback = document.createElement("script");
+            fallback.src = "/socket.io/socket.io.js";
+            fallback.onload = resolve;
+            fallback.onerror = reject;
+            document.head.appendChild(fallback);
+          };
+          document.head.appendChild(script);
+        });
+      }
+    </script>
+    <script>
+      let socket = null;
+      const lobbyPanel = document.getElementById("lobbyPanel");
+      const roomPanel = document.getElementById("roomPanel");
+      const connectionStatus = document.getElementById("connectionStatus");
+      const onlineStatus = document.getElementById("onlineStatus");
+      const lobbyStatus = document.getElementById("lobbyStatus");
+      const roomIdInput = document.getElementById("roomId");
+      const roomPasswordInput = document.getElementById("roomPassword");
+      const generateRoomBtn = document.getElementById("generateRoomBtn");
+      const createBtn = document.getElementById("createBtn");
+      const roomList = document.getElementById("roomList");
+
+      const roomStatus = document.getElementById("roomStatus");
+      const seatStatus = document.getElementById("seatStatus");
+      const gameTypeSelect = document.getElementById("gameType");
+      const newRoomPasswordInput = document.getElementById("newRoomPassword");
+      const updatePasswordBtn = document.getElementById("updatePasswordBtn");
+      const leaveBtn = document.getElementById("leaveBtn");
+      const stateBox = document.getElementById("stateBox");
+      const actionInput = document.getElementById("actionInput");
+      const sendActionBtn = document.getElementById("sendActionBtn");
+
+      let currentRoomId = "{{ room_id }}";
+      let currentSeat = null;
+
+      function updateConnectionStatus(message) {
+        connectionStatus.textContent = message;
+      }
+
+      function updateLobbyStatus(message) {
+        lobbyStatus.textContent = message;
+      }
+
+      function updateRoomStatus(message) {
+        roomStatus.textContent = message;
+      }
+
+      function renderState(state) {
+        stateBox.textContent = JSON.stringify(state, null, 2);
+      }
+
+      function showLobby() {
+        lobbyPanel.classList.remove("hidden");
+        roomPanel.classList.add("hidden");
+      }
+
+      function showRoom() {
+        lobbyPanel.classList.add("hidden");
+        roomPanel.classList.remove("hidden");
+      }
+
+      function generateRoomId() {
+        const suffix = Math.random().toString(36).slice(2, 6);
+        roomIdInput.value = `room-${suffix}`;
+      }
+
+      function renderRooms(rooms) {
+        roomList.innerHTML = "";
+        if (!rooms.length) {
+          roomList.innerHTML = "<div class=\"status\">No active rooms.</div>";
+          return;
+        }
+        rooms.forEach((room) => {
+          const item = document.createElement("div");
+          item.className = "room-item";
+          const info = document.createElement("div");
+          info.innerHTML = `
+            <strong>${room.room_id}</strong>
+            <span class="meta">Players: ${room.players} ${room.has_password ? "[LOCK]" : ""}</span>
+            <span class="meta">Game: ${room.game_type || "unset"}</span>
+          `;
+          const joinBtn = document.createElement("button");
+          joinBtn.textContent = "Join";
+          joinBtn.className = "secondary";
+          joinBtn.addEventListener("click", () => {
+            const password = room.has_password
+              ? window.prompt("Room password:")
+              : "";
+            socket.emit("join_room", {
+              room_id: room.room_id,
+              password: password || null,
+              game_type: gameTypeSelect.value || null,
+            });
+          });
+          item.appendChild(info);
+          item.appendChild(joinBtn);
+          roomList.appendChild(item);
+        });
+      }
+
+      generateRoomBtn.addEventListener("click", generateRoomId);
+
+      createBtn.addEventListener("click", () => {
+        const roomId = roomIdInput.value.trim();
+        if (!roomId) {
+          updateLobbyStatus("Room ID is required.");
+          return;
+        }
+        socket.emit("join_room", {
+          room_id: roomId,
+          password: roomPasswordInput.value || null,
+          game_type: gameTypeSelect.value || null,
+        });
+      });
+
+      updatePasswordBtn.addEventListener("click", () => {
+        socket.emit("set_room_password", { password: newRoomPasswordInput.value });
+        newRoomPasswordInput.value = "";
+      });
+
+      leaveBtn.addEventListener("click", () => {
+        socket.emit("leave_room", { force: true });
+        currentRoomId = "";
+        currentSeat = null;
+        updateRoomStatus("Left room.");
+        showLobby();
+        socket.emit("request_lobby");
+      });
+
+      sendActionBtn.addEventListener("click", () => {
+        const action = actionInput.value.trim();
+        if (!action) {
+          updateRoomStatus("Action is empty.");
+          return;
+        }
+        socket.emit("player_action", { action });
+        actionInput.value = "";
+      });
+
+      function wireSocketEvents() {
+        socket.on("connect", () => {
+          updateConnectionStatus("Connected. Ready to join a room.");
+          socket.emit("request_lobby");
+          if (currentRoomId) {
+            socket.emit("join_room", {
+              room_id: currentRoomId,
+              password: roomPasswordInput.value || null,
+              game_type: gameTypeSelect.value || null,
+            });
+          }
+        });
+
+        socket.on("disconnect", () => {
+          updateConnectionStatus("Disconnected.");
+        });
+
+        socket.on("lobby_rooms", (data) => {
+          renderRooms(data.rooms || []);
+        });
+
+        socket.on("lobby_stats", (data) => {
+          onlineStatus.textContent = `Online users: ${data.connected}`;
+        });
+
+        socket.on("join_ok", (data) => {
+          currentRoomId = data.room_id;
+          currentSeat = data.seat;
+          updateRoomStatus(`Joined ${data.room_id}. Players: ${data.players}`);
+          seatStatus.textContent = `Seat: ${data.seat || "pending"}`;
+          renderState(data.game_state);
+          showRoom();
+        });
+
+        socket.on("join_error", (data) => {
+          updateLobbyStatus(`Join failed: ${data.reason}`);
+        });
+
+        socket.on("room_update", (data) => {
+          if (data.room_id === currentRoomId) {
+            updateRoomStatus(`Room ${data.room_id}: ${data.players} player(s) online.`);
+          }
+        });
+
+        socket.on("room_password_updated", (data) => {
+          updateRoomStatus(`Room password updated. Locked: ${data.has_password}`);
+        });
+
+        socket.on("room_error", (data) => {
+          updateRoomStatus(`Room error: ${data.reason}`);
+        });
+
+        socket.on("state_update", (state) => {
+          renderState(state);
+        });
+
+        socket.on("action_error", (data) => {
+          updateRoomStatus(`Action error: ${data.reason}`);
+        });
+
+        socket.on("state_error", (data) => {
+          updateRoomStatus(`State error: ${data.reason}`);
+        });
+
+        window.addEventListener("beforeunload", () => {
+          socket.disconnect();
+        });
+      }
+
+      if (!roomIdInput.value.trim()) {
+        generateRoomId();
+      }
+
+      loadSocketIoClient()
+        .then(() => {
+          socket = io();
+          wireSocketEvents();
+        })
+        .catch(() => {
+          updateConnectionStatus("Socket.IO client failed to load.");
+        });
+    </script>
+  </body>
+</html>
