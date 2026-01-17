@@ -564,10 +564,12 @@ function renderRoutes(el, info){
   });
 }
 
-// 拉取单个任务详情（添加缓存检查）
+// 拉取单个任务详情（避免缓存命中）
 async function fetchInfo(id){
   try {
-    const res = await fetch(`/api/tracker/info/${id}`);
+    const res = await fetch(`/api/tracker/info/${id}?t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     if (!res.ok) {
       return { error: `HTTP ${res.status}` };
     }
@@ -612,8 +614,14 @@ async function refreshInfo(id){
   }
 }
 
-// 拉取并渲染任务列表
+let loadTasksPromise = null;
+
+// 拉取并渲染任务列表（避免并发刷新造成回退）
 async function loadTasks(){
+  if (loadTasksPromise) {
+    return loadTasksPromise;
+  }
+  loadTasksPromise = (async () => {
   HINT.textContent = '加载中…';
   try {
     const res = await fetch('/api/tracker/list');
@@ -633,6 +641,12 @@ async function loadTasks(){
     }
   } catch (e) {
     HINT.textContent = `加载失败: ${e.message}`;
+  }
+  })();
+  try {
+    return await loadTasksPromise;
+  } finally {
+    loadTasksPromise = null;
   }
 }
 
