@@ -46,6 +46,8 @@ const ChessGame = {
 
   setup: () => ({ pgn: '', winner: null }),
 
+  turn: { activePlayers: { all: null }, minMoves: 1, maxMoves: 1 },
+
   moves: {
     move({ G, playerID }, move) {
       if (G.winner) return INVALID_MOVE;
@@ -74,8 +76,23 @@ const ChessGame = {
       const winner = getWinner(chess);
       return { pgn: chess.pgn(), winner };
     },
+    undoMove({ G, playerID }) {
+      if (G.winner) return INVALID_MOVE;
+      const chess = Load(G.pgn);
+      const normalizedPlayerID = playerID == null ? null : String(playerID);
+      if (normalizedPlayerID !== '0' && normalizedPlayerID !== '1') {
+        return INVALID_MOVE;
+      }
+      const lastMover = chess.turn() === 'w' ? '1' : '0';
+      if (normalizedPlayerID !== lastMover) {
+        return INVALID_MOVE;
+      }
+      const undone = chess.undo();
+      if (!undone) return INVALID_MOVE;
+      const winner = getWinner(chess);
+      return { pgn: chess.pgn(), winner };
+    },
   },
-
 };
 
 export default ChessGame;

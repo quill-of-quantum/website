@@ -233,6 +233,14 @@
           <button id="updatePasswordBtn" class="secondary">更新密码</button>
           <button id="leaveBtn" class="danger">离开房间</button>
 
+          <h3>悔棋</h3>
+          <div class="status" id="undoStatus">无悔棋请求。</div>
+          <div class="inline-row">
+            <button id="undoRequestBtn" class="secondary">申请悔棋</button>
+            <button id="undoApproveBtn" class="secondary hidden">同意</button>
+            <button id="undoRejectBtn" class="secondary hidden">拒绝</button>
+          </div>
+
           <h3>棋类对战（boardgame.io）</h3>
           <div class="inline-row">
             <select id="bgioGameSelect">
@@ -271,6 +279,10 @@
       const newRoomPasswordInput = document.getElementById("newRoomPassword");
       const updatePasswordBtn = document.getElementById("updatePasswordBtn");
       const leaveBtn = document.getElementById("leaveBtn");
+      const undoStatus = document.getElementById("undoStatus");
+      const undoRequestBtn = document.getElementById("undoRequestBtn");
+      const undoApproveBtn = document.getElementById("undoApproveBtn");
+      const undoRejectBtn = document.getElementById("undoRejectBtn");
       const bgioGameSelect = document.getElementById("bgioGameSelect");
       const bgioPlayerSelect = document.getElementById("bgioPlayerSelect");
       const bgioOpenBtn = document.getElementById("bgioOpenBtn");
@@ -280,6 +292,8 @@
       let currentRoomId = "{{ room_id }}";
       let currentSeat = null;
       let roomSeats = {};
+      let undoRequest = null;
+      let pendingUndo = false;
 
       function updateConnectionStatus(message) {
         connectionStatus.textContent = message;
@@ -291,6 +305,42 @@
 
       function updateRoomStatus(message) {
         roomStatus.textContent = message;
+      }
+
+      function updateUndoStatus(message) {
+        undoStatus.textContent = message;
+      }
+
+      function updateUndoUI() {
+        if (!currentRoomId || !currentSeat) {
+          updateUndoStatus("无悔棋请求。");
+          undoRequestBtn.classList.remove("hidden");
+          undoApproveBtn.classList.add("hidden");
+          undoRejectBtn.classList.add("hidden");
+          undoRequestBtn.disabled = false;
+          return;
+        }
+        if (!undoRequest) {
+          updateUndoStatus("无悔棋请求。");
+          undoRequestBtn.classList.remove("hidden");
+          undoApproveBtn.classList.add("hidden");
+          undoRejectBtn.classList.add("hidden");
+          undoRequestBtn.disabled = false;
+          return;
+        }
+        if (undoRequest.from_seat === currentSeat) {
+          updateUndoStatus("已申请悔棋，等待对方同意。");
+          undoRequestBtn.classList.remove("hidden");
+          undoApproveBtn.classList.add("hidden");
+          undoRejectBtn.classList.add("hidden");
+          undoRequestBtn.disabled = true;
+          return;
+        }
+        updateUndoStatus("对方申请悔棋。");
+        undoRequestBtn.classList.add("hidden");
+        undoApproveBtn.classList.remove("hidden");
+        undoRejectBtn.classList.remove("hidden");
+        undoRequestBtn.disabled = true;
       }
 
       function seatToPlayerID(seat) {
@@ -349,11 +399,21 @@
           bgioStatus.textContent = "请先加入房间再加载棋盘。";
           return;
         }
+        const cacheBuster = Date.now();
         const game = bgioGameSelect.value;
         const playerID = bgioPlayerSelect.value;
-        const route = `/static/bgio/index.html#/chess/multiplayer${playerID}?room=${encodeURIComponent(currentRoomId)}&embed=1`;
+        const route = `/static/bgio/index.html?v=${cacheBuster}#/chess/multiplayer${playerID}?room=${encodeURIComponent(currentRoomId)}&embed=1`;
         bgioFrame.src = route;
         bgioStatus.textContent = `已加载 ${game}（房间 ${currentRoomId}）。`;
+      }
+
+      function triggerUndoInFrame() {
+        if (bgioFrame.contentWindow) {
+          bgioFrame.contentWindow.postMessage({ type: "bgio-undo" }, window.location.origin);
+          pendingUndo = false;
+        } else {
+          pendingUndo = true;
+        }
       }
 
       function renderRooms(rooms) {
@@ -414,11 +474,25 @@
         currentRoomId = "";
         currentSeat = null;
         roomSeats = {};
+        undoRequest = null;
         newRoomPasswordInput.value = "";
         updateRoomStatus("已离开房间。");
         updateSeatOptions();
+        updateUndoUI();
         showLobby();
         socket.emit("request_lobby");
+      });
+
+      undoRequestBtn.addEventListener("click", () => {
+        socket.emit("request_undo");
+      });
+
+      undoApproveBtn.addEventListener("click", () => {
+        socket.emit("approve_undo");
+      });
+
+      undoRejectBtn.addEventListener("click", () => {
+        socket.emit("reject_undo");
       });
 
       bgioPlayerSelect.addEventListener("change", () => {
@@ -438,6 +512,12 @@
       });
 
       bgioOpenBtn.addEventListener("click", updateBoardgameFrame);
+
+      bgioFrame.addEventListener("load", () => {
+        if (pendingUndo) {
+          triggerUndoInFrame();
+        }
+      });
 
       function wireSocketEvents() {
         socket.on("connect", () => {
@@ -478,6 +558,8 @@
         }
         roomSeats = data.seats || {};
         updateSeatOptions();
+        undoRequest = null;
+        updateUndoUI();
         updateBoardgameFrame();
       });
 
@@ -500,7 +582,44 @@
         currentSeat = data.seat;
         seatStatus.textContent = `座位：${currentSeat || "待分配"}`;
         updateSeatOptions();
+        updateUndoUI();
         updateBoardgameFrame();
+      });
+
+      socket.on("undo_requested", (data) => {
+        undoRequest = data || null;
+        updateUndoUI();
+        if (!undoRequest || undoRequest.from_seat === currentSeat) {
+          return;
+        }
+        const requester = undoRequest.from_seat === 1 ? "白方" : "黑方";
+        const approved = window.confirm(`${requester} 申请悔棋，是否同意？`);
+        if (approved) {
+          socket.emit("approve_undo");
+        } else {
+          socket.emit("reject_undo");
+        }
+      });
+
+      socket.on("undo_rejected", (data) => {
+        undoRequest = null;
+        updateUndoStatus(data && data.reason === "requester_left" ? "对方已离开，悔棋请求取消。" : "悔棋已拒绝。");
+        updateUndoUI();
+      });
+
+      socket.on("undo_approved", (data) => {
+        undoRequest = null;
+        updateUndoStatus("已同意悔棋。");
+        updateUndoUI();
+        if (data && currentSeat === data.from_seat) {
+          triggerUndoInFrame();
+        }
+      });
+
+      socket.on("undo_error", (data) => {
+        const reason = data && data.reason ? data.reason : "unknown";
+        updateUndoStatus(`悔棋失败：${reason}`);
+        updateUndoUI();
       });
 
         socket.on("room_password_updated", (data) => {

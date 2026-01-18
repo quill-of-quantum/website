@@ -37,6 +37,7 @@ def _get_or_create_room(room_id, password):
             "password": password or None,
             "players": set(),
             "seats": {},
+            "undo_request": None,
             "game_state": _default_state(),
             "empty_since": None,
             "created_at": _now(),
@@ -201,6 +202,11 @@ def handle_leave(data):
         if not result:
             return
         if not result["destroyed"]:
+            room = rooms[result["room_id"]]
+            undo_request = room.get("undo_request")
+            if undo_request and undo_request.get("from_sid") == request.sid:
+                room["undo_request"] = None
+                emit("undo_rejected", {"reason": "requester_left"}, to=result["room_id"])
             emit(
                 "room_update",
                 {
@@ -274,6 +280,70 @@ def handle_set_room_password(data):
         _broadcast_lobby()
 
 
+@socketio.on("request_undo")
+def handle_request_undo():
+    with ROOM_LOCK:
+        room_id = sid_to_room.get(request.sid)
+        if not room_id or room_id not in rooms:
+            emit("undo_error", {"reason": "not_in_room"})
+            return
+        room = rooms[room_id]
+        seat = room["seats"].get(request.sid)
+        if seat not in (1, 2):
+            emit("undo_error", {"reason": "no_seat"})
+            return
+        if room["undo_request"] is not None:
+            emit("undo_error", {"reason": "request_pending"})
+            return
+        room["undo_request"] = {"from_sid": request.sid, "from_seat": seat}
+        emit("undo_requested", {"from_seat": seat}, to=room_id)
+
+
+@socketio.on("approve_undo")
+def handle_approve_undo():
+    with ROOM_LOCK:
+        room_id = sid_to_room.get(request.sid)
+        if not room_id or room_id not in rooms:
+            emit("undo_error", {"reason": "not_in_room"})
+            return
+        room = rooms[room_id]
+        if room["undo_request"] is None:
+            emit("undo_error", {"reason": "no_request"})
+            return
+        if room["undo_request"]["from_sid"] == request.sid:
+            emit("undo_error", {"reason": "cannot_approve_self"})
+            return
+        seat = room["seats"].get(request.sid)
+        if seat not in (1, 2):
+            emit("undo_error", {"reason": "no_seat"})
+            return
+        from_seat = room["undo_request"]["from_seat"]
+        room["undo_request"] = None
+        emit(
+            "undo_approved",
+            {"approver_seat": seat, "from_seat": from_seat},
+            to=room_id,
+        )
+
+
+@socketio.on("reject_undo")
+def handle_reject_undo():
+    with ROOM_LOCK:
+        room_id = sid_to_room.get(request.sid)
+        if not room_id or room_id not in rooms:
+            emit("undo_error", {"reason": "not_in_room"})
+            return
+        room = rooms[room_id]
+        if room["undo_request"] is None:
+            emit("undo_error", {"reason": "no_request"})
+            return
+        if room["undo_request"]["from_sid"] == request.sid:
+            emit("undo_error", {"reason": "cannot_reject_self"})
+            return
+        room["undo_request"] = None
+        emit("undo_rejected", {"reason": "rejected"}, to=room_id)
+
+
 @socketio.on("switch_seat")
 def handle_switch_seat(data):
     data = data or {}
@@ -333,6 +403,11 @@ def handle_disconnect():
         if not result:
             return
         if not result["destroyed"]:
+            room = rooms[result["room_id"]]
+            undo_request = room.get("undo_request")
+            if undo_request and undo_request.get("from_sid") == request.sid:
+                room["undo_request"] = None
+                emit("undo_rejected", {"reason": "requester_left"}, to=result["room_id"])
             emit(
                 "room_update",
                 {

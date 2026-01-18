@@ -47,6 +47,24 @@ class Board extends React.Component {
     dragged: '',
   };
 
+  componentDidMount() {
+    this._handleMessage = (event) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      if (event.data && event.data.type === 'bgio-undo' && this.props.moves) {
+        this.props.moves.undoMove();
+      }
+    };
+    window.addEventListener('message', this._handleMessage);
+  }
+
+  componentWillUnmount() {
+    if (this._handleMessage) {
+      window.removeEventListener('message', this._handleMessage);
+    }
+  }
+
   render() {
     if (this.props.G.pgn) {
       const loaded = this.chess.load_pgn(this.props.G.pgn);
