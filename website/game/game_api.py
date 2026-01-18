@@ -52,8 +52,16 @@ def _validate_room_password(room, password):
 
 
 def _assign_seat(room, sid):
+    occupied = set()
+    for value in room["seats"].values():
+        try:
+            seat_value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if seat_value in (1, 2):
+            occupied.add(seat_value)
     for seat in (1, 2):
-        if seat not in room["seats"].values():
+        if seat not in occupied:
             room["seats"][sid] = seat
             return seat
     return None
@@ -162,7 +170,9 @@ def handle_join(data):
         if room["game_state"]["game_type"] is None and game_type:
             room["game_state"]["game_type"] = game_type
 
-        seat = room["seats"].get(request.sid) or _assign_seat(room, request.sid)
+        seat = room["seats"].get(request.sid)
+        if seat not in (1, 2):
+            seat = _assign_seat(room, request.sid)
         emit(
             "join_ok",
             {
@@ -171,6 +181,7 @@ def handle_join(data):
                 "players": len(room["players"]),
                 "game_state": room["game_state"],
                 "room_password": room["password"],
+                "seats": room["seats"],
             },
         )
         emit(
@@ -261,6 +272,47 @@ def handle_set_room_password(data):
             },
         )
         _broadcast_lobby()
+
+
+@socketio.on("switch_seat")
+def handle_switch_seat(data):
+    data = data or {}
+    try:
+        requested = int(data.get("seat"))
+    except (TypeError, ValueError):
+        requested = None
+    if requested not in (1, 2):
+        emit("room_error", {"reason": "invalid_seat"})
+        return
+    with ROOM_LOCK:
+        room_id = sid_to_room.get(request.sid)
+        if not room_id or room_id not in rooms:
+            emit("room_error", {"reason": "not_in_room"})
+            return
+        room = rooms[room_id]
+        current = room["seats"].get(request.sid)
+        occupied = set()
+        for value in room["seats"].values():
+            try:
+                seat_value = int(value)
+            except (TypeError, ValueError):
+                continue
+            if seat_value in (1, 2):
+                occupied.add(seat_value)
+        if requested != current and requested in occupied:
+            emit("room_error", {"reason": "seat_taken"})
+            return
+        room["seats"][request.sid] = requested
+        emit("seat_changed", {"seat": requested})
+        emit(
+            "room_update",
+            {
+                "room_id": room_id,
+                "players": len(room["players"]),
+                "seats": room["seats"],
+            },
+            to=room_id,
+        )
 
 
 @socketio.on("connect")

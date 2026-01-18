@@ -44,11 +44,20 @@
         padding: 20px;
         flex: 1;
       }
+      body.room-active main {
+        grid-template-columns: 1fr;
+      }
       .panel {
         background: var(--panel);
         border-radius: 16px;
         padding: 18px;
         box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+      }
+      #roomPanel {
+        padding: 0;
+      }
+      #roomPanel .room-content {
+        padding: 18px;
       }
       label {
         display: block;
@@ -104,6 +113,35 @@
         gap: 10px;
         margin-top: 12px;
       }
+      .iframe-box {
+        margin-top: 16px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #1f2937;
+        background: #0b1220;
+        position: relative;
+        height: 100vh;
+      }
+      .iframe-box iframe {
+        width: 100%;
+        height: 100%;
+        display: block;
+        border: 0;
+        pointer-events: auto;
+      }
+      #roomPanel .iframe-box {
+        margin: 0;
+        border-radius: 0;
+        border-left: 0;
+        border-right: 0;
+        height: 100vh;
+      }
+      .inline-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 10px;
+        margin-top: 10px;
+      }
       .actions button {
         width: auto;
         padding: 10px 16px;
@@ -152,6 +190,9 @@
         main {
           grid-template-columns: 1fr;
         }
+        #roomPanel .iframe-box {
+          height: 100vh;
+        }
       }
     </style>
   </head>
@@ -181,29 +222,32 @@
       </section>
 
       <section class="panel hidden" id="roomPanel">
-        <h2>房间</h2>
-        <div class="status" id="roomStatus">未加入房间。</div>
-        <div class="status" id="seatStatus"></div>
+        <div class="room-content">
+          <h2>房间</h2>
+          <div class="status" id="roomStatus">未加入房间。</div>
+          <div class="status" id="seatStatus"></div>
 
-        <label for="gameType">游戏类型</label>
-        <select id="gameType">
-          <option value="">选择</option>
-          <option value="xiangqi">象棋</option>
-          <option value="go">围棋</option>
-          <option value="gomoku">五子棋</option>
-          <option value="custom">自定义</option>
-        </select>
 
-        <label for="newRoomPassword">修改房间密码</label>
-        <input id="newRoomPassword" type="text" placeholder="留空则清除" />
-        <button id="updatePasswordBtn" class="secondary">更新密码</button>
-        <button id="leaveBtn" class="danger">离开房间</button>
+          <label for="newRoomPassword">修改房间密码</label>
+          <input id="newRoomPassword" type="text" placeholder="留空则清除" />
+          <button id="updatePasswordBtn" class="secondary">更新密码</button>
+          <button id="leaveBtn" class="danger">离开房间</button>
 
-        <h3>房间状态</h3>
-        <div class="state-box" id="stateBox">{}</div>
-        <div class="actions">
-          <input id="actionInput" placeholder="发送占位动作（如 move）" />
-          <button id="sendActionBtn">发送</button>
+          <h3>棋类对战（boardgame.io）</h3>
+          <div class="inline-row">
+            <select id="bgioGameSelect">
+              <option value="chess">国际象棋</option>
+            </select>
+            <select id="bgioPlayerSelect">
+              <option value="0">白方</option>
+              <option value="1">黑方</option>
+            </select>
+            <button id="bgioOpenBtn" class="secondary">加载棋盘</button>
+          </div>
+          <div class="status" id="bgioStatus">使用当前房间号作为对局 ID。</div>
+        </div>
+        <div class="iframe-box">
+          <iframe id="bgioFrame" title="Boardgame.io"></iframe>
         </div>
       </section>
     </main>
@@ -224,16 +268,18 @@
 
       const roomStatus = document.getElementById("roomStatus");
       const seatStatus = document.getElementById("seatStatus");
-      const gameTypeSelect = document.getElementById("gameType");
       const newRoomPasswordInput = document.getElementById("newRoomPassword");
       const updatePasswordBtn = document.getElementById("updatePasswordBtn");
       const leaveBtn = document.getElementById("leaveBtn");
-      const stateBox = document.getElementById("stateBox");
-      const actionInput = document.getElementById("actionInput");
-      const sendActionBtn = document.getElementById("sendActionBtn");
+      const bgioGameSelect = document.getElementById("bgioGameSelect");
+      const bgioPlayerSelect = document.getElementById("bgioPlayerSelect");
+      const bgioOpenBtn = document.getElementById("bgioOpenBtn");
+      const bgioFrame = document.getElementById("bgioFrame");
+      const bgioStatus = document.getElementById("bgioStatus");
 
       let currentRoomId = "{{ room_id }}";
       let currentSeat = null;
+      let roomSeats = {};
 
       function updateConnectionStatus(message) {
         connectionStatus.textContent = message;
@@ -247,16 +293,48 @@
         roomStatus.textContent = message;
       }
 
-      function renderState(state) {
-        stateBox.textContent = JSON.stringify(state, null, 2);
+      function seatToPlayerID(seat) {
+        if (seat === 1) return "0";
+        if (seat === 2) return "1";
+        return "";
       }
 
+      function playerIDToSeat(playerID) {
+        if (playerID === "0") return 1;
+        if (playerID === "1") return 2;
+        return null;
+      }
+
+      function updateSeatOptions() {
+        const takenSeats = new Set(Object.values(roomSeats || {}));
+        const whiteOption = bgioPlayerSelect.querySelector('option[value="0"]');
+        const blackOption = bgioPlayerSelect.querySelector('option[value="1"]');
+        const seat1Taken = takenSeats.has(1);
+        const seat2Taken = takenSeats.has(2);
+        if (currentSeat) {
+          const currentPlayerID = seatToPlayerID(currentSeat);
+          if (currentPlayerID) {
+            bgioPlayerSelect.value = currentPlayerID;
+          }
+        }
+        if (whiteOption) {
+          whiteOption.disabled = seat1Taken && currentSeat !== 1;
+        }
+        if (blackOption) {
+          blackOption.disabled = seat2Taken && currentSeat !== 2;
+        }
+        bgioPlayerSelect.disabled = seat1Taken && seat2Taken;
+      }
+
+
       function showLobby() {
+        document.body.classList.remove("room-active");
         lobbyPanel.classList.remove("hidden");
         roomPanel.classList.add("hidden");
       }
 
       function showRoom() {
+        document.body.classList.add("room-active");
         lobbyPanel.classList.add("hidden");
         roomPanel.classList.remove("hidden");
       }
@@ -264,6 +342,18 @@
       function generateRoomId() {
         const suffix = Math.random().toString(36).slice(2, 6);
         roomIdInput.value = `room-${suffix}`;
+      }
+
+      function updateBoardgameFrame() {
+        if (!currentRoomId) {
+          bgioStatus.textContent = "请先加入房间再加载棋盘。";
+          return;
+        }
+        const game = bgioGameSelect.value;
+        const playerID = bgioPlayerSelect.value;
+        const route = `/static/bgio/index.html#/chess/multiplayer${playerID}?room=${encodeURIComponent(currentRoomId)}&embed=1`;
+        bgioFrame.src = route;
+        bgioStatus.textContent = `已加载 ${game}（房间 ${currentRoomId}）。`;
       }
 
       function renderRooms(rooms) {
@@ -291,7 +381,7 @@
             socket.emit("join_room", {
               room_id: room.room_id,
               password: password || null,
-              game_type: gameTypeSelect.value || null,
+              game_type: null,
             });
           });
           item.appendChild(info);
@@ -311,7 +401,7 @@
         socket.emit("join_room", {
           room_id: roomId,
           password: roomPasswordInput.value || null,
-          game_type: gameTypeSelect.value || null,
+          game_type: null,
         });
       });
 
@@ -323,21 +413,31 @@
         socket.emit("leave_room", { force: true });
         currentRoomId = "";
         currentSeat = null;
+        roomSeats = {};
         newRoomPasswordInput.value = "";
         updateRoomStatus("已离开房间。");
+        updateSeatOptions();
         showLobby();
         socket.emit("request_lobby");
       });
 
-      sendActionBtn.addEventListener("click", () => {
-        const action = actionInput.value.trim();
-        if (!action) {
-          updateRoomStatus("动作不能为空。");
+      bgioPlayerSelect.addEventListener("change", () => {
+        const requestedSeat = playerIDToSeat(bgioPlayerSelect.value);
+        if (!requestedSeat || !currentRoomId) {
           return;
         }
-        socket.emit("player_action", { action });
-        actionInput.value = "";
+        if (requestedSeat === currentSeat) {
+          return;
+        }
+        if (Object.values(roomSeats || {}).includes(requestedSeat)) {
+          updateRoomStatus("该位置已有人，无法切换。");
+          updateSeatOptions();
+          return;
+        }
+        socket.emit("switch_seat", { seat: requestedSeat });
       });
+
+      bgioOpenBtn.addEventListener("click", updateBoardgameFrame);
 
       function wireSocketEvents() {
         socket.on("connect", () => {
@@ -347,7 +447,7 @@
             socket.emit("join_room", {
               room_id: currentRoomId,
               password: roomPasswordInput.value || null,
-              game_type: gameTypeSelect.value || null,
+              game_type: null,
             });
           }
         });
@@ -364,24 +464,43 @@
         onlineStatus.textContent = `在线人数：${data.connected}`;
       });
 
-        socket.on("join_ok", (data) => {
+      socket.on("join_ok", (data) => {
           currentRoomId = data.room_id;
           currentSeat = data.seat;
         updateRoomStatus(`已加入 ${data.room_id}。人数：${data.players}`);
         seatStatus.textContent = `座位：${data.seat || "待分配"}`;
         newRoomPasswordInput.value = data.room_password || "";
-        renderState(data.game_state);
         showRoom();
+        if (data.seat === 1) {
+          bgioPlayerSelect.value = "0";
+        } else if (data.seat === 2) {
+          bgioPlayerSelect.value = "1";
+        }
+        roomSeats = data.seats || {};
+        updateSeatOptions();
+        updateBoardgameFrame();
       });
 
         socket.on("join_error", (data) => {
         updateLobbyStatus(`加入失败：${data.reason}`);
       });
 
-        socket.on("room_update", (data) => {
+      socket.on("room_update", (data) => {
         if (data.room_id === currentRoomId) {
           updateRoomStatus(`房间 ${data.room_id}：当前 ${data.players} 人在线。`);
+          roomSeats = data.seats || {};
+          updateSeatOptions();
         }
+      });
+
+      socket.on("seat_changed", (data) => {
+        if (!data) {
+          return;
+        }
+        currentSeat = data.seat;
+        seatStatus.textContent = `座位：${currentSeat || "待分配"}`;
+        updateSeatOptions();
+        updateBoardgameFrame();
       });
 
         socket.on("room_password_updated", (data) => {
@@ -391,18 +510,6 @@
 
         socket.on("room_error", (data) => {
         updateRoomStatus(`房间错误：${data.reason}`);
-      });
-
-        socket.on("state_update", (state) => {
-          renderState(state);
-        });
-
-        socket.on("action_error", (data) => {
-        updateRoomStatus(`动作错误：${data.reason}`);
-      });
-
-        socket.on("state_error", (data) => {
-        updateRoomStatus(`状态错误：${data.reason}`);
       });
 
         window.addEventListener("beforeunload", () => {
