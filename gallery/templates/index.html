@@ -23,18 +23,35 @@
         </div>
       </header>
 
-      {% if photos %}
+      {% if groups %}
         <section class="gallery-grid" data-gallery>
-          {% for photo in photos %}
-            <button class="photo-card" type="button" data-full="{{ photo.url }}">
-              <div class="photo-frame">
-                <img src="{{ photo.url }}" alt="{{ photo.species }}" loading="lazy" />
+          {% for group in groups %}
+            <article class="species-group" data-group>
+              <button class="stack-card" type="button" data-group-toggle>
+                <div class="stack-photos">
+                  {% for photo in group.stack_photos %}
+                    <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
+                  {% endfor %}
+                </div>
+              </button>
+              <div class="stack-label">
+                <p class="photo-species">{{ group.species }}</p>
+                <p class="photo-name">{{ group.count }} 张照片</p>
               </div>
-              <div class="photo-meta">
-                <p class="photo-species">{{ photo.species }}</p>
-                <p class="photo-name">{{ photo.name }}</p>
-              </div>
-            </button>
+              <template data-group-grid>
+                {% for photo in group.photos %}
+                  <button class="photo-card" type="button" data-full="{{ photo.url }}">
+                    <div class="photo-frame">
+                      <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
+                    </div>
+                    <div class="photo-meta">
+                      <p class="photo-species">{{ group.species }}</p>
+                      <p class="photo-name">{{ photo.name }}</p>
+                    </div>
+                  </button>
+                {% endfor %}
+              </template>
+            </article>
           {% endfor %}
         </section>
       {% else %}
@@ -45,6 +62,14 @@
       {% endif %}
     </main>
 
+    <div class="group-modal" data-group-modal hidden>
+      <div class="group-modal-inner">
+        <button class="group-modal-close" type="button" data-group-close>关闭</button>
+        <h2 class="group-modal-title" data-group-title></h2>
+        <div class="group-modal-grid" data-group-content></div>
+      </div>
+    </div>
+
     <div class="lightbox" data-lightbox hidden>
       <button class="lightbox-close" type="button" data-lightbox-close hidden>关闭</button>
       <img class="lightbox-image" src="" alt="" data-lightbox-image />
@@ -53,10 +78,20 @@
 
     <script>
       const grid = document.querySelector("[data-gallery]");
+      const groupModal = document.querySelector("[data-group-modal]");
+      const groupTitle = document.querySelector("[data-group-title]");
+      const groupContent = document.querySelector("[data-group-content]");
+      const groupClose = document.querySelector("[data-group-close]");
       const lightbox = document.querySelector("[data-lightbox]");
       const lightboxImage = document.querySelector("[data-lightbox-image]");
       const lightboxCaption = document.querySelector("[data-lightbox-caption]");
       const closeBtn = document.querySelector("[data-lightbox-close]");
+
+      const closeGroupModal = () => {
+        groupModal.hidden = true;
+        groupContent.innerHTML = "";
+        document.body.classList.remove("no-scroll");
+      };
 
       const closeLightbox = () => {
         lightbox.hidden = true;
@@ -66,6 +101,20 @@
 
       if (grid) {
         grid.addEventListener("click", (event) => {
+          const toggle = event.target.closest("[data-group-toggle]");
+          if (toggle) {
+            const group = toggle.closest("[data-group]");
+            const panel = group.querySelector("[data-group-grid]");
+            groupTitle.textContent = group.querySelector(".photo-species").textContent;
+            groupContent.innerHTML = panel.innerHTML;
+            groupModal.hidden = false;
+            document.body.classList.add("no-scroll");
+            return;
+          }
+        });
+      }
+
+      document.addEventListener("click", (event) => {
           const card = event.target.closest(".photo-card");
           if (!card) {
             return;
@@ -77,8 +126,14 @@
           lightbox.hidden = false;
           closeBtn.hidden = false;
           document.body.classList.add("no-scroll");
-        });
-      }
+      });
+
+      groupClose.addEventListener("click", closeGroupModal);
+      groupModal.addEventListener("click", (event) => {
+        if (event.target === groupModal) {
+          closeGroupModal();
+        }
+      });
 
       closeBtn.addEventListener("click", closeLightbox);
       lightbox.addEventListener("click", (event) => {

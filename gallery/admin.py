@@ -5,6 +5,9 @@ import os
 from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 from PIL import Image, ExifTags
 
+from featured import get_featured_map, get_group_order, set_featured, set_group_order
+from gallery_data import build_groups
+
 try:
     import piexif
 except Exception:  # pragma: no cover - optional dependency
@@ -158,6 +161,17 @@ def login():
 def admin_dashboard():
     if not session.get("logged_in"):
         return redirect(url_for("admin.login"))
+    photos_root = current_app.config.get(
+        "GALLERY_PHOTOS_ROOT", os.path.join(os.path.dirname(__file__), "photos")
+    )
+    featured_map = get_featured_map(current_app.config.get("GALLERY_DB_PATH"))
+    group_order = get_group_order(current_app.config.get("GALLERY_DB_PATH"))
+    group_list = build_groups(
+        photos_root,
+        lambda path: url_for("photo_file", filename=path),
+        featured_map,
+        group_order,
+    )
     results = []
     errors = []
     if request.method == "POST":
@@ -175,7 +189,9 @@ def admin_dashboard():
                     results.append(result)
             except Exception as exc:
                 errors.append(f"{file.filename} 上传失败：{exc}")
-    return render_template("admin.html", results=results, errors=errors)
+    return render_template(
+        "admin.html", results=results, errors=errors, groups=group_list
+    )
 
 
 @admin_bp.route("/admin/upload", methods=["POST"])
@@ -252,6 +268,33 @@ def admin_preflight():
         else:
             to_upload.append({"name": filename, "size": size})
     return {"ok": True, "to_upload": to_upload, "skipped": skipped}
+
+
+@admin_bp.route("/admin/featured", methods=["POST"])
+def admin_featured():
+    if not session.get("logged_in"):
+        return {"ok": False, "error": "未登录"}, 401
+    payload = request.get_json(silent=True) or {}
+    species = str(payload.get("species") or "").strip()
+    filenames = payload.get("filenames") or []
+    if not species or not isinstance(filenames, list):
+        return {"ok": False, "error": "参数错误"}, 400
+    filenames = [str(name) for name in filenames][:3]
+    set_featured(current_app.config.get("GALLERY_DB_PATH"), species, filenames)
+    return {"ok": True, "filenames": filenames}
+
+
+@admin_bp.route("/admin/group-order", methods=["POST"])
+def admin_group_order():
+    if not session.get("logged_in"):
+        return {"ok": False, "error": "未登录"}, 401
+    payload = request.get_json(silent=True) or {}
+    species_list = payload.get("species") or []
+    if not isinstance(species_list, list):
+        return {"ok": False, "error": "参数错误"}, 400
+    species_list = [str(name) for name in species_list if name]
+    set_group_order(current_app.config.get("GALLERY_DB_PATH"), species_list)
+    return {"ok": True}
 
 
 @admin_bp.route("/logout/")
