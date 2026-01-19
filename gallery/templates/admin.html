@@ -340,6 +340,7 @@
       let currentGroup = null;
       let selected = [];
       let editMode = false;
+      let pauseHighRes = false;
 
       const renderBadges = () => {
         adminGrid.querySelectorAll("[data-filename]").forEach((card) => {
@@ -367,6 +368,9 @@
       const loadFull = (img) => {
         const full = img.dataset.fullSrc;
         if (!full || img.dataset.fullLoaded) {
+          return;
+        }
+        if (pauseHighRes && !img.closest("[data-admin-grid]")) {
           return;
         }
         img.dataset.fullLoaded = "1";
@@ -400,6 +404,7 @@
         renderBadges();
         adminModal.hidden = false;
         document.body.classList.add("no-scroll");
+        pauseHighRes = true;
         const modalImages = [...adminGrid.querySelectorAll("[data-full-src]")];
         const loadModalVisible = () => {
           const visible = modalImages.filter((img) => {
@@ -424,6 +429,7 @@
         adminModal.hidden = true;
         adminGrid.innerHTML = "";
         document.body.classList.remove("no-scroll");
+        pauseHighRes = false;
       };
 
       if (adminGroups) {

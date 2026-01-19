@@ -87,6 +87,7 @@
       <img class="lightbox-image" src="" alt="" data-lightbox-image />
       <p class="lightbox-caption" data-lightbox-caption></p>
     </div>
+    <div class="focus-loading" data-focus-loading hidden>正在全力加载这张图</div>
 
     <script>
       const grid = document.querySelector("[data-gallery]");
@@ -98,6 +99,8 @@
       const lightboxImage = document.querySelector("[data-lightbox-image]");
       const lightboxCaption = document.querySelector("[data-lightbox-caption]");
       const closeBtn = document.querySelector("[data-lightbox-close]");
+      const focusLoading = document.querySelector("[data-focus-loading]");
+      let pauseHighRes = false;
 
       const closeGroupModal = () => {
         groupModal.hidden = true;
@@ -109,6 +112,9 @@
         lightbox.hidden = true;
         closeBtn.hidden = true;
         document.body.classList.remove("no-scroll");
+        focusLoading.hidden = true;
+        pauseHighRes = false;
+        scheduleVisibleLoad();
       };
 
       if (grid) {
@@ -150,12 +156,25 @@
           return;
         }
         const img = card.querySelector("img");
+        pauseHighRes = true;
+        focusLoading.hidden = false;
         lightboxImage.src = card.dataset.full;
         lightboxImage.alt = img.alt;
         lightboxCaption.textContent = img.alt;
         lightbox.hidden = false;
         closeBtn.hidden = false;
         document.body.classList.add("no-scroll");
+        const resumeLoads = () => {
+          pauseHighRes = false;
+          focusLoading.hidden = true;
+          scheduleVisibleLoad();
+        };
+        if (lightboxImage.complete) {
+          resumeLoads();
+        } else {
+          lightboxImage.addEventListener("load", resumeLoads, { once: true });
+          lightboxImage.addEventListener("error", resumeLoads, { once: true });
+        }
       });
 
       const fullImages = new Map();
@@ -194,6 +213,9 @@
       const allImages = [...document.querySelectorAll("[data-full-src]")];
 
       const loadVisibleHighRes = () => {
+        if (pauseHighRes) {
+          return;
+        }
         const visible = allImages.filter((img) => {
           const rect = img.getBoundingClientRect();
           return rect.bottom > 0 && rect.top < window.innerHeight;

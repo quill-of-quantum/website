@@ -583,6 +583,19 @@ button {
   border-radius: 999px;
 }
 
+.focus-loading {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(23, 23, 20, 0.78);
+  color: #f2eadf;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  z-index: 20;
+}
+
 .no-scroll {
   overflow: hidden;
 }
