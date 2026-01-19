@@ -2,19 +2,22 @@ import os
 import random
 
 
-def build_groups(photos_root, url_builder, featured_map=None, group_order=None):
+def build_groups(photos_root, url_builder, thumb_builder, featured_map=None, group_order=None):
     groups = {}
     if os.path.isdir(photos_root):
-        for dirpath, _, filenames in os.walk(photos_root):
+        for dirpath, dirnames, filenames in os.walk(photos_root):
+            dirnames[:] = [d for d in dirnames if d != ".thumbs"]
             rel_dir = os.path.relpath(dirpath, photos_root)
             species = rel_dir if rel_dir != "." else "未分类"
             for filename in sorted(filenames):
                 if not filename.lower().endswith((".jpg", ".jpeg")):
                     continue
                 rel_path = os.path.join(rel_dir, filename) if rel_dir != "." else filename
+                rel_path = rel_path.replace(os.sep, "/")
                 groups.setdefault(species, []).append(
                     {
-                        "url": url_builder(rel_path.replace(os.sep, "/")),
+                        "url": url_builder(rel_path),
+                        "thumb_url": thumb_builder(rel_path),
                         "name": os.path.splitext(filename)[0],
                         "filename": filename,
                     }

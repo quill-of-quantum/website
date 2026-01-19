@@ -169,6 +169,7 @@ def admin_dashboard():
     group_list = build_groups(
         photos_root,
         lambda path: url_for("photo_file", filename=path),
+        lambda path: url_for("photo_thumb", size=360, filename=path),
         featured_map,
         group_order,
     )

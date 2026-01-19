@@ -70,10 +70,16 @@
               >
                 <button class="stack-card" type="button" data-admin-toggle>
                   <div class="stack-photos">
-                    {% for photo in group.stack_photos %}
-                      <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
-                    {% endfor %}
-                  </div>
+                  {% for photo in group.stack_photos %}
+                      <img
+                        src="{{ photo.thumb_url }}"
+                        data-full-src="{{ photo.url }}"
+                        alt="{{ group.species }}"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                  {% endfor %}
+                </div>
                 </button>
                 <div class="stack-label">
                   <p class="photo-species">{{ group.species }}</p>
@@ -83,7 +89,13 @@
                   {% for photo in group.photos %}
                     <div class="selectable-card" data-filename="{{ photo.filename }}">
                       <div class="photo-frame">
-                        <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
+                        <img
+                          src="{{ photo.thumb_url }}"
+                          data-full-src="{{ photo.url }}"
+                          alt="{{ group.species }}"
+                          loading="lazy"
+                          decoding="async"
+                        />
                       </div>
                       <div class="photo-meta">
                         <p class="photo-species">{{ group.species }}</p>
@@ -344,6 +356,38 @@
         });
       };
 
+      const setLoading = (img, loading) => {
+        img.classList.toggle("is-loading", loading);
+        const frame = img.closest(".photo-frame");
+        if (frame) {
+          frame.classList.toggle("is-loading", loading);
+        }
+      };
+
+      const loadFull = (img) => {
+        const full = img.dataset.fullSrc;
+        if (!full || img.dataset.fullLoaded) {
+          return;
+        }
+        img.dataset.fullLoaded = "1";
+        setLoading(img, true);
+        const high = new Image();
+        high.src = full;
+        high.onload = () => {
+          img.addEventListener(
+            "load",
+            () => {
+              setLoading(img, false);
+            },
+            { once: true }
+          );
+          img.src = full;
+        };
+        high.onerror = () => {
+          setLoading(img, false);
+        };
+      };
+
       const openModal = (group) => {
         currentGroup = group;
         const template = group.querySelector("[data-group-photos]");
@@ -356,6 +400,24 @@
         renderBadges();
         adminModal.hidden = false;
         document.body.classList.add("no-scroll");
+        const modalImages = [...adminGrid.querySelectorAll("[data-full-src]")];
+        const loadModalVisible = () => {
+          const visible = modalImages.filter((img) => {
+            const rect = img.getBoundingClientRect();
+            return rect.bottom > 0 && rect.top < window.innerHeight;
+          });
+          visible.forEach((img) => {
+            if (img.dataset.fullLoaded) {
+              return;
+            }
+            if (img.complete) {
+              loadFull(img);
+            } else {
+              img.addEventListener("load", () => loadFull(img), { once: true });
+            }
+          });
+        };
+        requestAnimationFrame(loadModalVisible);
       };
 
       const closeModal = () => {

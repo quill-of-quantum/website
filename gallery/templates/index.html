@@ -30,7 +30,13 @@
               <button class="stack-card" type="button" data-group-toggle>
                 <div class="stack-photos">
                   {% for photo in group.stack_photos %}
-                    <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
+                    <img
+                      src="{{ photo.thumb_url }}"
+                      data-full-src="{{ photo.url }}"
+                      alt="{{ group.species }}"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   {% endfor %}
                 </div>
               </button>
@@ -42,7 +48,13 @@
                 {% for photo in group.photos %}
                   <button class="photo-card" type="button" data-full="{{ photo.url }}">
                     <div class="photo-frame">
-                      <img src="{{ photo.url }}" alt="{{ group.species }}" loading="lazy" />
+                      <img
+                        src="{{ photo.thumb_url }}"
+                        data-full-src="{{ photo.url }}"
+                        alt="{{ group.species }}"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     </div>
                     <div class="photo-meta">
                       <p class="photo-species">{{ group.species }}</p>
@@ -109,24 +121,109 @@
             groupContent.innerHTML = panel.innerHTML;
             groupModal.hidden = false;
             document.body.classList.add("no-scroll");
+            const modalImages = [...groupContent.querySelectorAll("[data-full-src]")];
+            const loadModalVisible = () => {
+              const visible = modalImages.filter((img) => {
+                const rect = img.getBoundingClientRect();
+                return rect.bottom > 0 && rect.top < window.innerHeight;
+              });
+              visible.forEach((img) => {
+                if (fullImages.has(img)) {
+                  return;
+                }
+                if (img.complete) {
+                  loadFull(img);
+                } else {
+                  img.addEventListener("load", () => loadFull(img), { once: true });
+                }
+              });
+            };
+            requestAnimationFrame(loadModalVisible);
             return;
           }
         });
       }
 
       document.addEventListener("click", (event) => {
-          const card = event.target.closest(".photo-card");
-          if (!card) {
+        const card = event.target.closest(".photo-card");
+        if (!card) {
+          return;
+        }
+        const img = card.querySelector("img");
+        lightboxImage.src = card.dataset.full;
+        lightboxImage.alt = img.alt;
+        lightboxCaption.textContent = img.alt;
+        lightbox.hidden = false;
+        closeBtn.hidden = false;
+        document.body.classList.add("no-scroll");
+      });
+
+      const fullImages = new Map();
+      const setLoading = (img, loading) => {
+        img.classList.toggle("is-loading", loading);
+        const frame = img.closest(".photo-frame");
+        if (frame) {
+          frame.classList.toggle("is-loading", loading);
+        }
+      };
+
+      const loadFull = (img) => {
+        const full = img.dataset.fullSrc;
+        if (!full || fullImages.has(img)) {
+          return;
+        }
+        fullImages.set(img, true);
+        setLoading(img, true);
+        const high = new Image();
+        high.src = full;
+        high.onload = () => {
+          img.addEventListener(
+            "load",
+            () => {
+              setLoading(img, false);
+            },
+            { once: true }
+          );
+          img.src = full;
+        };
+        high.onerror = () => {
+          setLoading(img, false);
+        };
+      };
+
+      const allImages = [...document.querySelectorAll("[data-full-src]")];
+
+      const loadVisibleHighRes = () => {
+        const visible = allImages.filter((img) => {
+          const rect = img.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        });
+        visible.forEach((img) => {
+          if (fullImages.has(img)) {
             return;
           }
-          const img = card.querySelector("img");
-          lightboxImage.src = card.dataset.full;
-          lightboxImage.alt = img.alt;
-          lightboxCaption.textContent = img.alt;
-          lightbox.hidden = false;
-          closeBtn.hidden = false;
-          document.body.classList.add("no-scroll");
-      });
+          if (img.complete) {
+            loadFull(img);
+          } else {
+            img.addEventListener("load", () => loadFull(img), { once: true });
+          }
+        });
+      };
+
+      const scheduleVisibleLoad = () => {
+        if (scheduleVisibleLoad.pending) {
+          return;
+        }
+        scheduleVisibleLoad.pending = true;
+        requestAnimationFrame(() => {
+          scheduleVisibleLoad.pending = false;
+          loadVisibleHighRes();
+        });
+      };
+
+      window.addEventListener("load", scheduleVisibleLoad, { once: true });
+      window.addEventListener("scroll", scheduleVisibleLoad, { passive: true });
+      window.addEventListener("resize", scheduleVisibleLoad);
 
       groupClose.addEventListener("click", closeGroupModal);
       groupModal.addEventListener("click", (event) => {
