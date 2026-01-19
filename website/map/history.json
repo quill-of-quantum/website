@@ -2312,6 +2312,37 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.79909452377538,34.667614812044754&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-18T16:14:00.035179",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "灵秀山庄",
+        "北京王府奥莱 世界之花",
+        "灵秀山庄"
+      ],
+      "distance_km": 24.278,
+      "duration_min": 60.65,
+      "toll": 0,
+      "oil_cost": 24.56,
+      "other": 0,
+      "total_cost": 24.56,
+      "breakdown": {
+        "highway": {
+          "distance": 0.6,
+          "cost": 0.414
+        },
+        "national": {
+          "distance": 1.7369999999999999,
+          "cost": 1.4382360000000003
+        },
+        "urban": {
+          "distance": 21.940999999999995,
+          "cost": 22.708934999999997
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }
