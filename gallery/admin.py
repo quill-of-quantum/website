@@ -1,3 +1,4 @@
+import io
 import json
 import os
 
@@ -34,25 +35,43 @@ def _decode_user_comment(raw):
     return str(raw)
 
 
-def extract_species(image_stream):
+def extract_species(image_data):
     user_comment = None
-    if piexif:
-        try:
-            data = image_stream.read()
-            image_stream.seek(0)
-            exif_dict = piexif.load(data)
-            user_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
-        except Exception:
-            user_comment = None
-    if user_comment is None:
-        image = Image.open(image_stream)
-        exif = image.getexif()
-        user_comment_tag = None
-        for tag, name in ExifTags.TAGS.items():
-            if name == "UserComment":
-                user_comment_tag = tag
-                break
-        user_comment = exif.get(user_comment_tag)
+    if isinstance(image_data, (bytes, bytearray)):
+        data = bytes(image_data)
+        if piexif:
+            try:
+                exif_dict = piexif.load(data)
+                user_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
+            except Exception:
+                user_comment = None
+        if user_comment is None:
+            image = Image.open(io.BytesIO(data))
+            exif = image.getexif()
+            user_comment_tag = None
+            for tag, name in ExifTags.TAGS.items():
+                if name == "UserComment":
+                    user_comment_tag = tag
+                    break
+            user_comment = exif.get(user_comment_tag)
+    else:
+        if piexif:
+            try:
+                data = image_data.read()
+                image_data.seek(0)
+                exif_dict = piexif.load(data)
+                user_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
+            except Exception:
+                user_comment = None
+        if user_comment is None:
+            image = Image.open(image_data)
+            exif = image.getexif()
+            user_comment_tag = None
+            for tag, name in ExifTags.TAGS.items():
+                if name == "UserComment":
+                    user_comment_tag = tag
+                    break
+            user_comment = exif.get(user_comment_tag)
     user_comment = _decode_user_comment(user_comment)
     if not user_comment:
         return None, "缺少 EXIF UserComment"
@@ -77,8 +96,15 @@ def sanitize_species(name):
 def save_photo(file_storage):
     if not allowed_file(file_storage.filename):
         return None, f"{file_storage.filename} 不是 JPG/JPEG 文件"
-    species, err = extract_species(file_storage.stream)
-    file_storage.stream.seek(0)
+    try:
+        file_storage.stream.seek(0)
+    except Exception:
+        pass
+    data = file_storage.read()
+    incoming_size = len(data)
+    if incoming_size == 0:
+        return None, f"{file_storage.filename} 读取失败"
+    species, err = extract_species(data)
     if err:
         return None, f"{file_storage.filename} 解析失败：{err}"
     safe_species = sanitize_species(species)
@@ -91,7 +117,20 @@ def save_photo(file_storage):
     os.makedirs(species_dir, exist_ok=True)
     original_name = os.path.basename(file_storage.filename)
     target_path = os.path.join(species_dir, original_name)
-    file_storage.save(target_path)
+    if os.path.exists(target_path):
+        try:
+            existing_size = os.path.getsize(target_path)
+        except OSError:
+            existing_size = None
+        if existing_size == incoming_size:
+            return {
+                "filename": file_storage.filename,
+                "species": species,
+                "saved_to": os.path.relpath(target_path, photos_root),
+                "skipped": True,
+            }, None
+    with open(target_path, "wb") as f:
+        f.write(data)
     return {
         "filename": file_storage.filename,
         "species": species,
@@ -176,6 +215,43 @@ def admin_upload_one():
         return {"ok": True, "result": result}
     except Exception as exc:
         return {"ok": False, "error": f"{file.filename} 上传失败：{exc}"}, 500
+
+
+@admin_bp.route("/admin/preflight", methods=["POST"])
+def admin_preflight():
+    if not session.get("logged_in"):
+        return {"ok": False, "error": "未登录"}, 401
+    payload = request.get_json(silent=True) or {}
+    files = payload.get("files") or []
+    if not isinstance(files, list):
+        return {"ok": False, "error": "参数错误"}, 400
+    photos_root = current_app.config.get(
+        "GALLERY_PHOTOS_ROOT", os.path.join(os.path.dirname(__file__), "photos")
+    )
+    existing = {}
+    if os.path.isdir(photos_root):
+        for dirpath, _, filenames in os.walk(photos_root):
+            for name in filenames:
+                try:
+                    size = os.path.getsize(os.path.join(dirpath, name))
+                except OSError:
+                    continue
+                existing.setdefault(name, set()).add(size)
+    to_upload = []
+    skipped = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        filename = str(item.get("name") or "")
+        size = item.get("size")
+        if not filename or size is None:
+            continue
+        sizes = existing.get(os.path.basename(filename), set())
+        if int(size) in sizes:
+            skipped.append({"name": filename, "size": size})
+        else:
+            to_upload.append({"name": filename, "size": size})
+    return {"ok": True, "to_upload": to_upload, "skipped": skipped}
 
 
 @admin_bp.route("/logout/")

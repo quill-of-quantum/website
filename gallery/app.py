@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, render_template
+from flask import Flask, render_template, send_from_directory, url_for
 
 from admin import admin_bp
 
@@ -16,7 +16,38 @@ app.register_blueprint(admin_bp)
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    photos_root = app.config["GALLERY_PHOTOS_ROOT"]
+    photos = []
+    species_set = set()
+    if os.path.isdir(photos_root):
+        for dirpath, _, filenames in os.walk(photos_root):
+            rel_dir = os.path.relpath(dirpath, photos_root)
+            species = rel_dir if rel_dir != "." else "未分类"
+            for filename in sorted(filenames):
+                if not filename.lower().endswith((".jpg", ".jpeg")):
+                    continue
+                rel_path = os.path.join(rel_dir, filename) if rel_dir != "." else filename
+                photos.append(
+                    {
+                        "url": url_for("photo_file", filename=rel_path.replace(os.sep, "/")),
+                        "species": species,
+                        "name": os.path.splitext(filename)[0],
+                    }
+                )
+                species_set.add(species)
+    photos.sort(key=lambda item: (item["species"], item["name"]))
+    return render_template(
+        "index.html",
+        photos=photos,
+        photo_count=len(photos),
+        species_count=len(species_set),
+    )
+
+
+@app.route("/photos/<path:filename>")
+def photo_file(filename):
+    photos_root = app.config["GALLERY_PHOTOS_ROOT"]
+    return send_from_directory(photos_root, filename)
 
 
 if __name__ == "__main__":

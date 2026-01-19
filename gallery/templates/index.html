@@ -6,11 +6,86 @@
     <title>Gallery</title>
     <link rel="stylesheet" href="/static/style.css" />
   </head>
-  <body>
-    <main class="wrap">
-      <h1>Gallery</h1>
-      <p>这里是画廊站点的最小框架。</p>
-      <a class="enter-link" href="/1/">进入后台</a>
+  <body class="page-gallery">
+    <main class="gallery">
+      <header class="gallery-hero">
+        <div>
+          <p class="eyebrow">Bird Photo Journal</p>
+          <h1>Gallery</h1>
+          <p class="hero-subtitle">按物种归档的日常观鸟影像。</p>
+        </div>
+        <div class="hero-actions">
+          <div class="hero-stats">
+            <span>{{ photo_count }} 张照片</span>
+            <span>{{ species_count }} 个物种</span>
+          </div>
+          <a class="enter-link" href="/1/">进入后台</a>
+        </div>
+      </header>
+
+      {% if photos %}
+        <section class="gallery-grid" data-gallery>
+          {% for photo in photos %}
+            <button class="photo-card" type="button" data-full="{{ photo.url }}">
+              <div class="photo-frame">
+                <img src="{{ photo.url }}" alt="{{ photo.species }}" loading="lazy" />
+              </div>
+              <div class="photo-meta">
+                <p class="photo-species">{{ photo.species }}</p>
+                <p class="photo-name">{{ photo.name }}</p>
+              </div>
+            </button>
+          {% endfor %}
+        </section>
+      {% else %}
+        <section class="empty-state">
+          <h2>还没有照片</h2>
+          <p>上传你的第一张照片，画廊就会在这里展示。</p>
+        </section>
+      {% endif %}
     </main>
+
+    <div class="lightbox" data-lightbox hidden>
+      <button class="lightbox-close" type="button" data-lightbox-close hidden>关闭</button>
+      <img class="lightbox-image" src="" alt="" data-lightbox-image />
+      <p class="lightbox-caption" data-lightbox-caption></p>
+    </div>
+
+    <script>
+      const grid = document.querySelector("[data-gallery]");
+      const lightbox = document.querySelector("[data-lightbox]");
+      const lightboxImage = document.querySelector("[data-lightbox-image]");
+      const lightboxCaption = document.querySelector("[data-lightbox-caption]");
+      const closeBtn = document.querySelector("[data-lightbox-close]");
+
+      const closeLightbox = () => {
+        lightbox.hidden = true;
+        closeBtn.hidden = true;
+        document.body.classList.remove("no-scroll");
+      };
+
+      if (grid) {
+        grid.addEventListener("click", (event) => {
+          const card = event.target.closest(".photo-card");
+          if (!card) {
+            return;
+          }
+          const img = card.querySelector("img");
+          lightboxImage.src = card.dataset.full;
+          lightboxImage.alt = img.alt;
+          lightboxCaption.textContent = img.alt;
+          lightbox.hidden = false;
+          closeBtn.hidden = false;
+          document.body.classList.add("no-scroll");
+        });
+      }
+
+      closeBtn.addEventListener("click", closeLightbox);
+      lightbox.addEventListener("click", (event) => {
+        if (event.target === lightbox) {
+          closeLightbox();
+        }
+      });
+    </script>
   </body>
 </html>

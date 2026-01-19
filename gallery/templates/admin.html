@@ -42,7 +42,10 @@
         {% if results %}
           <div class="notice success">
             {% for item in results %}
-              <p>{{ item.filename }} → {{ item.saved_to }}</p>
+              <p>
+                {{ item.filename }} → {{ item.saved_to }}
+                {% if item.skipped %}(已存在，跳过){% endif %}
+              </p>
             {% endfor %}
           </div>
         {% endif %}
@@ -63,6 +66,27 @@
       const liveSuccess = document.querySelector("[data-live-success]");
       const liveError = document.querySelector("[data-live-error]");
 
+      const makeFileMapKey = (name, size) => `${name}__${size}`;
+
+      const preflight = async (files) => {
+        const payload = {
+          files: files.map((file) => ({
+            name: file.name,
+            size: file.size,
+          })),
+        };
+        const res = await fetch("/admin/preflight", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "预检查失败");
+        }
+        return data;
+      };
+
       if (form) {
         form.addEventListener("submit", (event) => {
           event.preventDefault();
@@ -70,107 +94,142 @@
           if (!files.length) {
             return;
           }
-          const total = files.length;
-          const totalBytes = Array.from(files).reduce((sum, file) => sum + file.size, 0);
-          let uploadedBytes = 0;
-          let done = 0;
-          let successCount = 0;
-          let failCount = 0;
-
+          const fileList = Array.from(files);
           const formatMB = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 
           progressWrap.hidden = false;
           progressBar.style.width = "0%";
           progressText.textContent = "0%";
-          statusText.textContent = "开始上传...";
+          statusText.textContent = "正在检查重复文件...";
           summaryText.hidden = false;
-          summaryText.textContent = `已完成 0/${total}，成功 0，失败 0，已完成 ${formatMB(0)} / 总计 ${formatMB(totalBytes)}`;
+          summaryText.textContent = `已完成 0/0，成功 0，失败 0，已完成 ${formatMB(0)} / 总计 ${formatMB(0)}`;
           liveSuccess.hidden = true;
           liveError.hidden = true;
           liveSuccess.innerHTML = "";
           liveError.innerHTML = "";
 
-          const uploadOne = (file, index) =>
-            new Promise((resolve) => {
-              const data = new FormData();
-              data.append("photo", file);
-              const xhr = new XMLHttpRequest();
-              xhr.open("POST", "/admin/upload-one", true);
-              statusText.textContent = `正在上传第 ${index + 1}/${total} 张：${file.name}`;
-
-              xhr.upload.addEventListener("progress", (evt) => {
-                if (!evt.lengthComputable) {
-                  return;
-                }
-                const overall = totalBytes
-                  ? (uploadedBytes + evt.loaded) / totalBytes
-                  : (done + evt.loaded / evt.total) / total;
-                const percent = Math.round(overall * 100);
-                progressBar.style.width = `${percent}%`;
-                progressText.textContent = `${percent}%`;
-              });
-
-              xhr.addEventListener("load", () => {
-                let payload = null;
-                try {
-                  payload = JSON.parse(xhr.responseText);
-                } catch (err) {
-                  payload = null;
-                }
-                if (xhr.status >= 200 && xhr.status < 300 && payload && payload.ok) {
-                  successCount += 1;
-                  liveSuccess.hidden = false;
-                  const p = document.createElement("p");
-                  p.textContent = `${file.name} → ${payload.result.saved_to}`;
-                  liveSuccess.appendChild(p);
-                } else {
-                  failCount += 1;
-                  liveError.hidden = false;
-                  const msg = payload && payload.error ? payload.error : "上传失败";
-                  const p = document.createElement("p");
-                  p.textContent = msg;
-                  liveError.appendChild(p);
-                }
-                done += 1;
-                uploadedBytes += file.size;
-                summaryText.textContent =
-                  `已完成 ${done}/${total}，成功 ${successCount}，失败 ${failCount}` +
-                  `，已完成 ${formatMB(uploadedBytes)} / 总计 ${formatMB(totalBytes)}`;
-                const percent = Math.round(
-                  (totalBytes ? uploadedBytes / totalBytes : done / total) * 100
-                );
-                progressBar.style.width = `${percent}%`;
-                progressText.textContent = `${percent}%`;
-                resolve();
-              });
-
-              xhr.addEventListener("error", () => {
-                failCount += 1;
-                liveError.hidden = false;
-                const p = document.createElement("p");
-                p.textContent = `${file.name} 上传失败`;
-                liveError.appendChild(p);
-                done += 1;
-                uploadedBytes += file.size;
-                summaryText.textContent =
-                  `已完成 ${done}/${total}，成功 ${successCount}，失败 ${failCount}` +
-                  `，已完成 ${formatMB(uploadedBytes)} / 总计 ${formatMB(totalBytes)}`;
-                const percent = Math.round(
-                  (totalBytes ? uploadedBytes / totalBytes : done / total) * 100
-                );
-                progressBar.style.width = `${percent}%`;
-                progressText.textContent = `${percent}%`;
-                resolve();
-              });
-
-              xhr.send(data);
-            });
-
           const runQueue = async () => {
-            for (let i = 0; i < total; i += 1) {
-              await uploadOne(files[i], i);
+            let totalBytes = 0;
+            let uploadedBytes = 0;
+            let done = 0;
+            let successCount = 0;
+            let failCount = 0;
+
+            try {
+              const check = await preflight(fileList);
+              const skipMap = new Set(
+                (check.skipped || []).map((item) => makeFileMapKey(item.name, item.size))
+              );
+              if (check.skipped && check.skipped.length) {
+                liveSuccess.hidden = false;
+                check.skipped.forEach((item) => {
+                  const p = document.createElement("p");
+                  p.textContent = `${item.name} (已存在，跳过)`;
+                  liveSuccess.appendChild(p);
+                  const match = fileList.find(
+                    (file) =>
+                      makeFileMapKey(file.name, file.size) === makeFileMapKey(item.name, item.size)
+                  );
+                  if (match) {
+                    done += 1;
+                    successCount += 1;
+                  }
+                });
+              }
+              const uploadQueue = fileList.filter(
+                (file) => !skipMap.has(makeFileMapKey(file.name, file.size))
+              );
+              totalBytes = uploadQueue.reduce((sum, file) => sum + file.size, 0);
+              summaryText.textContent =
+                `已完成 ${done}/${fileList.length}，成功 ${successCount}，失败 ${failCount}` +
+                `，已完成 ${formatMB(uploadedBytes)} / 总计 ${formatMB(totalBytes)}`;
+
+              const uploadOne = (file, index, totalToUpload) =>
+                new Promise((resolve) => {
+                  const data = new FormData();
+                  data.append("photo", file);
+                  const xhr = new XMLHttpRequest();
+                  xhr.open("POST", "/admin/upload-one", true);
+                  statusText.textContent =
+                    `正在上传第 ${index + 1}/${totalToUpload} 张：${file.name}`;
+
+                  xhr.upload.addEventListener("progress", (evt) => {
+                    if (!evt.lengthComputable) {
+                      return;
+                    }
+                    const overall = totalBytes
+                      ? (uploadedBytes + evt.loaded) / totalBytes
+                      : 0;
+                    const percent = Math.round(overall * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${percent}%`;
+                  });
+
+                  xhr.addEventListener("load", () => {
+                    let payload = null;
+                    try {
+                      payload = JSON.parse(xhr.responseText);
+                    } catch (err) {
+                      payload = null;
+                    }
+                    if (xhr.status >= 200 && xhr.status < 300 && payload && payload.ok) {
+                      successCount += 1;
+                      liveSuccess.hidden = false;
+                      const p = document.createElement("p");
+                      p.textContent = `${file.name} → ${payload.result.saved_to}`;
+                      liveSuccess.appendChild(p);
+                    } else {
+                      failCount += 1;
+                      liveError.hidden = false;
+                      const msg = payload && payload.error ? payload.error : "上传失败";
+                      const p = document.createElement("p");
+                      p.textContent = msg;
+                      liveError.appendChild(p);
+                    }
+                    done += 1;
+                    uploadedBytes += file.size;
+                    summaryText.textContent =
+                      `已完成 ${done}/${fileList.length}，成功 ${successCount}，失败 ${failCount}` +
+                      `，已完成 ${formatMB(uploadedBytes)} / 总计 ${formatMB(totalBytes)}`;
+                    const percent = Math.round(
+                      (totalBytes ? uploadedBytes / totalBytes : done / fileList.length) * 100
+                    );
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${percent}%`;
+                    resolve();
+                  });
+
+                  xhr.addEventListener("error", () => {
+                    failCount += 1;
+                    liveError.hidden = false;
+                    const p = document.createElement("p");
+                    p.textContent = `${file.name} 上传失败`;
+                    liveError.appendChild(p);
+                    done += 1;
+                    uploadedBytes += file.size;
+                    summaryText.textContent =
+                      `已完成 ${done}/${fileList.length}，成功 ${successCount}，失败 ${failCount}` +
+                      `，已完成 ${formatMB(uploadedBytes)} / 总计 ${formatMB(totalBytes)}`;
+                    const percent = Math.round(
+                      (totalBytes ? uploadedBytes / totalBytes : done / fileList.length) * 100
+                    );
+                    progressBar.style.width = `${percent}%`;
+                    progressText.textContent = `${percent}%`;
+                    resolve();
+                  });
+
+                  xhr.send(data);
+                });
+
+              for (let i = 0; i < uploadQueue.length; i += 1) {
+                await uploadOne(uploadQueue[i], i, uploadQueue.length || 1);
+              }
+              statusText.textContent = "全部上传完成";
+              progressBar.style.width = "100%";
+              progressText.textContent = "100%";
+            } catch (err) {
+              statusText.textContent = err.message || "预检查失败";
             }
-            statusText.textContent = "全部上传完成";
           };
 
           runQueue();
