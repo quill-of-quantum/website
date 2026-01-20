@@ -39,6 +39,25 @@ def generate_thumbnail(file_path, filename):
         print(f"生成缩略图失败: {e}")
         return False
 
+# 清理多余缩略图（无原图对应）
+def cleanup_orphan_thumbnails():
+    removed = []
+    try:
+        for fname in os.listdir(THUMBNAIL_FOLDER):
+            thumb_path = os.path.join(THUMBNAIL_FOLDER, fname)
+            if not os.path.isfile(thumb_path):
+                continue
+            if not fname.startswith("thumb_"):
+                continue
+            original_name = fname[len("thumb_"):]
+            original_path = os.path.join(UPLOAD_FOLDER, original_name)
+            if not os.path.exists(original_path):
+                os.remove(thumb_path)
+                removed.append(fname)
+    except Exception as e:
+        print(f"清理缩略图失败: {e}")
+    return removed
+
 # 上传文件（仅保存）
 @bp.route("/api/tools/upload", methods=["POST"])
 def upload_file():
@@ -125,7 +144,15 @@ def delete_file(name):
     
     try:
         os.remove(os.path.join(UPLOAD_FOLDER, name))
-        return jsonify({"message": f"🗑️ 已删除 {name}"})
+        if is_image_file(name):
+            thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{name}")
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
+        removed = cleanup_orphan_thumbnails()
+        msg = f"🗑️ 已删除 {name}"
+        if removed:
+            msg += f"，并清理多余缩略图 {len(removed)} 个"
+        return jsonify({"message": msg, "removed_thumbnails": removed})
     except Exception as e:
         return jsonify({"message": f"删除失败: {e}"}), 500
 
@@ -145,3 +172,16 @@ def serve_upload(filename):
 @bp.route("/thumbnails/<path:filename>")
 def serve_thumbnail(filename):
     return send_from_directory(THUMBNAIL_FOLDER, filename)
+
+# 手动清理缩略图
+@bp.route("/api/tools/clean_thumbnails", methods=["POST"])
+def clean_thumbnails():
+    """清理多余缩略图 - 需要登录"""
+    if not session.get("logged_in"):
+        return jsonify({"error": "需要登录后才能清理缩略图", "require_login": True}), 403
+
+    removed = cleanup_orphan_thumbnails()
+    return jsonify({
+        "message": f"✅ 已清理多余缩略图 {len(removed)} 个",
+        "removed_thumbnails": removed
+    })
