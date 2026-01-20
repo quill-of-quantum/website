@@ -36,7 +36,7 @@ from tools_api import bp as tools_bp
 app.register_blueprint(tools_bp)
 
 from admin_api import bp as admin_bp
-from admin_api import record_visit, record_request_timing
+from admin_api import record_visit, record_request_timing, is_lan_ip
 app.register_blueprint(admin_bp)
 
 from map.map_api import bp as map_bp
@@ -69,6 +69,8 @@ USER_DB = {
 def track_visit():
     g.request_start = time.time()
     ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if ip and "," in ip:
+        ip = ip.split(",", 1)[0].strip()
     path = request.path
     if path.startswith("/static/") or path.startswith("/uploads/") or path.startswith("/thumbnails/"):
         return
@@ -98,7 +100,10 @@ def record_latency(response):
     start = getattr(g, "request_start", None)
     if start is not None:
         duration_ms = (time.time() - start) * 1000
-        record_request_timing(duration_ms)
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        if ip and "," in ip:
+            ip = ip.split(",", 1)[0].strip()
+        record_request_timing(duration_ms, is_lan=is_lan_ip(ip or ""))
     return response
 
 @app.route("/")

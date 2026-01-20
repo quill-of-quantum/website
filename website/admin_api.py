@@ -10,11 +10,14 @@ import subprocess
 import shutil
 import threading
 from collections import deque
+import geoip2.database
+import geoip2.errors
 
 bp = Blueprint("admin", __name__)
 
 ADMIN_PREFIX = "/1"
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
+GEOIP_DB_PATH = "/home/bbdwz/projects/website/GeoLite2-City.mmdb"
 
 def _get_lan_networks():
     nets = []
@@ -39,6 +42,10 @@ def _get_lan_networks():
     return nets
 
 LAN_NETWORKS = _get_lan_networks()
+GEOIP_LOCK = threading.Lock()
+GEOIP_READER = None
+GEOIP_CACHE = {}
+GEOIP_CACHE_MAX = 2000
 
 CLIENT_TIMEOUT_SEC = 120
 CLIENT_PATH_TIMEOUT_SEC = 120
@@ -46,6 +53,7 @@ CLIENTS_LOCK = threading.Lock()
 CLIENTS = {}
 REQUESTS_LOCK = threading.Lock()
 REQUEST_TIMES = deque()
+REQUEST_TIMES_BY_NET = deque()
 REQUEST_WINDOW_SEC = 24 * 3600
 NET_METRICS_LOCK = threading.Lock()
 NET_METRICS = deque()
@@ -73,6 +81,68 @@ def is_lan_ip(ip):
     except Exception:
         return False
 
+def _get_geo_reader():
+    global GEOIP_READER
+    with GEOIP_LOCK:
+        if GEOIP_READER is not None:
+            return GEOIP_READER
+        if not os.path.exists(GEOIP_DB_PATH):
+            return None
+        try:
+            GEOIP_READER = geoip2.database.Reader(GEOIP_DB_PATH)
+        except Exception:
+            GEOIP_READER = None
+        return GEOIP_READER
+
+def _cache_geo(ip, value):
+    if ip in GEOIP_CACHE:
+        GEOIP_CACHE[ip] = value
+        return
+    if len(GEOIP_CACHE) >= GEOIP_CACHE_MAX:
+        GEOIP_CACHE.pop(next(iter(GEOIP_CACHE)))
+    GEOIP_CACHE[ip] = value
+
+def _normalize_ip(ip):
+    if not ip:
+        return ""
+    if "," in ip:
+        return ip.split(",", 1)[0].strip()
+    return ip.strip()
+
+def _lookup_geo(ip):
+    ip = _normalize_ip(ip)
+    if not ip:
+        return ""
+    try:
+        addr = ipaddress.ip_address(ip)
+        if addr.is_private:
+            return "内网"
+    except Exception:
+        return ""
+    if ip in GEOIP_CACHE:
+        return GEOIP_CACHE[ip]
+    reader = _get_geo_reader()
+    if not reader:
+        return ""
+    try:
+        resp = reader.city(ip)
+        country = resp.country.names.get("en") if resp.country else ""
+        city = resp.city.names.get("en") if resp.city else ""
+        if city and country:
+            value = f"{city}, {country}"
+        elif country:
+            value = country
+        elif city:
+            value = city
+        else:
+            value = ""
+    except geoip2.errors.AddressNotFoundError:
+        value = ""
+    except Exception:
+        value = ""
+    _cache_geo(ip, value)
+    return value
+
 def record_visit(ip, path):
     now = time.time()
     with CLIENTS_LOCK:
@@ -81,10 +151,12 @@ def record_visit(ip, path):
         entry["paths"][path] = now
         _prune_clients_locked(now)
 
-def record_request_timing(duration_ms):
+def record_request_timing(duration_ms, is_lan=None):
     now = time.time()
     with REQUESTS_LOCK:
         REQUEST_TIMES.append((now, duration_ms))
+        if is_lan is not None:
+            REQUEST_TIMES_BY_NET.append((now, is_lan, duration_ms))
         _prune_requests_locked(now)
     _record_request_hourly(now, duration_ms)
 
@@ -92,6 +164,8 @@ def _prune_requests_locked(now):
     cutoff = now - REQUEST_WINDOW_SEC
     while REQUEST_TIMES and REQUEST_TIMES[0][0] < cutoff:
         REQUEST_TIMES.popleft()
+    while REQUEST_TIMES_BY_NET and REQUEST_TIMES_BY_NET[0][0] < cutoff:
+        REQUEST_TIMES_BY_NET.popleft()
 
 def _record_request_hourly(ts, duration_ms):
     hour = int(ts // 3600)
@@ -185,6 +259,17 @@ def _get_request_samples(limit=SAMPLE_MAX_POINTS):
     if limit:
         samples = samples[-limit:]
     return [round(dur, 2) for _, dur in samples]
+
+def _get_request_samples_by_net(limit=SAMPLE_MAX_POINTS):
+    now = time.time()
+    with REQUESTS_LOCK:
+        _prune_requests_locked(now)
+        samples = list(REQUEST_TIMES_BY_NET)
+    if limit:
+        samples = samples[-limit:]
+    lan = [round(dur, 2) for _, is_lan, dur in samples if is_lan]
+    wan = [round(dur, 2) for _, is_lan, dur in samples if not is_lan]
+    return {"lan": lan, "wan": wan}
 
 def _sanitize_ms(value):
     try:
@@ -549,6 +634,7 @@ def _get_status_payload():
         "latency": _get_latency_stats(),
         "network_latency": _get_network_latency_stats(),
         "latency_samples": _get_request_samples(),
+        "latency_samples_by_net": _get_request_samples_by_net(),
         "network_latency_samples": _get_network_latency_samples(),
         "latency_agg_14d": _get_latency_agg_14d(),
         "network_latency_agg_14d": _get_network_latency_agg_14d()
@@ -566,6 +652,37 @@ def _read_log_tail(path, max_lines=1000):
         return []
     except Exception as e:
         return [f"读取日志失败: {e}"]
+
+def _parse_log_line(line):
+    if line.startswith("时间:"):
+        parts = line.split("\t")
+        data = {}
+        for part in parts:
+            idx = part.find(":")
+            if idx == -1:
+                continue
+            key = part[:idx]
+            val = part[idx + 1:]
+            data[key] = val
+        ip = data.get("IP", "")
+        return {
+            "time": data.get("时间", ""),
+            "ip": ip,
+            "path": data.get("路径", ""),
+            "login": data.get("登录", ""),
+            "op": data.get("操作", ""),
+            "device": data.get("设备", "")
+        }
+    parts = line.split("\t")
+    ip = parts[1] if len(parts) > 1 else ""
+    return {
+        "time": parts[0] if len(parts) > 0 else "",
+        "ip": ip,
+        "path": parts[2] if len(parts) > 2 else "",
+        "login": parts[3] if len(parts) > 3 else "",
+        "op": parts[4] if len(parts) > 4 else "",
+        "device": parts[5] if len(parts) > 5 else "",
+    }
 
 @bp.route(ADMIN_PREFIX + "/logout")
 @login_required
@@ -630,4 +747,10 @@ def network_metrics():
 @login_required
 def visiter_log():
     lines = _read_log_tail(VISITER_LOG_PATH, max_lines=1000)
-    return jsonify({"lines": lines})
+    entries = []
+    for line in lines:
+        parsed = _parse_log_line(line)
+        ip = parsed.get("ip", "")
+        parsed["location"] = _lookup_geo(ip)
+        entries.append(parsed)
+    return jsonify({"lines": lines, "entries": entries})

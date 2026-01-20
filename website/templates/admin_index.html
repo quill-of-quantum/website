@@ -21,19 +21,19 @@
     .segment-title { font-size:13px; font-weight:600; color:#333; margin:12px 0 6px; }
     .scatter-wrap { border:1px solid #eee; border-radius:8px; padding:8px; background:#fff; }
     .scatter-legend { font-size:12px; color:#666; display:flex; gap:12px; margin-bottom:6px; }
-    .legend-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
-    .dot-lan { background:#2f8f4e; }
-    .dot-wan { background:#c0392b; }
-    .scatter-wrap svg .dot-lan { fill:#2f8f4e; }
-    .scatter-wrap svg .dot-wan { fill:#c0392b; }
+    .legend-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; border:2px solid #999; background:transparent; }
+    .dot-lan { border-color:#2f8f4e; }
+    .dot-wan { background:#c0392b; border-color:#c0392b; }
+    .scatter-wrap svg .dot-lan { fill:none; stroke:#2f8f4e; stroke-width:2; opacity:0.4; }
+    .scatter-wrap svg .dot-wan { fill:#c0392b; stroke:#c0392b; stroke-width:1; opacity:0.4; }
     .scatter-axes { stroke:#ddd; stroke-width:1; }
     .scatter-label { fill:#777; font-size:11px; }
     .net-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
     .scatter-tall { max-width: 320px; }
-    .bar-chart { display:flex; align-items:flex-end; gap:10px; height:200px; padding:12px; border:1px solid #eee; border-radius:8px; background:#fff; }
-    .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
-    .bar { width:100%; background:#e7f0ff; border-radius:6px 6px 2px 2px; display:flex; align-items:flex-end; justify-content:center; }
-    .bar-value { font-size:11px; color:#333; padding-bottom:4px; }
+    .bar-chart { display:flex; align-items:flex-end; gap:10px; height:220px; padding:12px; border:1px solid #eee; border-radius:8px; background:#fff; box-sizing:border-box; overflow:hidden; }
+    .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:100%; }
+    .bar { width:100%; background:#e7f0ff; border-radius:6px 6px 2px 2px; display:flex; align-items:flex-start; justify-content:center; box-sizing:border-box; padding-top:4px; }
+    .bar-value { font-size:11px; color:#333; }
     .bar-label { font-size:11px; color:#666; text-align:center; }
   </style>
 </head>
@@ -72,13 +72,13 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">请求延迟散点（1小时内）</h2>
+        <h2 class="card-title">请求延迟散点（24小时内）</h2>
         <div id="latency_meta" class="muted">加载中...</div>
         <div id="latency_chart" style="margin-top:12px;">暂无数据</div>
       </div>
 
       <div class="card">
-        <h2 class="card-title">网络延迟散点（1小时内）</h2>
+        <h2 class="card-title">网络延迟散点（24小时内）</h2>
         <div id="net_latency_meta" class="muted">加载中...</div>
         <div id="net_latency_chart" style="margin-top:12px;">暂无数据</div>
       </div>
@@ -226,7 +226,7 @@
     if (!buckets || buckets.length === 0) return "暂无数据";
     const maxCount = Math.max(1, ...buckets.map(b => b.count || 0));
     const cols = buckets.map(b => {
-      const height = Math.round((b.count / maxCount) * 160) + 20;
+      const height = Math.round((b.count / maxCount) * 150) + 30;
       return `
         <div class="bar-col">
           <div class="bar" style="height:${height}px;">
@@ -278,13 +278,18 @@
     document.getElementById("network_status").innerHTML = renderNetworkStatus(data.network);
     document.getElementById("client_status").innerHTML = renderClientStatus(data.clients);
     document.getElementById("client_paths").innerHTML = renderClientPaths(data.clients);
-    if (data.latency_samples) {
+    if (data.latency_samples_by_net) {
       const total = (data.latency && data.latency.total) || 0;
       const avg = (data.latency && data.latency.avg_ms) || 0;
       document.getElementById("latency_meta").textContent =
         `样本数: ${total}，平均延迟: ${avg} ms`;
       document.getElementById("latency_chart").innerHTML =
-        renderScatter(data.latency_samples, [], 260, 200);
+        renderScatter(
+          data.latency_samples_by_net.lan || [],
+          data.latency_samples_by_net.wan || [],
+          260,
+          200
+        );
     }
     if (data.network_latency_samples) {
       document.getElementById("net_latency_meta").textContent = "统计口径：浏览器上报，内网/公网按 IP 段判断";
@@ -349,7 +354,8 @@
         path: row["路径"] || "",
         login: row["登录"] || "",
         op: row["操作"] || "",
-        device: row["设备"] || ""
+        device: row["设备"] || "",
+        location: ""
       };
     }
     const legacy = line.split("\t");
@@ -359,12 +365,13 @@
       path: legacy[2] || "",
       login: legacy[3] || "",
       op: legacy[4] || "",
-      device: legacy[5] || ""
+      device: legacy[5] || "",
+      location: ""
     };
   }
 
-  function renderLogTable(lines) {
-    const rows = lines.map(parseLogLine);
+  function renderLogTable(lines, entries) {
+    const rows = (entries && entries.length) ? entries : lines.map(parseLogLine);
     const body = rows.map(r => {
       const isLogin = r.login === "已登录" || r.login === "yes";
       const badgeClass = isLogin ? "badge-login" : "badge-logout";
@@ -373,6 +380,7 @@
         <tr>
           <td>${r.time}</td>
           <td>${r.ip}</td>
+          <td>${r.location || ""}</td>
           <td>${r.path}</td>
           <td><span class="badge ${badgeClass}">${loginLabel}</span></td>
           <td>${r.op}</td>
@@ -386,6 +394,7 @@
           <tr>
             <th>时间</th>
             <th>IP</th>
+            <th>归属地</th>
             <th>路径</th>
             <th>登录</th>
             <th>操作</th>
@@ -402,11 +411,11 @@
     try {
       const res = await fetch("/1/api/visiter_log");
       const data = await res.json();
-      if (!data.lines || data.lines.length === 0) {
+      if ((!data.lines || data.lines.length === 0) && (!data.entries || data.entries.length === 0)) {
         logEl.textContent = "暂无日志";
         return;
       }
-      logEl.innerHTML = renderLogTable(data.lines);
+      logEl.innerHTML = renderLogTable(data.lines || [], data.entries || []);
       logEl.scrollTop = logEl.scrollHeight;
     } catch (err) {
       logEl.textContent = "加载失败";
