@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🍀 Aurora Center</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .placeholder {
+      border: 1px dashed var(--border);
+      border-radius: var(--r);
+      padding: 12px;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .label {
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .input-row .input {
+      max-width: 260px;
+    }
+    .btn-disabled {
+      pointer-events: none;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="page-header">
+        <h1>🍀 Aurora Center</h1>
+        <p>Placeholder for aurora API + social search results.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🔭 Aurora APIs (Reserved)</h2>
+        <p class="card-subtitle">Plan to aggregate realtime + forecast + alerts.</p>
+        <div class="split">
+          <div class="placeholder">
+            <div class="label">Realtime status</div>
+            <div>TODO: /aurora/api/status</div>
+          </div>
+          <div class="placeholder">
+            <div class="label">Forecast</div>
+            <div>TODO: auroras.live / auroraforecast / NOAA OVATION</div>
+          </div>
+          <div class="placeholder">
+            <div class="label">Alerts</div>
+            <div>TODO: AuroraWatch or custom thresholds</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🛰 Social Search (Last 1 Hour)</h2>
+        <p class="card-subtitle">Reserved for keyword-based lookup like "Munich aurora".</p>
+        <div class="input-row">
+          <input class="input" type="text" placeholder="Keyword (e.g. Munich aurora)">
+          <button class="btn btn-primary btn-disabled">Search (placeholder)</button>
+          <a class="btn btn-ghost" href="/">🏠 Back</a>
+        </div>
+        <div class="placeholder" style="margin-top: 12px;">
+          No results yet. Wire to social platforms or search APIs later.
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

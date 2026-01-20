@@ -37,6 +37,9 @@ app.register_blueprint(tools_bp)
 from map.map_api import bp as map_bp
 app.register_blueprint(map_bp)
 
+from aurora.aurora_api import bp as aurora_bp
+app.register_blueprint(aurora_bp)
+
 from letter_league.letter_api import bp as letter_bp
 app.register_blueprint(letter_bp)
 
