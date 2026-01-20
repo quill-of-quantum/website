@@ -1,9 +1,8 @@
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    session, jsonify, send_from_directory
+    session, jsonify, send_from_directory, g
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps
 from collections import deque
 import threading
 import sqlite3, psutil, time, datetime, os, requests
@@ -12,8 +11,6 @@ from datetime import date, timedelta
 import io, base64
 import io
 import base64
-import qrcode
-from mijiaAPI.login import mijiaLogin, LoginError
 
 os.environ['TZ'] = 'Europe/Berlin'
 time.tzset()
@@ -25,6 +22,10 @@ app = Flask(__name__)
 app.secret_key = "replace_this_with_a_strong_random_key"  # 请替换为随机长字符串
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 允许最大 500MB 上传
 
+# 访问日志配置
+VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
+os.makedirs(os.path.dirname(VISITER_LOG_PATH), exist_ok=True)
+
 # ===============================
 # 导入并注册蓝图
 # ===============================
@@ -33,6 +34,10 @@ app.register_blueprint(tracker_bp)
 
 from tools_api import bp as tools_bp
 app.register_blueprint(tools_bp)
+
+from admin_api import bp as admin_bp
+from admin_api import record_visit, record_request_timing
+app.register_blueprint(admin_bp)
 
 from map.map_api import bp as map_bp
 app.register_blueprint(map_bp)
@@ -51,9 +56,6 @@ start_room_cleaner()
 # 基础配置
 # ===============================
 DB_PATH = "/home/bbdwz/projects/website/tracker.db"
-ADMIN_PREFIX = "/1"
-AUTH_PATH = os.path.expanduser("~/.config/mijia-api/mijia-api-auth.json") #米家token存储路径
-
 # 模拟一个简单的“用户数据库”
 USER_DB = {
     "admin": generate_password_hash("bbdwz")
@@ -62,6 +64,42 @@ USER_DB = {
 # ===============================
 # ----------- 普通区 ------------
 # ===============================
+
+@app.before_request
+def track_visit():
+    g.request_start = time.time()
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    path = request.path
+    if path.startswith("/static/") or path.startswith("/uploads/") or path.startswith("/thumbnails/"):
+        return
+    if path.startswith("/1/api/status"):
+        return
+    if path.startswith("/api/") or "/api/" in path:
+        return
+    if "." in os.path.basename(path):
+        return
+    record_visit(ip or "unknown", path)
+    try:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        logged_in = "已登录" if session.get("logged_in") else "未登录"
+        operation = request.method
+        user_agent = request.headers.get("User-Agent", "unknown")
+        line = (
+            f"时间:{ts}\tIP:{ip or 'unknown'}\t路径:{path}\t登录:{logged_in}"
+            f"\t操作:{operation}\t设备:{user_agent}\n"
+        )
+        with open(VISITER_LOG_PATH, "a") as f:
+            f.write(line)
+    except Exception as e:
+        print(f"写入访问日志失败: {e}")
+
+@app.after_request
+def record_latency(response):
+    start = getattr(g, "request_start", None)
+    if start is not None:
+        duration_ms = (time.time() - start) * 1000
+        record_request_timing(duration_ms)
+    return response
 
 @app.route("/")
 def index():
@@ -356,91 +394,6 @@ def shortcut_run():
     # ===== 其他未知动作 =====
     else:
         return jsonify({"error": f"未知动作: {action}"}), 400
-
-# ===============================
-# ----------- 管理区 ------------
-# ===============================
-
-import ipaddress
-
-LAN_NETWORKS = [
-    ipaddress.ip_network("192.168.178.0/24")
-]
-
-def is_lan_ip(ip):
-    try:
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in LAN_NETWORKS)
-    except:
-        return False
-
-def login_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not session.get("logged_in"):
-            if request.path.startswith(ADMIN_PREFIX + "/api") or request.path.startswith("/api/"):
-                return jsonify({"require_login": True}), 403
-            return redirect(url_for("index"))
-        return f(*args, **kwargs)
-    return wrapper
-
-@app.route(ADMIN_PREFIX + "/api/mijia_qr")
-@login_required
-def mijia_qr():
-    """
-    返回米家扫码登录的二维码图片。
-    """
-
-    login = mijiaLogin(save_path=AUTH_PATH)
-
-    try:
-        # QRlogin() 会返回一个 dict，其中 loginUrl 用于扫码
-        info = login.QRlogin(only_get_qr=True)
-
-        qr_url = info["qr"]     # 例如：mijia://xxx
-        login_token = info["token"]  # 登录会话 ID（可选）
-
-        # 生成二维码
-        qr = qrcode.make(qr_url)
-        buf = io.BytesIO()
-        qr.save(buf, format="PNG")
-        buf.seek(0)
-
-        img_b64 = base64.b64encode(buf.read()).decode()
-
-        return jsonify({
-            "status": "ok",
-            "qr": "data:image/png;base64," + img_b64,
-            "token": login_token
-        })
-
-    except LoginError as e:
-        return jsonify({"status": "error", "msg": str(e)}), 500
-
-@app.route(ADMIN_PREFIX + "/logout")
-@login_required
-def admin_logout():
-    """管理员退出"""
-    session.clear()
-    return redirect(url_for("index"))
-
-@app.route(ADMIN_PREFIX + "/")
-@login_required
-def admin_dashboard():
-    """管理主页"""
-    cpu = psutil.cpu_percent()
-    mem = psutil.virtual_memory().percent
-    return render_template("admin_index.html", user=session.get("user"), cpu=cpu, mem=mem)
-
-@app.route(ADMIN_PREFIX + "/api/command", methods=["POST"])
-@login_required
-def admin_command():
-    """管理员接口：记录命令日志"""
-    data = request.json or {}
-    cmd = data.get("cmd", "")
-    with open("/home/bbdwz/admin_commands.log", "a") as f:
-        f.write(f"[{time.ctime()}] {cmd}\n")
-    return jsonify({"status": "ok", "received": cmd})
 
 # ===============================
 # Add a new API endpoint to check login status

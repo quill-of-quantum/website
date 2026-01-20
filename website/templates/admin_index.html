@@ -5,13 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>管理员面板</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; }
+    .status-ok { background:#e7f7ee; color:#1f7a3f; }
+    .status-warn { background:#fff4e5; color:#9a5a00; }
+    .status-bad { background:#ffe8e8; color:#a31919; }
+    .status-unknown { background:#f1f1f1; color:#666; }
+    .log-table { width:100%; border-collapse: collapse; font-size:12px; }
+    .log-table th, .log-table td { border-bottom:1px solid #eee; padding:6px 8px; text-align:left; vertical-align:top; }
+    .log-table th { background:#fafafa; color:#666; font-weight:600; position: sticky; top: 0; }
+    .log-wrap { background:#fff; border:1px solid #eee; border-radius:8px; }
+    .badge { display:inline-block; padding:2px 6px; border-radius:10px; font-size:11px; }
+    .badge-login { background:#fff4e5; color:#9a5a00; }
+    .badge-logout { background:#e7f0ff; color:#1a4f9a; }
+    .segment-title { font-size:13px; font-weight:600; color:#333; margin:12px 0 6px; }
+    .scatter-wrap { border:1px solid #eee; border-radius:8px; padding:8px; background:#fff; }
+    .scatter-legend { font-size:12px; color:#666; display:flex; gap:12px; margin-bottom:6px; }
+    .legend-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+    .dot-lan { background:#2f8f4e; }
+    .dot-wan { background:#c0392b; }
+    .scatter-wrap svg .dot-lan { fill:#2f8f4e; }
+    .scatter-wrap svg .dot-wan { fill:#c0392b; }
+    .scatter-axes { stroke:#ddd; stroke-width:1; }
+    .scatter-label { fill:#777; font-size:11px; }
+    .net-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .scatter-tall { max-width: 320px; }
+    .bar-chart { display:flex; align-items:flex-end; gap:10px; height:200px; padding:12px; border:1px solid #eee; border-radius:8px; background:#fff; }
+    .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+    .bar { width:100%; background:#e7f0ff; border-radius:6px 6px 2px 2px; display:flex; align-items:flex-end; justify-content:center; }
+    .bar-value { font-size:11px; color:#333; padding-bottom:4px; }
+    .bar-label { font-size:11px; color:#666; text-align:center; }
+  </style>
 </head>
 <body>
   <div class="page">
     <div class="container">
       <div class="page-header">
         <h1>管理员面板</h1>
-        <p class="muted">米家扫码登录</p>
       </div>
 
       <div class="toolbar" style="justify-content:flex-end; margin-bottom: 16px;">
@@ -19,9 +49,60 @@
       </div>
 
       <div class="card">
-        <h2 class="card-title">米家扫码登录</h2>
-        <div id="qr_box">加载中...</div>
+        <h2 class="card-title">服务器状态</h2>
+        <div id="status_meta" class="muted">连接中...</div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px;">
+          <div>
+            <h3 style="margin:0 0 6px 0; font-size: 14px;">服务状态</h3>
+            <div id="service_status">加载中...</div>
+          </div>
+          <div>
+            <h3 style="margin:0 0 6px 0; font-size: 14px;">网络</h3>
+            <div id="network_status">加载中...</div>
+          </div>
+          <div>
+            <h3 style="margin:0 0 6px 0; font-size: 14px;">在线客户端</h3>
+            <div id="client_status">加载中...</div>
+          </div>
+        </div>
+        <div style="margin-top: 12px;">
+          <h3 style="margin:0 0 6px 0; font-size: 14px;">实时访问路径（120s内）</h3>
+          <div id="client_paths">暂无数据</div>
+        </div>
       </div>
+
+      <div class="card">
+        <h2 class="card-title">请求延迟散点（1小时内）</h2>
+        <div id="latency_meta" class="muted">加载中...</div>
+        <div id="latency_chart" style="margin-top:12px;">暂无数据</div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">网络延迟散点（1小时内）</h2>
+        <div id="net_latency_meta" class="muted">加载中...</div>
+        <div id="net_latency_chart" style="margin-top:12px;">暂无数据</div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">请求延迟聚合（14天）</h2>
+        <div id="latency_agg_meta" class="muted">加载中...</div>
+        <div id="latency_agg_chart" style="margin-top:12px;">暂无数据</div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">网络延迟聚合（14天）</h2>
+        <div id="net_latency_agg_meta" class="muted">加载中...</div>
+        <div id="net_latency_agg_chart" style="margin-top:12px;">暂无数据</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <h2 class="card-title" style="margin:0;">访问日志</h2>
+          <button class="btn" onclick="loadVisiterLog()">刷新</button>
+        </div>
+        <div id="visiter_log" class="log-wrap" style="margin-top:12px;">加载中...</div>
+      </div>
+
     </div>
   </div>
 
@@ -30,30 +111,308 @@
   document.addEventListener('DOMContentLoaded', function() {
     authManager.createLoginStatusWidget();
     authManager.checkLoginStatus();
+
+    initStatusStream();
+    loadVisiterLog();
   });
 
-  async function loadQR() {
-    const res = await fetch("/1/api/mijia_qr");
-    const data = await res.json();
-    document.getElementById("qr_box").innerHTML =
-      `<img src="${data.qr}" style="width:260px">`;
-    pollStatus(data.token);
+  function renderServiceStatus(services) {
+    if (!services) return "暂无数据";
+    const items = Object.keys(services).map(name => {
+      const status = services[name];
+      let cls = "status-unknown";
+      const s = String(status || "").toLowerCase();
+      if (s.startsWith("active")) cls = "status-ok";
+      else if (s.startsWith("inactive") || s.startsWith("failed")) cls = "status-bad";
+      else if (s.startsWith("activating") || s.startsWith("deactivating")) cls = "status-warn";
+      return `<div>${name}: <span class="status-pill ${cls}">${status}</span></div>`;
+    });
+    return items.join("");
   }
 
-  async function pollStatus(token) {
-    const timer = setInterval(async () => {
-      const res = await fetch(`/1/api/mijia_status?token=${encodeURIComponent(token)}`);
+  function renderNetworkStatus(network) {
+    if (!network) return "暂无数据";
+    const ssid = network.wifi && network.wifi.ssid ? network.wifi.ssid : "未知";
+    const signal = network.wifi && network.wifi.signal !== null ? network.wifi.signal : "未知";
+    const ip = network.local_ip || "未知";
+    return `
+      <div>Wi-Fi: <strong>${ssid}</strong></div>
+      <div>信号: <strong>${signal}</strong></div>
+      <div>本机 IP: <strong>${ip}</strong></div>
+    `;
+  }
+
+  function renderClientStatus(clients) {
+    if (!clients) return "暂无数据";
+    return `<div>在线设备数: <strong>${clients.count || 0}</strong></div>`;
+  }
+
+  function renderClientPaths(clients) {
+    if (!clients || !clients.clients || clients.clients.length === 0) {
+      return "暂无数据";
+    }
+    return clients.clients.map(c => {
+      const labels = (c.paths || []).map(p => {
+        const label = p === "/" ? "主页" : `主页${p}`;
+        return `<code>${label}</code>`;
+      });
+      const paths = labels.join(" ➡️ ");
+      return `<div style="margin-bottom:6px;"><strong>${c.ip}</strong>: ${paths || "无"}</div>`;
+    }).join("");
+  }
+
+  function renderScatter(valuesLan, valuesWan, height=260, width=200) {
+    const all = [...valuesLan, ...valuesWan];
+    if (all.length === 0) return "暂无数据";
+    const maxY = Math.max(50, ...all);
+    const minY = 0;
+    const pad = 10;
+    const jitter = () => (Math.random() * 10 - 5);
+    const toY = v => {
+      const pct = (v - minY) / (maxY - minY || 1);
+      return Math.max(pad, Math.min(height - pad, Math.round((height - pad) - pct * (height - pad * 2))));
+    };
+    const points = (vals, cls) => vals.map(v => {
+      const x = Math.max(pad, Math.min(width - pad, Math.round(width / 2 + jitter())));
+      const y = toY(v);
+      return `<circle cx="${x}" cy="${y}" r="3" class="${cls}" />`;
+    }).join("");
+    return `
+      <div class="scatter-wrap scatter-tall">
+        <div class="scatter-legend">
+          <span><span class="legend-dot dot-lan"></span>内网</span>
+          <span><span class="legend-dot dot-wan"></span>公网</span>
+          <span>最大 ${Math.round(maxY)} ms</span>
+        </div>
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">
+          <line class="scatter-axes" x1="${pad}" y1="${pad}" x2="${pad}" y2="${height-pad}" />
+          <line class="scatter-axes" x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" />
+          <text class="scatter-label" x="${pad + 2}" y="${pad + 10}">${Math.round(maxY)}ms</text>
+          <text class="scatter-label" x="${pad + 2}" y="${height - pad - 2}">0ms</text>
+          <text class="scatter-label" x="${width - pad - 60}" y="${height - pad - 2}">样本抖动</text>
+          ${points(valuesLan, "dot-lan")}
+          ${points(valuesWan, "dot-wan")}
+        </svg>
+      </div>
+    `;
+  }
+
+  function renderNetLatencyScatter(samples) {
+    if (!samples) return "暂无数据";
+    const segments = [
+      ["dns_ms", "DNS"],
+      ["connect_ms", "连接"],
+      ["ttfb_ms", "TTFB"],
+      ["download_ms", "下载"],
+      ["total_ms", "总耗时"]
+    ];
+    const blocks = segments.map(([key, label]) => {
+      const seg = samples[key];
+      if (!seg) return "";
+      const lan = seg.lan || [];
+      const wan = seg.wan || [];
+      return `
+        <div>
+          <div class="segment-title">${label}（内网/公网）</div>
+          ${renderScatter(lan, wan, 260, 200)}
+        </div>
+      `;
+    }).join("");
+    if (!blocks) return "暂无数据";
+    return `<div class="net-grid">${blocks}</div>`;
+  }
+
+  function renderAggBuckets(buckets) {
+    if (!buckets || buckets.length === 0) return "暂无数据";
+    const maxCount = Math.max(1, ...buckets.map(b => b.count || 0));
+    const cols = buckets.map(b => {
+      const height = Math.round((b.count / maxCount) * 160) + 20;
+      return `
+        <div class="bar-col">
+          <div class="bar" style="height:${height}px;">
+            <div class="bar-value">${b.count}</div>
+          </div>
+          <div class="bar-label">${b.label}</div>
+        </div>
+      `;
+    }).join("");
+    return `<div class="bar-chart">${cols}</div>`;
+  }
+
+  function renderNetAgg(netAgg) {
+    if (!netAgg || !netAgg.segments) return "暂无数据";
+    const segments = [
+      ["dns_ms", "DNS"],
+      ["connect_ms", "连接"],
+      ["ttfb_ms", "TTFB"],
+      ["download_ms", "下载"],
+      ["total_ms", "总耗时"]
+    ];
+    return segments.map(([key, label]) => {
+      const seg = netAgg.segments[key];
+      if (!seg) return "";
+      const lan = seg.lan || { avg_ms: 0, buckets: [] };
+      const wan = seg.wan || { avg_ms: 0, buckets: [] };
+      return `
+        <div style="margin-bottom:12px;">
+          <div class="segment-title">${label}（内网/公网）平均 ${lan.avg_ms} / ${wan.avg_ms} ms</div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+            <div>
+              <div class="muted" style="margin-bottom:6px;">内网</div>
+              ${renderAggBuckets(lan.buckets)}
+            </div>
+            <div>
+              <div class="muted" style="margin-bottom:6px;">公网</div>
+              ${renderAggBuckets(wan.buckets)}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function updateStatus(data) {
+    document.getElementById("status_meta").textContent =
+      `最后更新: ${new Date((data.timestamp || 0) * 1000).toLocaleString()}`;
+    document.getElementById("service_status").innerHTML = renderServiceStatus(data.services);
+    document.getElementById("network_status").innerHTML = renderNetworkStatus(data.network);
+    document.getElementById("client_status").innerHTML = renderClientStatus(data.clients);
+    document.getElementById("client_paths").innerHTML = renderClientPaths(data.clients);
+    if (data.latency_samples) {
+      const total = (data.latency && data.latency.total) || 0;
+      const avg = (data.latency && data.latency.avg_ms) || 0;
+      document.getElementById("latency_meta").textContent =
+        `样本数: ${total}，平均延迟: ${avg} ms`;
+      document.getElementById("latency_chart").innerHTML =
+        renderScatter(data.latency_samples, [], 260, 200);
+    }
+    if (data.network_latency_samples) {
+      document.getElementById("net_latency_meta").textContent = "统计口径：浏览器上报，内网/公网按 IP 段判断";
+      document.getElementById("net_latency_chart").innerHTML =
+        renderNetLatencyScatter(data.network_latency_samples);
+    }
+    if (data.latency_agg_14d) {
+      const total = data.latency_agg_14d.total || 0;
+      const avg = data.latency_agg_14d.avg_ms || 0;
+      document.getElementById("latency_agg_meta").textContent =
+        `样本数: ${total}，平均延迟: ${avg} ms`;
+      document.getElementById("latency_agg_chart").innerHTML =
+        renderAggBuckets(data.latency_agg_14d.buckets);
+    }
+    if (data.network_latency_agg_14d) {
+      document.getElementById("net_latency_agg_meta").textContent = "统计口径：浏览器上报，内网/公网按 IP 段判断";
+      document.getElementById("net_latency_agg_chart").innerHTML =
+        renderNetAgg(data.network_latency_agg_14d);
+    }
+  }
+
+  function initStatusStream() {
+    const statusMeta = document.getElementById("status_meta");
+    if (!!window.EventSource) {
+      const source = new EventSource("/1/api/status/stream");
+      source.onmessage = function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          updateStatus(data);
+        } catch (err) {
+          statusMeta.textContent = "状态解析失败";
+        }
+      };
+      source.onerror = function() {
+        statusMeta.textContent = "连接中断，尝试重连...";
+      };
+    } else {
+      fetch("/1/api/status")
+        .then(res => res.json())
+        .then(updateStatus)
+        .catch(() => {
+          statusMeta.textContent = "无法加载状态";
+        });
+    }
+  }
+
+  function parseLogLine(line) {
+    if (line.indexOf("时间:") === 0) {
+      const parts = line.split("\t");
+      const row = {};
+      parts.forEach(p => {
+        const idx = p.indexOf(":");
+        if (idx !== -1) {
+          const key = p.slice(0, idx);
+          const val = p.slice(idx + 1);
+          row[key] = val;
+        }
+      });
+      return {
+        time: row["时间"] || "",
+        ip: row["IP"] || "",
+        path: row["路径"] || "",
+        login: row["登录"] || "",
+        op: row["操作"] || "",
+        device: row["设备"] || ""
+      };
+    }
+    const legacy = line.split("\t");
+    return {
+      time: legacy[0] || "",
+      ip: legacy[1] || "",
+      path: legacy[2] || "",
+      login: legacy[3] || "",
+      op: legacy[4] || "",
+      device: legacy[5] || ""
+    };
+  }
+
+  function renderLogTable(lines) {
+    const rows = lines.map(parseLogLine);
+    const body = rows.map(r => {
+      const isLogin = r.login === "已登录" || r.login === "yes";
+      const badgeClass = isLogin ? "badge-login" : "badge-logout";
+      const loginLabel = r.login || "未登录";
+      return `
+        <tr>
+          <td>${r.time}</td>
+          <td>${r.ip}</td>
+          <td>${r.path}</td>
+          <td><span class="badge ${badgeClass}">${loginLabel}</span></td>
+          <td>${r.op}</td>
+          <td>${r.device}</td>
+        </tr>
+      `;
+    }).join("");
+    return `
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>IP</th>
+            <th>路径</th>
+            <th>登录</th>
+            <th>操作</th>
+            <th>设备</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    `;
+  }
+
+  async function loadVisiterLog() {
+    const logEl = document.getElementById("visiter_log");
+    try {
+      const res = await fetch("/1/api/visiter_log");
       const data = await res.json();
-
-      if (data.status === "ok") {
-        clearInterval(timer);
-        alert("登录成功！");
-        location.reload();
+      if (!data.lines || data.lines.length === 0) {
+        logEl.textContent = "暂无日志";
+        return;
       }
-    }, 3000);
+      logEl.innerHTML = renderLogTable(data.lines);
+      logEl.scrollTop = logEl.scrollHeight;
+    } catch (err) {
+      logEl.textContent = "加载失败";
+    }
   }
-
-  loadQR();
   </script>
+  <script src="/static/js/net_metrics.js"></script>
 </body>
 </html>
