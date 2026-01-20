@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>🍀 Aurora Center</title>
+  <title>🍀 极光中心</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     .placeholder {
       border: 1px dashed var(--border);
@@ -35,48 +36,440 @@
       pointer-events: none;
       opacity: 0.6;
     }
+    .meta {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .map-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1000;
+    }
+    .map-modal.open {
+      display: flex;
+    }
+    .map-panel {
+      background: var(--surface);
+      border-radius: var(--r-lg);
+      width: min(900px, 95vw);
+      max-height: 90vh;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+    }
+    .map-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    #map {
+      height: 420px;
+    }
+    .map-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .coord-pill {
+      font-size: 0.9rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+    }
+    .chart-wrap {
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
   <div class="page">
     <div class="container">
       <div class="page-header">
-        <h1>🍀 Aurora Center</h1>
-        <p>Placeholder for aurora API + social search results.</p>
-      </div>
-
-      <div class="card">
-        <h2 class="card-title">🔭 Aurora APIs (Reserved)</h2>
-        <p class="card-subtitle">Plan to aggregate realtime + forecast + alerts.</p>
-        <div class="split">
-          <div class="placeholder">
-            <div class="label">Realtime status</div>
-            <div>TODO: /aurora/api/status</div>
-          </div>
-          <div class="placeholder">
-            <div class="label">Forecast</div>
-            <div>TODO: auroras.live / auroraforecast / NOAA OVATION</div>
-          </div>
-          <div class="placeholder">
-            <div class="label">Alerts</div>
-            <div>TODO: AuroraWatch or custom thresholds</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2 class="card-title">🛰 Social Search (Last 1 Hour)</h2>
-        <p class="card-subtitle">Reserved for keyword-based lookup like "Munich aurora".</p>
-        <div class="input-row">
-          <input class="input" type="text" placeholder="Keyword (e.g. Munich aurora)">
-          <button class="btn btn-primary btn-disabled">Search (placeholder)</button>
+        <h1>🍀 极光中心</h1>
+        <p>整合实时状态、KP 预报与社交媒体检索。</p>
+        <div style="margin-top: 10px;">
           <a class="btn btn-ghost" href="/">🏠 Back</a>
         </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🔭 极光数据接口</h2>
+        <p class="card-subtitle">已接入 KP 指数实时与预报。</p>
+        <div class="split">
+          <div class="placeholder" id="kp-now">
+            <div class="label">实时 KP</div>
+            <div>加载中...</div>
+          </div>
+          <div class="placeholder" id="kp-forecast">
+            <div class="label">KP 近期趋势（1 分钟）</div>
+            <div>加载中...</div>
+            <div class="chart-wrap">
+              <canvas id="kpForecastChart" height="180"></canvas>
+            </div>
+          </div>
+          <div class="placeholder" id="local-aurora">
+            <div class="label">指定地点极光概率</div>
+            <div class="meta">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🛰 社交媒体检索（最近 1 小时）</h2>
+        <p class="card-subtitle">可按关键词检索，比如 “慕尼黑 极光”。</p>
+        <div class="input-row">
+          <input class="input" id="socialKeyword" type="text" placeholder="关键词（如 慕尼黑 极光）">
+          <button class="btn btn-primary btn-disabled">搜索（占位）</button>
+        </div>
         <div class="placeholder" style="margin-top: 12px;">
-          No results yet. Wire to social platforms or search APIs later.
+          暂无结果，后续可接入社交平台检索 API。
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🧭 位置选择</h2>
+        <p class="card-subtitle">选择坐标用于 API 查询或本地提醒。</p>
+        <div class="input-row">
+          <button class="btn btn-primary" id="openMapBtn">选择位置</button>
+          <button class="btn" id="locateBtn">自动获取当前位置</button>
+          <span class="coord-pill" id="coordDisplay">加载中...</span>
+          <span class="meta" id="coordUpdated"></span>
         </div>
       </div>
     </div>
   </div>
+
+  <div class="map-modal" id="mapModal">
+    <div class="map-panel">
+      <div class="map-header">
+        <strong>选择位置</strong>
+        <button class="btn btn-ghost" id="closeMapBtn">关闭</button>
+      </div>
+      <div id="map"></div>
+      <div class="map-footer">
+        <div class="coord-pill" id="selectedCoord">点击地图选择坐标</div>
+        <div>
+          <button class="btn" id="resetMapBtn">重置</button>
+          <button class="btn btn-primary" id="saveCoordBtn">保存坐标</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    const kpNowBox = document.getElementById('kp-now');
+    const kpForecastBox = document.getElementById('kp-forecast');
+    const kpForecastChart = document.getElementById('kpForecastChart');
+    const localAuroraBox = document.getElementById('local-aurora');
+    const coordDisplay = document.getElementById('coordDisplay');
+    const coordUpdated = document.getElementById('coordUpdated');
+    const openMapBtn = document.getElementById('openMapBtn');
+    const closeMapBtn = document.getElementById('closeMapBtn');
+    const mapModal = document.getElementById('mapModal');
+    const selectedCoord = document.getElementById('selectedCoord');
+    const saveCoordBtn = document.getElementById('saveCoordBtn');
+    const resetMapBtn = document.getElementById('resetMapBtn');
+    const locateBtn = document.getElementById('locateBtn');
+
+    let mapInstance = null;
+    let marker = null;
+    let chosenLatLng = null;
+
+    function formatTime(ts) {
+      if (!ts) return '';
+      const date = new Date(ts * 1000);
+      return `更新于 ${date.toLocaleString('zh-CN')}`;
+    }
+
+    function toLocalLabel(ts) {
+      if (!ts) return '';
+      const normalized = ts.endsWith('Z') ? ts : `${ts}Z`;
+      const date = new Date(normalized);
+      return date.toLocaleString('sv-SE', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).replace('T', ' ');
+    }
+
+    function renderKpNow(data) {
+      const kpValue = typeof data === 'number' ? data : (data && (data.kp || data.value || data.now));
+      const timeTag = data?.time_tag ? toLocalLabel(data.time_tag) : '未知';
+      kpNowBox.innerHTML = `
+        <div class="label">实时 KP</div>
+        <div>${kpValue ? `KP = ${kpValue}` : '已获取，但格式未知'}</div>
+        <div class="meta">来源: ${data?.source || 'NOAA SWPC'}</div>
+        <div class="meta">时间: ${timeTag}</div>
+      `;
+    }
+
+    let forecastChartInstance = null;
+
+    function renderForecast(data) {
+      const raw = data && data.data ? data.data : data;
+      const labels = (raw?.x || []).map(toLocalLabel);
+      const values = raw?.y || [];
+      const hasData = labels.length && values.length;
+
+      if (!hasData) {
+        kpForecastBox.innerHTML = `
+          <div class="label">KP 近期趋势（1 分钟）</div>
+          <div class="meta">暂无可用数据</div>
+        `;
+        return;
+      }
+
+      if (forecastChartInstance) {
+        forecastChartInstance.destroy();
+      }
+
+      forecastChartInstance = new Chart(kpForecastChart, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'KP 近期趋势（1 分钟）',
+            data: values,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37, 99, 235, 0.12)',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              suggestedMax: 9
+            },
+            x: {
+              ticks: {
+                autoSkip: false,
+                maxRotation: 0,
+                minRotation: 0,
+                callback: function(value, index) {
+                  const label = labels[index] || '';
+                  if (label.includes('00-03')) {
+                    return label.replace(/\s+00-03$/, ' 00:00');
+                  }
+                  if (label.includes('T00:00')) {
+                    return label.slice(0, 10);
+                  }
+                  if (/\s00:00(:00)?$/.test(label)) {
+                    return label.split(' ')[0];
+                  }
+                  return '';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadKpNow() {
+      try {
+        const res = await fetch('/aurora/api/status');
+        const payload = await res.json();
+        if (payload.ok) {
+          renderKpNow({ ...payload.data, source: payload.source });
+        } else {
+          kpNowBox.innerHTML = `<div class="label">实时 KP</div><div>获取失败</div><div class="meta">${payload.error || ''}</div>`;
+        }
+      } catch (err) {
+        kpNowBox.innerHTML = `<div class="label">实时 KP</div><div>获取失败</div><div class="meta">${err}</div>`;
+      }
+    }
+
+    async function loadForecast() {
+      try {
+        const res = await fetch('/aurora/api/forecast');
+        const payload = await res.json();
+        if (payload.ok) {
+          renderForecast(payload);
+        } else {
+          kpForecastBox.innerHTML = `<div class="label">KP 预报</div><div>获取失败</div><div class="meta">${payload.error || ''}</div>`;
+        }
+      } catch (err) {
+        kpForecastBox.innerHTML = `<div class="label">KP 预报</div><div>获取失败</div><div class="meta">${err}</div>`;
+      }
+    }
+
+    async function loadLocalAurora(lat, lon) {
+      localAuroraBox.innerHTML = `
+        <div class="label">指定地点极光概率</div>
+        <div class="meta">加载中...</div>
+      `;
+      try {
+        const [ovationRes, estimateRes] = await Promise.all([
+          fetch(`/aurora/api/ovation?lat=${lat}&lon=${lon}`),
+          fetch(`/aurora/api/location_estimate?lat=${lat}&lon=${lon}`)
+        ]);
+        const ovation = await ovationRes.json();
+        const estimate = await estimateRes.json();
+
+        const ovationLine = ovation.ok
+          ? `OVATION 最新预报: ${ovation.nearest?.aurora ?? '暂无'}%`
+          : `OVATION 获取失败: ${ovation.error || ''}`;
+        const ovationMeta = ovation.ok
+          ? `预报时间: ${ovation.forecast_time || '未知'}`
+          : '';
+
+        const estimateLine = estimate.ok
+          ? `KP 估算概率: ${estimate.estimated_probability}% (Kp=${estimate.kp})`
+          : `KP 估算失败: ${estimate.error || ''}`;
+        const estimateMeta = estimate.ok
+          ? `地磁纬度: ${estimate.magnetic_lat?.toFixed(2)}° | 边界: ${estimate.boundary_lat?.toFixed(2)}°`
+          : '';
+
+        localAuroraBox.innerHTML = `
+          <div class="label">指定地点极光概率</div>
+          <div>${ovationLine}</div>
+          <div class="meta">${ovationMeta}</div>
+          <div style="margin-top:6px;">${estimateLine}</div>
+          <div class="meta">${estimateMeta}</div>
+        `;
+      } catch (err) {
+        localAuroraBox.innerHTML = `<div class="label">指定地点极光概率</div><div>获取失败</div><div class="meta">${err}</div>`;
+      }
+    }
+
+    async function loadLocation() {
+      try {
+        const res = await fetch('/aurora/api/location');
+        const payload = await res.json();
+        if (payload.ok) {
+          const { lat, lon, name, updated_at } = payload.data;
+          coordDisplay.textContent = `${name} (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+          coordUpdated.textContent = formatTime(updated_at);
+          chosenLatLng = [lat, lon];
+          loadLocalAurora(lat, lon);
+        }
+      } catch (err) {
+        coordDisplay.textContent = '位置获取失败';
+      }
+    }
+
+    function openMap() {
+      mapModal.classList.add('open');
+      if (!mapInstance) {
+        mapInstance = L.map('map').setView(chosenLatLng || [48.1374, 11.5755], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 18,
+          attribution: '© OpenStreetMap'
+        }).addTo(mapInstance);
+
+        mapInstance.on('click', (e) => {
+          chosenLatLng = [e.latlng.lat, e.latlng.lng];
+          if (!marker) {
+            marker = L.marker(chosenLatLng).addTo(mapInstance);
+          } else {
+            marker.setLatLng(chosenLatLng);
+          }
+          selectedCoord.textContent = `已选：${chosenLatLng[0].toFixed(5)}, ${chosenLatLng[1].toFixed(5)}`;
+        });
+      }
+      if (chosenLatLng) {
+        mapInstance.setView(chosenLatLng, 6);
+        if (!marker) {
+          marker = L.marker(chosenLatLng).addTo(mapInstance);
+        } else {
+          marker.setLatLng(chosenLatLng);
+        }
+        selectedCoord.textContent = `已选：${chosenLatLng[0].toFixed(5)}, ${chosenLatLng[1].toFixed(5)}`;
+      }
+      setTimeout(() => mapInstance.invalidateSize(), 100);
+    }
+
+    function closeMap() {
+      mapModal.classList.remove('open');
+    }
+
+    async function saveLocation() {
+      if (!chosenLatLng) {
+        selectedCoord.textContent = '请先点击地图选择位置';
+        return;
+      }
+      try {
+        const res = await fetch('/aurora/api/location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat: chosenLatLng[0], lon: chosenLatLng[1], name: '自定义' })
+        });
+        const payload = await res.json();
+        if (payload.ok) {
+          await loadLocation();
+          closeMap();
+        } else {
+          selectedCoord.textContent = payload.error || '保存失败';
+        }
+      } catch (err) {
+        selectedCoord.textContent = '保存失败';
+      }
+    }
+
+    function resetMap() {
+      chosenLatLng = null;
+      selectedCoord.textContent = '点击地图选择坐标';
+      if (marker) {
+        marker.remove();
+        marker = null;
+      }
+    }
+
+    openMapBtn.addEventListener('click', openMap);
+    closeMapBtn.addEventListener('click', closeMap);
+    saveCoordBtn.addEventListener('click', saveLocation);
+    resetMapBtn.addEventListener('click', resetMap);
+    locateBtn.addEventListener('click', () => {
+      if (!navigator.geolocation || !window.isSecureContext) {
+        coordDisplay.textContent = '定位需要 HTTPS 或本地环境';
+        return;
+      }
+      locateBtn.disabled = true;
+      locateBtn.textContent = '定位中...';
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        chosenLatLng = [pos.coords.latitude, pos.coords.longitude];
+        coordDisplay.textContent = `自定位 (${chosenLatLng[0].toFixed(4)}, ${chosenLatLng[1].toFixed(4)})`;
+        await saveLocation();
+        locateBtn.disabled = false;
+        locateBtn.textContent = '自动获取当前位置';
+      }, () => {
+        coordDisplay.textContent = '定位失败或权限被拒';
+        locateBtn.disabled = false;
+        locateBtn.textContent = '自动获取当前位置';
+      }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 });
+    });
+    mapModal.addEventListener('click', (e) => {
+      if (e.target === mapModal) closeMap();
+    });
+
+    loadKpNow();
+    loadForecast();
+    loadLocation();
+  </script>
 </body>
 </html>
