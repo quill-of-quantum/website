@@ -138,9 +138,8 @@ def exchange_rate_chart():
     Get latest USD→CNY & EUR→CNY using open.er-api.com,
     plus recent ECB history for chart background.
     """
-    import requests, io, base64
+    import requests
     from datetime import datetime
-    import matplotlib.pyplot as plt
     import xml.etree.ElementTree as ET
 
     # ---------- Step 1: latest spot rates ----------
@@ -162,13 +161,7 @@ def exchange_rate_chart():
         r = requests.get(hist_url, timeout=5)
         tree = ET.fromstring(r.content)
     except Exception:
-        # offline fallback
-        plt.figure(figsize=(7, 4))
-        plt.text(0.5, 0.5, "⚠️ Cannot load ECB data", ha="center", va="center")
-        plt.axis("off")
-        buf = io.BytesIO(); plt.savefig(buf, format="png"); buf.seek(0)
-        img_b64 = base64.b64encode(buf.read()).decode(); plt.close()
-        return jsonify({"image": f"data:image/png;base64,{img_b64}"})
+        return jsonify({"error": "cannot load ECB data"})
 
     ns = {"def": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
     data_points = []
@@ -184,40 +177,34 @@ def exchange_rate_chart():
     dates = [datetime.strptime(d[0], "%Y-%m-%d") for d in data_points]
     eur_cny = [d[1] for d in data_points]
     usd_cny = [d[2] for d in data_points]
+    if not dates:
+        return jsonify({"error": "no ECB data"})
 
-    # ---------- Step 3: plot ----------
-    fig, axes = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-
-    axes[0].plot(dates, eur_cny, color="tab:blue")
-    axes[0].set_title("EUR to CNY (Past 90 Days)")
-    axes[0].grid(True, ls="--", alpha=0.4)
-
-    axes[1].plot(dates, usd_cny, color="tab:green")
-    axes[1].set_title("USD to CNY (Past 90 Days)")
-    axes[1].grid(True, ls="--", alpha=0.4)
-
-    for ax in axes:
-        ax.tick_params(axis="x", labelrotation=45)
-        ax.xaxis.set_major_locator(plt.MaxNLocator(8))
-
-    if latest_eur and latest_usd:
-        fig.suptitle(
-            f"Latest ({latest_date}) EUR→CNY = {latest_eur:.3f} | USD→CNY = {latest_usd:.3f}",
-            fontsize=11, y=0.02
-        )
-    plt.tight_layout(rect=[0, 0.05, 1, 0.96])
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120)
-    buf.seek(0)
-    img_b64 = base64.b64encode(buf.read()).decode()
-    plt.close(fig)
+    def build_stats(values, date_list):
+        min_idx, min_val = min(enumerate(values), key=lambda x: x[1])
+        max_idx, max_val = max(enumerate(values), key=lambda x: x[1])
+        pct_change = ((max_val - min_val) / min_val * 100) if min_val else 0
+        return {
+            "min": round(min_val, 4),
+            "min_date": date_list[min_idx].strftime("%Y-%m-%d"),
+            "min_idx": min_idx,
+            "max": round(max_val, 4),
+            "max_date": date_list[max_idx].strftime("%Y-%m-%d"),
+            "max_idx": max_idx,
+            "pct_change": round(pct_change, 2)
+        }
 
     return jsonify({
-        "image": f"data:image/png;base64,{img_b64}",
+        "dates": [d.strftime("%Y-%m-%d") for d in dates],
+        "eur_cny": eur_cny,
+        "usd_cny": usd_cny,
+        "stats": {
+            "eur": build_stats(eur_cny, dates),
+            "usd": build_stats(usd_cny, dates)
+        },
         "latest_date": latest_date,
-        "EUR_to_CNY": latest_eur,
-        "USD_to_CNY": latest_usd
+        "latest_eur": latest_eur,
+        "latest_usd": latest_usd
     })
 
 # ===============================

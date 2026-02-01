@@ -109,8 +109,23 @@ daily.to_csv(os.path.join(BASE_DIR, "daily_usage.csv"), float_format='%.3f', enc
 # ----------------------------- 4️⃣ 获取慕尼黑气温 -----------------------------
 print("🌡️ 正在获取慕尼黑气温数据...")
 try:
-    start_date = df['ts'].iloc[0].date().isoformat()
-    end_date = df['ts'].iloc[-1].date().isoformat()
+    # Forecast API only allows a limited time window; clamp to avoid empty results.
+    today = datetime.now().date()
+    min_date = today - timedelta(days=30)
+    max_date = today + timedelta(days=16)
+    req_start = max(df['ts'].iloc[0].date(), min_date)
+    req_end = min(df['ts'].iloc[-1].date(), max_date)
+
+    if req_start > req_end:
+        print(f"⚠️ 气温请求范围超出 forecast 可用窗口 ({min_date} ~ {max_date})，跳过天气请求")
+        weather_df, weather_daily = pd.DataFrame(), pd.DataFrame()
+        raise RuntimeError("weather range out of forecast window")
+
+    if req_start != df['ts'].iloc[0].date() or req_end != df['ts'].iloc[-1].date():
+        print(f"ℹ️ 已裁剪气温请求范围为 {req_start} ~ {req_end}")
+
+    start_date = req_start.isoformat()
+    end_date = req_end.isoformat()
     url = (
         "https://api.open-meteo.com/v1/forecast?"
         "latitude=48.14&longitude=11.58&hourly=temperature_2m"
@@ -176,7 +191,7 @@ print("📄 不生成 predicted_heat_simple.csv")
 print("📈 生成累计预测图 usage_forecast.svg ...")
 
 def calc_cost(u):
-    return 0.225988 * (u - 160)
+    return 0.225988 * (u - 160) + 90
 
 # 预测终点
 future_end = datetime(
@@ -456,4 +471,3 @@ plt.close()
 print("✅ 已生成 usage_heatmap.svg")
 
 print("✅ 全部图表已生成完毕！")
-
