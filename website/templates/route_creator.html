@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧭 路线创作</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body {
+      background: linear-gradient(135deg, #fff6e5 0%, #f2f7ff 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .page-wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .page-title {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+    .creator-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+    #map {
+      width: 100%;
+      height: 520px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .field label {
+      font-weight: 600;
+      color: var(--text);
+    }
+    .field input, .field textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 0.95rem;
+    }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0 14px;
+    }
+    .points-list {
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+    }
+    .point-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      border-bottom: 1px dashed #e7e7e7;
+      font-size: 0.9rem;
+    }
+    .point-item:last-child {
+      border-bottom: none;
+    }
+    .point-item button {
+      background: #fff0f0;
+      border: 1px solid #f5c2c2;
+      color: #c0392b;
+      border-radius: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .stats {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .hint {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    @media (max-width: 980px) {
+      .creator-grid {
+        grid-template-columns: 1fr;
+      }
+      #map {
+        height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrap">
+    <div class="page-header">
+      <div>
+        <div class="page-title">🧭 路线创作</div>
+        <div class="hint">点击地图添加点，自动连成路线。</div>
+      </div>
+      <a class="btn" href="/">返回首页</a>
+    </div>
+
+    <div class="creator-grid">
+      <div class="panel">
+        <div id="map"></div>
+      </div>
+      <div class="panel">
+        <div class="field">
+          <label for="routeName">路线名称</label>
+          <input id="routeName" type="text" placeholder="例如：周末骑行路线">
+        </div>
+        <div class="field">
+          <label for="routeNotes">备注</label>
+          <textarea id="routeNotes" rows="3" placeholder="写点路线说明..."></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="undoBtn">撤销上一个点</button>
+          <button class="btn" id="clearBtn">清空全部</button>
+          <button class="btn" id="copyLinkBtn">复制链接</button>
+          <button class="btn" id="exportBtn">导出 JSON</button>
+        </div>
+
+        <div class="points-list" id="pointList"></div>
+        <div class="stats" id="routeStats">已添加 0 个点 · 总距离 0 km</div>
+        <div class="hint">提示：分享链接可自动还原路线。</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([48.14, 11.58], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const points = [];
+    const markers = [];
+    const polyline = L.polyline([], { color: '#ff6b6b', weight: 4 }).addTo(map);
+
+    const listEl = document.getElementById('pointList');
+    const statsEl = document.getElementById('routeStats');
+
+    function haversine(a, b) {
+      const toRad = (v) => v * Math.PI / 180;
+      const R = 6371;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+      const s1 = Math.sin(dLat / 2);
+      const s2 = Math.sin(dLng / 2);
+      const c = 2 * Math.asin(Math.sqrt(s1 * s1 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * s2 * s2));
+      return R * c;
+    }
+
+    function totalDistance() {
+      let total = 0;
+      for (let i = 1; i < points.length; i += 1) {
+        total += haversine(points[i - 1], points[i]);
+      }
+      return total;
+    }
+
+    function updateStats() {
+      const km = totalDistance().toFixed(2);
+      statsEl.textContent = `已添加 ${points.length} 个点 · 总距离 ${km} km`;
+    }
+
+    function updateList() {
+      if (!points.length) {
+        listEl.innerHTML = '<div class="hint">暂无点位，点击地图开始创建。</div>';
+        updateStats();
+        return;
+      }
+      listEl.innerHTML = points.map((p, i) => `
+        <div class="point-item">
+          <span>#${i + 1} ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span>
+          <button data-index="${i}">删除</button>
+        </div>
+      `).join('');
+      listEl.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => removePoint(Number(btn.dataset.index)));
+      });
+      updateStats();
+    }
+
+    function addPoint(latlng) {
+      points.push(latlng);
+      const marker = L.marker(latlng, { title: `#${points.length}` }).addTo(map);
+      markers.push(marker);
+      polyline.setLatLngs(points);
+      updateList();
+    }
+
+    function removePoint(index) {
+      if (index < 0 || index >= points.length) return;
+      points.splice(index, 1);
+      const marker = markers.splice(index, 1)[0];
+      if (marker) map.removeLayer(marker);
+      polyline.setLatLngs(points);
+      updateList();
+    }
+
+    function clearAll() {
+      points.splice(0, points.length);
+      markers.forEach(m => map.removeLayer(m));
+      markers.splice(0, markers.length);
+      polyline.setLatLngs([]);
+      updateList();
+    }
+
+    function exportJson() {
+      const payload = {
+        name: document.getElementById('routeName').value || 'untitled',
+        notes: document.getElementById('routeNotes').value || '',
+        points: points.map(p => ({ lat: p.lat, lng: p.lng })),
+        created_at: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${payload.name || 'route'}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function buildShareLink() {
+      const coords = points.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';');
+      const base = `${location.origin}${location.pathname}`;
+      const name = encodeURIComponent(document.getElementById('routeName').value || '');
+      const notes = encodeURIComponent(document.getElementById('routeNotes').value || '');
+      return `${base}?pts=${coords}&name=${name}&notes=${notes}`;
+    }
+
+    async function copyLink() {
+      const link = buildShareLink();
+      if (!link) return;
+      try {
+        await navigator.clipboard.writeText(link);
+        alert('已复制链接');
+      } catch {
+        prompt('复制链接：', link);
+      }
+    }
+
+    function loadFromQuery() {
+      const params = new URLSearchParams(location.search);
+      const pts = params.get('pts');
+      if (params.get('name')) document.getElementById('routeName').value = decodeURIComponent(params.get('name'));
+      if (params.get('notes')) document.getElementById('routeNotes').value = decodeURIComponent(params.get('notes'));
+      if (!pts) return;
+      pts.split(';').forEach(pair => {
+        const [lat, lng] = pair.split(',').map(Number);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+          addPoint({ lat, lng });
+        }
+      });
+      if (points.length) map.fitBounds(L.latLngBounds(points).pad(0.2));
+    }
+
+    map.on('click', (e) => addPoint(e.latlng));
+    document.getElementById('undoBtn').addEventListener('click', () => removePoint(points.length - 1));
+    document.getElementById('clearBtn').addEventListener('click', clearAll);
+    document.getElementById('exportBtn').addEventListener('click', exportJson);
+    document.getElementById('copyLinkBtn').addEventListener('click', copyLink);
+
+    updateList();
+    loadFromQuery();
+  </script>
+</body>
+</html>

@@ -2343,6 +2343,366 @@
         }
       },
       "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.46686395633743,39.804171348602786;116.42825325839921,39.824683402804304;116.46686395633743,39.804171348602786;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-20T19:01:38.561388",
+      "origin_address": "徐州沛县蔺楼村",
+      "destination_address": "徐州沛县蔺楼村",
+      "waypoint_addresses": [
+        "沛县",
+        "徐州火车站"
+      ],
+      "distance_km": 184.253,
+      "duration_min": 180.26666666666668,
+      "toll": 54,
+      "oil_cost": 142.22,
+      "other": 0,
+      "total_cost": 196.22,
+      "breakdown": {
+        "highway": {
+          "distance": 124.39099999999999,
+          "cost": 85.82979
+        },
+        "national": {
+          "distance": 26.902000000000005,
+          "cost": 22.274855999999996
+        },
+        "urban": {
+          "distance": 32.959999999999994,
+          "cost": 34.113600000000005
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.79909452377538,34.667614812044754;116.94258562390337,34.76515195541547;117.21149849865668,34.27666174369497;116.79909452377538,34.667614812044754&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:24:49.347408",
+      "origin_address": "北京德茂",
+      "destination_address": "长白山万达滑雪",
+      "waypoint_addresses": [],
+      "distance_km": 31.709,
+      "duration_min": 34.333333333333336,
+      "toll": 0,
+      "oil_cost": 24.12,
+      "other": 0,
+      "total_cost": 24.12,
+      "breakdown": {
+        "highway": {
+          "distance": 23.96999999999999,
+          "cost": 16.539299999999997
+        },
+        "national": {
+          "distance": 2.0919999999999996,
+          "cost": 1.732176
+        },
+        "urban": {
+          "distance": 5.647,
+          "cost": 5.844645000000002
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.19820413424628,39.87900196694424&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:25:03.745937",
+      "origin_address": "北京德茂",
+      "destination_address": "吉林长白山万达滑雪",
+      "waypoint_addresses": [],
+      "distance_km": 1163.899,
+      "duration_min": 712.0166666666667,
+      "toll": 517,
+      "oil_cost": 806.7,
+      "other": 0,
+      "total_cost": 1323.7,
+      "breakdown": {
+        "highway": {
+          "distance": 1150.425,
+          "cost": 793.7932499999997
+        },
+        "national": {
+          "distance": 5.011,
+          "cost": 4.149108
+        },
+        "urban": {
+          "distance": 8.463,
+          "cost": 8.759205
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;126.56503320601408,44.83323869217511&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:26:51.489475",
+      "origin_address": "北京德茂",
+      "destination_address": "万达长白山国际度假区滑雪场",
+      "waypoint_addresses": [],
+      "distance_km": 29.202,
+      "duration_min": 40.65,
+      "toll": 0,
+      "oil_cost": 21.39,
+      "other": 0,
+      "total_cost": 21.39,
+      "breakdown": {
+        "highway": {
+          "distance": 24.856,
+          "cost": 17.150640000000003
+        },
+        "national": {
+          "distance": 1.263,
+          "cost": 1.0457640000000001
+        },
+        "urban": {
+          "distance": 3.0829999999999997,
+          "cost": 3.190905
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.64964675981075,39.911723089086166&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:27:06.194447",
+      "origin_address": "北京德茂",
+      "destination_address": "吉林万达长白山国际度假区滑雪场",
+      "waypoint_addresses": [],
+      "distance_km": 981.732,
+      "duration_min": 600.8166666666667,
+      "toll": 434,
+      "oil_cost": 680.35,
+      "other": 0,
+      "total_cost": 1114.35,
+      "breakdown": {
+        "highway": {
+          "distance": 972.6670000000001,
+          "cost": 671.1402299999994
+        },
+        "national": {
+          "distance": 0.81,
+          "cost": 0.67068
+        },
+        "urban": {
+          "distance": 8.254999999999999,
+          "cost": 8.543925000000002
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;125.32653796211865,43.89551113677615&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:27:25.624727",
+      "origin_address": "北京德茂",
+      "destination_address": "吉林长白山国际度假区滑雪场",
+      "waypoint_addresses": [],
+      "distance_km": 1129.483,
+      "duration_min": 736.75,
+      "toll": 506,
+      "oil_cost": 781.9,
+      "other": 0,
+      "total_cost": 1287.9,
+      "breakdown": {
+        "highway": {
+          "distance": 1119.3589999999997,
+          "cost": 772.3577099999997
+        },
+        "national": {
+          "distance": 4.521,
+          "cost": 3.743388
+        },
+        "urban": {
+          "distance": 5.603000000000001,
+          "cost": 5.799105
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;127.52469684503721,42.10628215660384&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:29:00.271397",
+      "origin_address": "北京德茂",
+      "destination_address": "秦皇岛市",
+      "waypoint_addresses": [],
+      "distance_km": 290.877,
+      "duration_min": 187.43333333333334,
+      "toll": 112,
+      "oil_cost": 205.34,
+      "other": 0,
+      "total_cost": 317.34,
+      "breakdown": {
+        "highway": {
+          "distance": 272.6,
+          "cost": 188.09399999999997
+        },
+        "national": {
+          "distance": 8.062000000000001,
+          "cost": 6.675335999999999
+        },
+        "urban": {
+          "distance": 10.215000000000002,
+          "cost": 10.572525
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;119.5259671942601,39.89472719832739&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-21T08:29:29.190586",
+      "origin_address": "北京德茂",
+      "destination_address": "秦皇岛市",
+      "waypoint_addresses": [],
+      "distance_km": 290.877,
+      "duration_min": 187.4,
+      "toll": 112,
+      "oil_cost": 205.34,
+      "other": 0,
+      "total_cost": 317.34,
+      "breakdown": {
+        "highway": {
+          "distance": 272.6,
+          "cost": 188.09399999999997
+        },
+        "national": {
+          "distance": 8.062000000000001,
+          "cost": 6.675335999999999
+        },
+        "urban": {
+          "distance": 10.215000000000002,
+          "cost": 10.572525
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;119.5259671942601,39.89472719832739&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-25T10:03:46.357471",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "徐州沛县美利达"
+      ],
+      "distance_km": 1301.658,
+      "duration_min": 844.8666666666667,
+      "toll": 617,
+      "oil_cost": 907.72,
+      "other": 0,
+      "total_cost": 1524.72,
+      "breakdown": {
+        "highway": {
+          "distance": 1248.0430000000006,
+          "cost": 861.1496699999997
+        },
+        "national": {
+          "distance": 43.10799999999998,
+          "cost": 35.693424
+        },
+        "urban": {
+          "distance": 10.507,
+          "cost": 10.874745
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.94259640356948,34.74366026063984;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-27T14:29:29.670694",
+      "origin_address": "北京德茂",
+      "destination_address": "北京香山西门",
+      "waypoint_addresses": [],
+      "distance_km": 45.013,
+      "duration_min": 41.833333333333336,
+      "toll": 0,
+      "oil_cost": 33.2,
+      "other": 0,
+      "total_cost": 33.2,
+      "breakdown": {
+        "highway": {
+          "distance": 37.928,
+          "cost": 26.170319999999997
+        },
+        "national": {
+          "distance": 1.4729999999999999,
+          "cost": 1.2196440000000002
+        },
+        "urban": {
+          "distance": 5.612000000000001,
+          "cost": 5.808420000000001
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.21272820722326,39.999465937786994&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-27T14:41:31.323637",
+      "origin_address": "北京德茂",
+      "destination_address": "西红门荟聚",
+      "waypoint_addresses": [],
+      "distance_km": 14.248,
+      "duration_min": 17.916666666666668,
+      "toll": 0,
+      "oil_cost": 11.52,
+      "other": 0,
+      "total_cost": 11.52,
+      "breakdown": {
+        "highway": {
+          "distance": 7.883000000000001,
+          "cost": 5.4392700000000005
+        },
+        "national": {
+          "distance": 2.437,
+          "cost": 2.017836
+        },
+        "urban": {
+          "distance": 3.9280000000000004,
+          "cost": 4.065480000000001
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.33377083231798,39.79253851494193&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-01-29T19:14:52.840112",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "徐州沛县美利达"
+      ],
+      "distance_km": 1301.661,
+      "duration_min": 838.6166666666667,
+      "toll": 601,
+      "oil_cost": 907.72,
+      "other": 0,
+      "total_cost": 1508.72,
+      "breakdown": {
+        "highway": {
+          "distance": 1248.0460000000005,
+          "cost": 861.1517399999998
+        },
+        "national": {
+          "distance": 43.10799999999998,
+          "cost": 35.693424
+        },
+        "urban": {
+          "distance": 10.507,
+          "cost": 10.874745
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;116.94259640356948,34.74366026063984;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
+    },
+    {
+      "timestamp": "2026-02-01T12:47:08.798231",
+      "origin_address": "北京德茂",
+      "destination_address": "北京德茂",
+      "waypoint_addresses": [
+        "呼和浩特"
+      ],
+      "distance_km": 1009.085,
+      "duration_min": 741.8,
+      "toll": 392,
+      "oil_cost": 700.71,
+      "other": 0,
+      "total_cost": 1092.71,
+      "breakdown": {
+        "highway": {
+          "distance": 987.253,
+          "cost": 681.2045700000001
+        },
+        "national": {
+          "distance": 14.913000000000002,
+          "cost": 12.347964000000003
+        },
+        "urban": {
+          "distance": 6.919000000000001,
+          "cost": 7.161165
+        }
+      },
+      "map_url": "https://api.map.baidu.com/staticimage/v2?scaler=2&width=560&height=400&paths=116.44808200507372,39.778268045375434;111.75550856170946,40.84842299711348;116.44808200507372,39.778268045375434&pathStyles=0x7C3AED,8,0.75&ak=KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
     }
   ]
 }

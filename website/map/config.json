@@ -1,6 +1,6 @@
 {
   "oil_price": 6.9,
-  "electric_price": 0.5,
+  "electric_price": 1.5,
   "other": 0,
   "oil_consumption": {
     "highway": 10,

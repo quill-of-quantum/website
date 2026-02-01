@@ -8,6 +8,30 @@
   "转单号": "UPS 1ZW3715K6824447850",
   "routes": [
     {
+      "time": "2026-01-31 06:15:00",
+      "event": "Arrived at Facility Garching, Germany"
+    },
+    {
+      "time": "2026-01-31 01:56:00",
+      "event": "Departed from Facility Frankfurt, Germany"
+    },
+    {
+      "time": "2026-01-31 00:58:00",
+      "event": "Arrived at Facility Frankfurt, Germany"
+    },
+    {
+      "time": "2026-01-30 20:23:00",
+      "event": "Departed from Facility Langenhagen, Germany"
+    },
+    {
+      "time": "2026-01-29 07:10:00",
+      "event": "Arrived at Facility Wolka Kosowska, Poland"
+    },
+    {
+      "time": "2026-01-20 08:54:54",
+      "event": "预计1月21日交UPS"
+    },
+    {
       "time": "2026-01-16 23:42:07",
       "event": "已清关放行 预计1月19日交UPS"
     },

@@ -42,6 +42,9 @@ app.register_blueprint(admin_bp)
 from map.map_api import bp as map_bp
 app.register_blueprint(map_bp)
 
+from route_creator.route_creator_api import bp as route_creator_bp
+app.register_blueprint(route_creator_bp)
+
 from aurora.aurora_api import bp as aurora_bp
 app.register_blueprint(aurora_bp)
 
@@ -131,6 +134,11 @@ def viewer():
 def map_ui():
     """路线规划页"""
     return render_template("map.html")
+
+@app.route("/route_creator")
+def route_creator_ui():
+    """路线创作页"""
+    return render_template("route_creator.html")
 
 @app.route("/api/exchange_rate")
 def exchange_rate_chart():
