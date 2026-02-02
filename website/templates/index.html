@@ -203,8 +203,12 @@
           <p id="temp_row" style="display:none;">温度: <span id="temp_val">--</span> °C</p>
           <p id="wifi_row" style="display:none;">WiFi 信号: <span id="wifi_val">--</span></p>
           <p>运行时间: <span id="uptime_val">--</span></p>
+          <p>eCO2: <span id="sgp30_eco2">--</span> ppm</p>
+          <p>TVOC: <span id="sgp30_tvoc">--</span> ppb</p>
+          <p id="sgp30_error_row" style="display:none;">Error: <span id="sgp30_error">--</span></p>
         </div>
         <canvas id="sysChart" height="140"></canvas>
+        <canvas id="sgp30Chart" height="140"></canvas>
       </div>
     </div>
   </div>
@@ -325,11 +329,94 @@
       updateDisplayValues(data);
     }
 
+    function updateSensorValues(data) {
+      document.getElementById('sgp30_eco2').textContent = data.eco2 ?? '--';
+      document.getElementById('sgp30_tvoc').textContent = data.tvoc ?? '--';
+
+      if (data.error) {
+        document.getElementById('sgp30_error').textContent = data.error;
+        document.getElementById('sgp30_error_row').style.display = '';
+      } else {
+        document.getElementById('sgp30_error_row').style.display = 'none';
+      }
+    }
+
+    async function updateSensorInfo() {
+      try {
+        const res = await fetch('/api/sensor/latest');
+        const data = await res.json();
+        updateSensorValues(data);
+      } catch (err) {
+        document.getElementById('sgp30_error').textContent = err.toString();
+        document.getElementById('sgp30_error_row').style.display = '';
+      }
+    }
+
     // 页面加载时初始化历史数据
     initSystemInfo();
     
     // 之后每3秒更新一次
     setInterval(updateSystemInfo, 3000);
+
+    const sgpCtx = document.getElementById('sgp30Chart').getContext('2d');
+    const sgpData = {
+      labels: [],
+      datasets: [
+        { label: 'eCO2 (ppm)', borderColor: 'rgb(75, 192, 192)', data: [], fill: false, tension: 0.3, yAxisID: 'y_co2' },
+        { label: 'TVOC (ppb)', borderColor: 'rgb(153, 102, 255)', data: [], fill: false, tension: 0.3, yAxisID: 'y_tvoc' }
+      ]
+    };
+
+    const sgpChart = new Chart(sgpCtx, {
+      type: 'line',
+      data: sgpData,
+      options: {
+        scales: {
+          y_co2: { type: 'linear', position: 'left', beginAtZero: true },
+          y_tvoc: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } },
+          x: { ticks: { maxRotation: 0, autoSkip: true } }
+        },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+
+    async function loadSgp30Chart() {
+      try {
+        const res = await fetch('/api/sensor/log?limit=300');
+        const payload = await res.json();
+        if (!payload.ok) {
+          throw new Error(payload.error || 'log load failed');
+        }
+        const rows = payload.rows || [];
+        sgpData.labels = rows.map(r => r.ts);
+        const eco2Vals = rows.map(r => r.eco2);
+        const tvocVals = rows.map(r => r.tvoc);
+        sgpData.datasets[0].data = eco2Vals;
+        sgpData.datasets[1].data = tvocVals;
+
+        function applyMiddleRangeScaling(axisKey, values) {
+          if (!values.length) return;
+          const minVal = Math.min(...values);
+          const maxVal = Math.max(...values);
+          const range = Math.max(maxVal - minVal, 1);
+          const pad = range / 4;
+          sgpChart.options.scales[axisKey].min = minVal - pad;
+          sgpChart.options.scales[axisKey].max = maxVal + pad;
+        }
+
+        applyMiddleRangeScaling('y_co2', eco2Vals);
+        applyMiddleRangeScaling('y_tvoc', tvocVals);
+        sgpChart.update();
+      } catch (err) {
+        document.getElementById('sgp30_error').textContent = err.toString();
+        document.getElementById('sgp30_error_row').style.display = '';
+      }
+    }
+
+    // SGP30 每3秒更新一次（数值）; 图表按需加载
+    updateSensorInfo();
+    setInterval(updateSensorInfo, 3000);
+    loadSgp30Chart();
   </script>
 
   <script>

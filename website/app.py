@@ -55,6 +55,10 @@ from game.game_api import bp as game_bp, socketio, start_room_cleaner
 app.register_blueprint(game_bp)
 socketio.init_app(app)
 start_room_cleaner()
+
+from sensor.sensor_api import bp as sensor_bp, start_sensor_logger
+app.register_blueprint(sensor_bp)
+start_sensor_logger()
 # ===============================
 # 基础配置
 # ===============================

@@ -6,6 +6,7 @@
   <title>🧭 路线创作</title>
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
   <style>
     body {
       background: linear-gradient(135deg, #fff6e5 0%, #f2f7ff 100%);
@@ -45,6 +46,25 @@
       border-radius: 12px;
       border: 1px solid var(--border);
     }
+    .sketch-board {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+    }
+    #sketchCanvas {
+      width: 100%;
+      height: 220px;
+      display: block;
+      border-radius: 8px;
+      background: #fafafa;
+      border: 1px dashed #cfd6e4;
+      cursor: crosshair;
+    }
+    .section-title {
+      font-weight: 700;
+      margin: 6px 0 8px;
+    }
     .field {
       display: flex;
       flex-direction: column;
@@ -76,6 +96,14 @@
       border-radius: 8px;
       padding: 8px;
       background: #fff;
+    }
+    .points-list .result-row {
+      font-size: 0.9rem;
+      padding: 6px 8px;
+      border-bottom: 1px dashed #e7e7e7;
+    }
+    .points-list .result-row:last-child {
+      border-bottom: none;
     }
     .point-item {
       display: flex;
@@ -122,7 +150,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">🧭 路线创作</div>
-        <div class="hint">点击地图添加点，自动连成路线。</div>
+        <div class="hint">先选择区域，再手绘路线，系统匹配最相似道路。</div>
       </div>
       <a class="btn" href="/">返回首页</a>
     </div>
@@ -132,30 +160,37 @@
         <div id="map"></div>
       </div>
       <div class="panel">
-        <div class="field">
-          <label for="routeName">路线名称</label>
-          <input id="routeName" type="text" placeholder="例如：周末骑行路线">
-        </div>
-        <div class="field">
-          <label for="routeNotes">备注</label>
-          <textarea id="routeNotes" rows="3" placeholder="写点路线说明..."></textarea>
-        </div>
-
+        <div class="section-title">区域选择</div>
         <div class="btn-row">
-          <button class="btn btn-primary" id="undoBtn">撤销上一个点</button>
-          <button class="btn" id="clearBtn">清空全部</button>
-          <button class="btn" id="copyLinkBtn">复制链接</button>
-          <button class="btn" id="exportBtn">导出 JSON</button>
+          <button class="btn btn-primary" id="drawRectBtn">画矩形区域</button>
+          <button class="btn" id="drawPolyBtn">画多边形区域</button>
+          <button class="btn" id="drawCircleBtn">画圆形区域</button>
         </div>
 
-        <div class="points-list" id="pointList"></div>
-        <div class="stats" id="routeStats">已添加 0 个点 · 总距离 0 km</div>
-        <div class="hint">提示：分享链接可自动还原路线。</div>
+        <div class="section-title">手绘路线</div>
+        <div class="sketch-board">
+          <canvas id="sketchCanvas"></canvas>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="drawSketchBtn">点选绘制</button>
+          <button class="btn" id="undoSketchBtn">撤销点</button>
+          <button class="btn" id="clearSketchBtn">清空绘制</button>
+          <button class="btn" id="matchBtn">匹配路线</button>
+          <button class="btn" id="clearBtn">清空全部</button>
+        </div>
+
+        <div class="points-list" id="statusList"></div>
+        <div class="stats" id="routeStats">区域: 未选择 · 手绘点: 0 · 匹配: 未开始</div>
+        <div class="hint">输入方式预留：手绘(当前) / 自然语言(预留)。</div>
+
+        <div class="section-title">Debug 输出</div>
+        <div class="points-list" id="debugLog"></div>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script>
     const map = L.map('map').setView([48.14, 11.58], 11);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -163,138 +198,327 @@
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    const points = [];
-    const markers = [];
-    const polyline = L.polyline([], { color: '#ff6b6b', weight: 4 }).addTo(map);
+    const areaLayer = L.featureGroup().addTo(map);
+    const resultLayer = L.featureGroup().addTo(map);
 
-    const listEl = document.getElementById('pointList');
+    const statusList = document.getElementById('statusList');
     const statsEl = document.getElementById('routeStats');
+    const debugLog = document.getElementById('debugLog');
 
-    function haversine(a, b) {
-      const toRad = (v) => v * Math.PI / 180;
-      const R = 6371;
-      const dLat = toRad(b.lat - a.lat);
-      const dLng = toRad(b.lng - a.lng);
-      const s1 = Math.sin(dLat / 2);
-      const s2 = Math.sin(dLng / 2);
-      const c = 2 * Math.asin(Math.sqrt(s1 * s1 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * s2 * s2));
-      return R * c;
+    let areaData = null;
+    let drawTool = null;
+    let drawMode = null;
+    let lastCandidates = [];
+    let sketchData = [];
+    let isDrawing = false;
+    let progressTimer = null;
+    let resultTimer = null;
+    let lastProgressKey = '';
+
+    const sketchCanvas = document.getElementById('sketchCanvas');
+    const sketchCtx = sketchCanvas.getContext('2d');
+
+    function resizeCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      sketchCanvas.width = sketchCanvas.clientWidth * ratio;
+      sketchCanvas.height = sketchCanvas.clientHeight * ratio;
+      sketchCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      renderSketch();
     }
 
-    function totalDistance() {
-      let total = 0;
-      for (let i = 1; i < points.length; i += 1) {
-        total += haversine(points[i - 1], points[i]);
+    function logDebug(text) {
+      const div = document.createElement('div');
+      div.className = 'result-row';
+      div.textContent = text;
+      debugLog.appendChild(div);
+      debugLog.scrollTop = debugLog.scrollHeight;
+    }
+
+    function setStatusList(html) {
+      statusList.innerHTML = html;
+    }
+
+    function updateStats(text) {
+      const areaText = areaData ? areaData.type : '未选择';
+      const sketchText = sketchData.length;
+      const matchText = lastCandidates.length ? `Top${lastCandidates.length}` : '未开始';
+      statsEl.textContent = `区域: ${areaText} · 手绘点: ${sketchText} · 匹配: ${matchText}${text ? ` · ${text}` : ''}`;
+    }
+
+    function startDraw(mode, tool) {
+      drawMode = mode;
+      if (drawTool) drawTool.disable();
+      drawTool = tool;
+      drawTool.enable();
+    }
+
+    function buildAreaFromLayer(layer) {
+      if (layer instanceof L.Rectangle) {
+        const b = layer.getBounds();
+        return {
+          type: 'bbox',
+          north: b.getNorth(),
+          south: b.getSouth(),
+          east: b.getEast(),
+          west: b.getWest()
+        };
       }
-      return total;
+      if (layer instanceof L.Circle) {
+        const c = layer.getLatLng();
+        return {
+          type: 'circle',
+          lat: c.lat,
+          lng: c.lng,
+          radius_km: layer.getRadius() / 1000
+        };
+      }
+      if (layer instanceof L.Polygon) {
+        const pts = layer.getLatLngs()[0] || [];
+        return {
+          type: 'polygon',
+          points: pts.map(p => ({ lat: p.lat, lng: p.lng }))
+        };
+      }
+      return null;
     }
 
-    function updateStats() {
-      const km = totalDistance().toFixed(2);
-      statsEl.textContent = `已添加 ${points.length} 个点 · 总距离 ${km} km`;
-    }
-
-    function updateList() {
-      if (!points.length) {
-        listEl.innerHTML = '<div class="hint">暂无点位，点击地图开始创建。</div>';
+    function drawCandidates(candidates) {
+      resultLayer.clearLayers();
+      lastCandidates = candidates || [];
+      if (!lastCandidates.length) {
+        setStatusList('<div class="hint">暂无匹配结果。</div>');
         updateStats();
         return;
       }
-      listEl.innerHTML = points.map((p, i) => `
-        <div class="point-item">
-          <span>#${i + 1} ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</span>
-          <button data-index="${i}">删除</button>
-        </div>
-      `).join('');
-      listEl.querySelectorAll('button').forEach(btn => {
-        btn.addEventListener('click', () => removePoint(Number(btn.dataset.index)));
+      lastCandidates.forEach((c, i) => {
+        const latlngs = c.coords.map(pt => [pt[0], pt[1]]);
+        const isBest = i === 0;
+        L.polyline(latlngs, {
+          color: isBest ? '#ff4d4f' : '#444',
+          weight: isBest ? 5 : 3,
+          opacity: isBest ? 0.9 : 0.5,
+          dashArray: isBest ? null : '6 6'
+        }).addTo(resultLayer);
       });
+      map.fitBounds(resultLayer.getBounds().pad(0.1));
+      setStatusList(lastCandidates.map((c, i) => `
+        <div class="result-row">#${i + 1} 相似度分数: ${c.score} · 路线长度: ${(c.length_m / 1000).toFixed(2)}km</div>
+      `).join(''));
       updateStats();
     }
 
-    function addPoint(latlng) {
-      points.push(latlng);
-      const marker = L.marker(latlng, { title: `#${points.length}` }).addTo(map);
-      markers.push(marker);
-      polyline.setLatLngs(points);
-      updateList();
-    }
-
-    function removePoint(index) {
-      if (index < 0 || index >= points.length) return;
-      points.splice(index, 1);
-      const marker = markers.splice(index, 1)[0];
-      if (marker) map.removeLayer(marker);
-      polyline.setLatLngs(points);
-      updateList();
-    }
-
     function clearAll() {
-      points.splice(0, points.length);
-      markers.forEach(m => map.removeLayer(m));
-      markers.splice(0, markers.length);
-      polyline.setLatLngs([]);
-      updateList();
+      areaLayer.clearLayers();
+      resultLayer.clearLayers();
+      areaData = null;
+      sketchData = [];
+      lastCandidates = [];
+      setStatusList('<div class="hint">请先选择区域并手绘路线。</div>');
+      updateStats();
+      renderSketch();
     }
 
-    function exportJson() {
-      const payload = {
-        name: document.getElementById('routeName').value || 'untitled',
-        notes: document.getElementById('routeNotes').value || '',
-        points: points.map(p => ({ lat: p.lat, lng: p.lng })),
-        created_at: new Date().toISOString()
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${payload.name || 'route'}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+    function clearSketch() {
+      sketchData = [];
+      renderSketch();
+      updateStats();
     }
 
-    function buildShareLink() {
-      const coords = points.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(';');
-      const base = `${location.origin}${location.pathname}`;
-      const name = encodeURIComponent(document.getElementById('routeName').value || '');
-      const notes = encodeURIComponent(document.getElementById('routeNotes').value || '');
-      return `${base}?pts=${coords}&name=${name}&notes=${notes}`;
+    function undoSketch() {
+      if (!sketchData.length) return;
+      sketchData.pop();
+      renderSketch();
+      updateStats();
     }
 
-    async function copyLink() {
-      const link = buildShareLink();
-      if (!link) return;
+    function renderSketch() {
+      sketchCtx.clearRect(0, 0, sketchCanvas.clientWidth, sketchCanvas.clientHeight);
+      if (sketchData.length < 2) return;
+      sketchCtx.beginPath();
+      sketchCtx.strokeStyle = '#2ecc71';
+      sketchCtx.lineWidth = 2;
+      const first = sketchData[0];
+      sketchCtx.moveTo(first.x * sketchCanvas.clientWidth, first.y * sketchCanvas.clientHeight);
+      sketchData.slice(1).forEach(p => {
+        sketchCtx.lineTo(p.x * sketchCanvas.clientWidth, p.y * sketchCanvas.clientHeight);
+      });
+      sketchCtx.stroke();
+    }
+
+    async function matchRoute() {
+      if (!areaData || sketchData.length < 2) {
+        alert('请先选择区域并手绘路线');
+        return;
+      }
+      updateStats('匹配中...');
       try {
-        await navigator.clipboard.writeText(link);
-        alert('已复制链接');
-      } catch {
-        prompt('复制链接：', link);
+        debugLog.innerHTML = '';
+        logDebug('发送匹配请求...');
+        if (progressTimer) clearInterval(progressTimer);
+        if (resultTimer) clearInterval(resultTimer);
+        lastProgressKey = '';
+        const requestId = `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const requestIdEnc = encodeURIComponent(requestId);
+        const startTs = Date.now();
+        const matchBtn = document.getElementById('matchBtn');
+        matchBtn.disabled = true;
+        logDebug(`request_id: ${requestId}`);
+        const pollProgress = async () => {
+          try {
+            const p = await fetch(`/api/route_creator/progress?request_id=${requestIdEnc}`);
+            const pdata = await p.json();
+            if (pdata && pdata.ok && pdata.progress) {
+              const key = `${pdata.progress.status}|${pdata.progress.detail}`;
+              if (key !== lastProgressKey) {
+                lastProgressKey = key;
+                logDebug(`进度: ${pdata.progress.status} · ${pdata.progress.detail}`);
+              }
+              if (pdata.progress.status === 'done' || pdata.progress.status === 'error') {
+                clearInterval(progressTimer);
+              }
+            }
+          } catch (e) {
+            logDebug(`进度异常: ${e && e.message ? e.message : 'unknown'}`);
+          }
+          if (Date.now() - startTs > 5 * 60 * 1000) {
+            clearInterval(progressTimer);
+            logDebug('进度轮询超时，停止轮询。');
+          }
+        };
+        progressTimer = setInterval(pollProgress, 1500);
+        const res = await fetch('/api/route_creator/match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            area: areaData,
+            sketch: sketchData.map(p => ({ x: p.x, y: p.y })),
+            top_k: 5,
+            request_id: requestId
+          })
+        });
+        const enqueue = await res.json();
+        if (!enqueue.ok) {
+          const msg = enqueue.error || 'enqueue failed';
+          setStatusList(`<div class="hint">匹配失败：${msg}</div>`);
+          updateStats('失败');
+          logDebug(`失败: ${msg}`);
+          if (progressTimer) clearInterval(progressTimer);
+          matchBtn.disabled = false;
+          return;
+        }
+        logDebug(`已提交任务: ${enqueue.request_id}`);
+
+        const pollResult = async () => {
+          try {
+            const r = await fetch(`/api/route_creator/result?request_id=${requestIdEnc}`);
+            const rdata = await r.json();
+            if (rdata && rdata.ok && rdata.result) {
+              if (progressTimer) clearInterval(progressTimer);
+              const result = rdata.result;
+              if (!result.ok) {
+                setStatusList(`<div class="hint">匹配失败：${result.error || 'unknown'}</div>`);
+                updateStats('失败');
+                logDebug(`失败: ${result.error || 'unknown'}`);
+                clearInterval(resultTimer);
+                matchBtn.disabled = false;
+                return;
+              }
+              logDebug(`结果: ${JSON.stringify(result.debug || {})}`);
+              drawCandidates(result.candidates || []);
+              clearInterval(resultTimer);
+              matchBtn.disabled = false;
+            }
+          } catch (e) {
+            logDebug(`结果异常: ${e && e.message ? e.message : 'unknown'}`);
+          }
+          if (Date.now() - startTs > 5 * 60 * 1000) {
+            clearInterval(resultTimer);
+            matchBtn.disabled = false;
+            logDebug('结果轮询超时，停止轮询。');
+          }
+        };
+        resultTimer = setInterval(pollResult, 2000);
+      } catch (e) {
+        setStatusList(`<div class="hint">匹配失败：${e && e.message ? e.message : '网络或服务异常'}</div>`);
+        updateStats('失败');
+        logDebug(`异常: ${e && e.message ? e.message : '网络或服务异常'}`);
+        if (e && e.name) logDebug(`异常类型: ${e.name}`);
+        if (progressTimer) clearInterval(progressTimer);
+        if (resultTimer) clearInterval(resultTimer);
+        const matchBtn = document.getElementById('matchBtn');
+        matchBtn.disabled = false;
       }
     }
 
-    function loadFromQuery() {
-      const params = new URLSearchParams(location.search);
-      const pts = params.get('pts');
-      if (params.get('name')) document.getElementById('routeName').value = decodeURIComponent(params.get('name'));
-      if (params.get('notes')) document.getElementById('routeNotes').value = decodeURIComponent(params.get('notes'));
-      if (!pts) return;
-      pts.split(';').forEach(pair => {
-        const [lat, lng] = pair.split(',').map(Number);
-        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
-          addPoint({ lat, lng });
-        }
-      });
-      if (points.length) map.fitBounds(L.latLngBounds(points).pad(0.2));
+    map.on(L.Draw.Event.CREATED, (e) => {
+      const layer = e.layer;
+      if (drawMode === 'area') {
+        areaLayer.clearLayers();
+        areaLayer.addLayer(layer);
+        areaData = buildAreaFromLayer(layer);
+        resultLayer.clearLayers();
+        lastCandidates = [];
+        setStatusList('<div class="hint">区域已更新，请手绘路线。</div>');
+        updateStats();
+      }
+      if (drawTool) drawTool.disable();
+      drawTool = null;
+      drawMode = null;
+    });
+
+    document.getElementById('drawRectBtn').addEventListener('click', () => {
+      startDraw('area', new L.Draw.Rectangle(map, { shapeOptions: { color: '#4e79ff' } }));
+    });
+    document.getElementById('drawPolyBtn').addEventListener('click', () => {
+      startDraw('area', new L.Draw.Polygon(map, { shapeOptions: { color: '#4e79ff' } }));
+    });
+    document.getElementById('drawCircleBtn').addEventListener('click', () => {
+      startDraw('area', new L.Draw.Circle(map, { shapeOptions: { color: '#4e79ff' } }));
+    });
+    document.getElementById('drawSketchBtn').addEventListener('click', () => {
+      isDrawing = !isDrawing;
+      logDebug(isDrawing ? '点选模式: 开启' : '点选模式: 关闭');
+    });
+    document.getElementById('clearSketchBtn').addEventListener('click', clearSketch);
+    document.getElementById('undoSketchBtn').addEventListener('click', undoSketch);
+    document.getElementById('clearBtn').addEventListener('click', clearAll);
+    document.getElementById('matchBtn').addEventListener('click', matchRoute);
+
+    function canvasPointFromEvent(evt) {
+      const rect = sketchCanvas.getBoundingClientRect();
+      const x = (evt.clientX - rect.left) / rect.width;
+      const y = (evt.clientY - rect.top) / rect.height;
+      return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
     }
 
-    map.on('click', (e) => addPoint(e.latlng));
-    document.getElementById('undoBtn').addEventListener('click', () => removePoint(points.length - 1));
-    document.getElementById('clearBtn').addEventListener('click', clearAll);
-    document.getElementById('exportBtn').addEventListener('click', exportJson);
-    document.getElementById('copyLinkBtn').addEventListener('click', copyLink);
+    sketchCanvas.addEventListener('click', (e) => {
+      if (!isDrawing) return;
+      const p = canvasPointFromEvent(e);
+      sketchData.push(p);
+      renderSketch();
+      updateStats();
+      setStatusList('<div class="hint">已添加点，继续点击或开始匹配。</div>');
+    });
 
-    updateList();
-    loadFromQuery();
+    sketchCanvas.addEventListener('touchstart', (e) => {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const p = canvasPointFromEvent(touch);
+      sketchData.push(p);
+      renderSketch();
+      updateStats();
+      setStatusList('<div class="hint">已添加点，继续点击或开始匹配。</div>');
+    }, { passive: false });
+
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('beforeunload', () => {
+      if (progressTimer) clearInterval(progressTimer);
+      if (resultTimer) clearInterval(resultTimer);
+    });
+    resizeCanvas();
+    setStatusList('<div class="hint">请先选择区域并手绘路线。</div>');
+    updateStats();
   </script>
 </body>
 </html>
