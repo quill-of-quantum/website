@@ -68,6 +68,13 @@ USER_DB = {
     "admin": generate_password_hash("bbdwz")
 }
 
+# 汇率接口缓存（10分钟）
+EXCHANGE_RATE_CACHE_TTL = 600
+EXCHANGE_RATE_CACHE = {
+    "ts": 0,
+    "data": None
+}
+
 # ===============================
 # ----------- 普通区 ------------
 # ===============================
@@ -153,6 +160,9 @@ def exchange_rate_chart():
     import requests
     from datetime import datetime
     import xml.etree.ElementTree as ET
+    now_ts = time.time()
+    if EXCHANGE_RATE_CACHE["data"] and (now_ts - EXCHANGE_RATE_CACHE["ts"] < EXCHANGE_RATE_CACHE_TTL):
+        return jsonify(EXCHANGE_RATE_CACHE["data"])
 
     # ---------- Step 1: latest spot rates ----------
     latest_usd = latest_eur = None
@@ -173,6 +183,11 @@ def exchange_rate_chart():
         r = requests.get(hist_url, timeout=5)
         tree = ET.fromstring(r.content)
     except Exception:
+        if EXCHANGE_RATE_CACHE["data"]:
+            cached = dict(EXCHANGE_RATE_CACHE["data"])
+            cached["stale"] = True
+            cached["cached_at"] = datetime.utcnow().isoformat() + "Z"
+            return jsonify(cached)
         return jsonify({"error": "cannot load ECB data"})
 
     ns = {"def": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
@@ -206,7 +221,7 @@ def exchange_rate_chart():
             "pct_change": round(pct_change, 2)
         }
 
-    return jsonify({
+    payload = {
         "dates": [d.strftime("%Y-%m-%d") for d in dates],
         "eur_cny": eur_cny,
         "usd_cny": usd_cny,
@@ -217,7 +232,10 @@ def exchange_rate_chart():
         "latest_date": latest_date,
         "latest_eur": latest_eur,
         "latest_usd": latest_usd
-    })
+    }
+    EXCHANGE_RATE_CACHE["ts"] = now_ts
+    EXCHANGE_RATE_CACHE["data"] = payload
+    return jsonify(payload)
 
 # ===============================
 # 系统数据缓存（内存存储最近30个数据点）

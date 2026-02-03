@@ -65,6 +65,8 @@
       border-color: var(--primary);
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
     }
+    .auth-only { }
+    .guest-only { }
 
     /* 📱 手机屏幕一列显示 */
     @media (max-width: 768px) {
@@ -136,7 +138,7 @@
       </div>
 
       <!-- 用量图表 -->
-      <section class="chart-section card">
+      <section class="chart-section card auth-only" hidden>
         <h2 class="card-title">Usage Charts</h2>
         <div class="chart-grid">
 
@@ -195,7 +197,7 @@
       </section>
 
       <!-- 系统状态 -->
-      <div class="card">
+      <div class="card auth-only" hidden>
         <h2 class="card-title">⚙️ 系统状态</h2>
         <div id="sysinfo">
           <p>CPU 使用率: <span id="cpu_val">--</span>%</p>
@@ -222,6 +224,14 @@
     document.addEventListener('DOMContentLoaded', function() {
       if (window.authManager) {
         authManager.createLoginStatusWidget();
+        authManager.onAuthChange(function(isLoggedIn) {
+          document.querySelectorAll('.auth-only').forEach(el => {
+            el.hidden = !isLoggedIn;
+          });
+          document.querySelectorAll('.guest-only').forEach(el => {
+            el.hidden = isLoggedIn;
+          });
+        });
         authManager.checkLoginStatus();
       }
     });
@@ -380,6 +390,12 @@
       }
     });
 
+    function formatTsNoYear(ts) {
+      if (!ts) return "";
+      // Expects "YYYY-MM-DD HH:MM:SS"
+      return ts.slice(5, 10);
+    }
+
     async function loadSgp30Chart() {
       try {
         const res = await fetch('/api/sensor/log?limit=300');
@@ -388,7 +404,7 @@
           throw new Error(payload.error || 'log load failed');
         }
         const rows = payload.rows || [];
-        sgpData.labels = rows.map(r => r.ts);
+        sgpData.labels = rows.map(r => formatTsNoYear(r.ts));
         const eco2Vals = rows.map(r => r.eco2);
         const tvocVals = rows.map(r => r.tvoc);
         sgpData.datasets[0].data = eco2Vals;
@@ -525,6 +541,12 @@
           </div>
         `;
 
+        function formatDateNoYear(dateStr) {
+          if (!dateStr) return "";
+          // Expects YYYY-MM-DD
+          return dateStr.slice(5);
+        }
+
         function buildChart(canvasId, label, series, minIdx, maxIdx, lineColor) {
           const pointRadius = series.map((_, i) => (i === minIdx || i === maxIdx ? 4 : 0));
           const pointColor = series.map((_, i) => (i === maxIdx ? "#e74c3c" : (i === minIdx ? "#2ecc71" : lineColor)));
@@ -556,7 +578,7 @@
           new Chart(ctx, {
             type: "line",
             data: {
-              labels: data.dates,
+              labels: data.dates.map(formatDateNoYear),
               datasets: [
                 {
                   label,
@@ -577,7 +599,7 @@
                 legend: { position: "bottom" },
                 tooltip: {
                   callbacks: {
-                    title: (items) => data.dates[items[0].dataIndex]
+                    title: (items) => formatDateNoYear(data.dates[items[0].dataIndex])
                   }
                 }
               },
