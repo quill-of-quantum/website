@@ -7,14 +7,27 @@
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --ink: #1f2a44;
+      --accent: #ff6b35;
+      --accent-dark: #ea5a2a;
+      --panel-bg: #ffffff;
+      --soft-bg: #f7f4ee;
+      --chip-bg: #ffe8d7;
+    }
     body {
-      background: linear-gradient(135deg, #fff6e5 0%, #f2f7ff 100%);
+      background: linear-gradient(135deg, #fff4e1 0%, #f2f7ff 60%, #e9f6ff 100%);
       min-height: 100vh;
       padding: 20px;
+      color: var(--ink);
+      font-family: "Manrope", "ZCOOL XiaoWei", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
     .page-wrap {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
     }
     .page-header {
@@ -27,22 +40,46 @@
     .page-title {
       font-size: 2rem;
       font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .page-subtitle {
+      font-size: 0.95rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      background: var(--chip-bg);
+      color: #6a3a1c;
+      font-size: 0.85rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #ffd4bd;
     }
     .creator-grid {
       display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
+      grid-template-columns: 1.25fr 0.75fr;
       gap: 18px;
     }
     .panel {
-      background: var(--surface);
+      background: var(--panel-bg);
       border: 1px solid var(--border);
       border-radius: var(--r-lg);
       padding: 16px;
       box-shadow: var(--shadow-sm);
     }
+    .panel.soft {
+      background: var(--soft-bg);
+      border-style: dashed;
+    }
     #map {
       width: 100%;
-      height: 520px;
+      height: 540px;
       border-radius: 12px;
       border: 1px solid var(--border);
     }
@@ -64,6 +101,11 @@
     .section-title {
       font-weight: 700;
       margin: 6px 0 8px;
+    }
+    .section-subtitle {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
     }
     .field {
       display: flex;
@@ -89,6 +131,39 @@
       gap: 10px;
       margin: 10px 0 14px;
     }
+    .btn-row.tight {
+      margin: 8px 0;
+    }
+    .btn-accent {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-accent:hover {
+      background: var(--accent-dark);
+      border-color: var(--accent-dark);
+    }
+    .ghost {
+      background: #fff;
+      border-style: dashed;
+    }
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .switch.on {
+      background: #eaf7ef;
+      border-color: #b6e2c4;
+      color: #2a7b4b;
+      font-weight: 600;
+    }
     .points-list {
       max-height: 260px;
       overflow-y: auto;
@@ -96,6 +171,9 @@
       border-radius: 8px;
       padding: 8px;
       background: #fff;
+    }
+    .points-list.compact {
+      max-height: 180px;
     }
     .points-list .result-row {
       font-size: 0.9rem;
@@ -114,6 +192,11 @@
       border-bottom: 1px dashed #e7e7e7;
       font-size: 0.9rem;
     }
+    .point-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-left: 6px;
+    }
     .point-item:last-child {
       border-bottom: none;
     }
@@ -124,6 +207,44 @@
       border-radius: 6px;
       padding: 4px 8px;
       cursor: pointer;
+    }
+    .result-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px;
+      border-bottom: 1px dashed #e7e7e7;
+      cursor: pointer;
+    }
+    .result-item:last-child {
+      border-bottom: none;
+    }
+    .result-item.active {
+      background: #fff4ee;
+      border-radius: 8px;
+      border: 1px solid #ffd9c7;
+    }
+    .progress {
+      height: 8px;
+      background: #edf0f5;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress.indeterminate span {
+      width: 35%;
+      animation: progress-move 1.2s ease-in-out infinite;
+    }
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ff9a62, #ff6b35);
+      transition: width 0.4s ease;
+    }
+    @keyframes progress-move {
+      0% { transform: translateX(-70%); }
+      100% { transform: translateX(250%); }
     }
     .stats {
       margin-top: 10px;
@@ -150,41 +271,69 @@
     <div class="page-header">
       <div>
         <div class="page-title">🧭 路线创作</div>
-        <div class="hint">先选择区域，再手绘路线，系统匹配最相似道路。</div>
+        <div class="page-subtitle">先选择区域，再手绘路线，系统会匹配最相似道路。</div>
+        <div class="chip-row">
+          <div class="chip" id="areaChip">区域: 未选择</div>
+          <div class="chip" id="sketchChip">手绘点: 0</div>
+          <div class="chip" id="matchChip">匹配: 未开始</div>
+        </div>
       </div>
       <a class="btn" href="/">返回首页</a>
     </div>
 
     <div class="creator-grid">
-      <div class="panel">
+      <div class="panel soft">
         <div id="map"></div>
       </div>
       <div class="panel">
         <div class="section-title">区域选择</div>
+        <div class="section-subtitle">使用地图工具圈定可搜索范围。</div>
         <div class="btn-row">
           <button class="btn btn-primary" id="drawRectBtn">画矩形区域</button>
           <button class="btn" id="drawPolyBtn">画多边形区域</button>
           <button class="btn" id="drawCircleBtn">画圆形区域</button>
+          <button class="btn ghost" id="zoomAreaBtn">缩放至区域</button>
+          <button class="btn ghost" id="clearAreaBtn">清空区域</button>
         </div>
+        <div class="stats" id="areaInfo">区域: 未选择</div>
 
         <div class="section-title">手绘路线</div>
+        <div class="section-subtitle">点击开启点选模式，在画板上逐点描绘路线。</div>
+        <div class="btn-row tight">
+          <button class="switch on" id="toggleSketchBtn">点选模式: 开启</button>
+          <span class="hint" id="modeIndicator">当前正在点选绘制</span>
+        </div>
         <div class="sketch-board">
           <canvas id="sketchCanvas"></canvas>
         </div>
         <div class="btn-row">
-          <button class="btn" id="drawSketchBtn">点选绘制</button>
           <button class="btn" id="undoSketchBtn">撤销点</button>
           <button class="btn" id="clearSketchBtn">清空绘制</button>
-          <button class="btn" id="matchBtn">匹配路线</button>
+          <button class="btn btn-accent" id="matchBtn">匹配路线</button>
           <button class="btn" id="clearBtn">清空全部</button>
         </div>
 
-        <div class="points-list" id="statusList"></div>
-        <div class="stats" id="routeStats">区域: 未选择 · 手绘点: 0 · 匹配: 未开始</div>
-        <div class="hint">输入方式预留：手绘(当前) / 自然语言(预留)。</div>
+        <div class="section-title">手绘点列表</div>
+        <div class="points-list compact" id="pointsList"></div>
 
-        <div class="section-title">Debug 输出</div>
-        <div class="points-list" id="debugLog"></div>
+        <div class="section-title">匹配参数</div>
+        <div class="field">
+          <label for="topKInput">候选条数 (Top-K)</label>
+          <input type="number" id="topKInput" min="1" max="20" value="8">
+        </div>
+
+        <div class="section-title">匹配状态</div>
+        <div class="points-list compact" id="statusList"></div>
+        <div class="progress"><span id="progressBar"></span></div>
+        <div class="stats" id="routeStats">区域: 未选择 · 手绘点: 0 · 匹配: 未开始</div>
+
+        <div class="section-title">匹配结果</div>
+        <div class="points-list" id="resultList"></div>
+
+        <details>
+          <summary class="section-title">Debug 输出</summary>
+          <div class="points-list" id="debugLog"></div>
+        </details>
       </div>
     </div>
   </div>
@@ -204,13 +353,25 @@
     const statusList = document.getElementById('statusList');
     const statsEl = document.getElementById('routeStats');
     const debugLog = document.getElementById('debugLog');
+    const areaInfo = document.getElementById('areaInfo');
+    const pointsList = document.getElementById('pointsList');
+    const resultList = document.getElementById('resultList');
+    const progressBar = document.getElementById('progressBar');
+    const progressWrap = progressBar.parentElement;
+    const areaChip = document.getElementById('areaChip');
+    const sketchChip = document.getElementById('sketchChip');
+    const matchChip = document.getElementById('matchChip');
+    const modeIndicator = document.getElementById('modeIndicator');
+    const toggleSketchBtn = document.getElementById('toggleSketchBtn');
+    const topKInput = document.getElementById('topKInput');
 
     let areaData = null;
     let drawTool = null;
     let drawMode = null;
     let lastCandidates = [];
+    let resultLines = [];
     let sketchData = [];
-    let isDrawing = false;
+    let isDrawing = true;
     let progressTimer = null;
     let resultTimer = null;
     let lastProgressKey = '';
@@ -242,7 +403,31 @@
       const areaText = areaData ? areaData.type : '未选择';
       const sketchText = sketchData.length;
       const matchText = lastCandidates.length ? `Top${lastCandidates.length}` : '未开始';
-      statsEl.textContent = `区域: ${areaText} · 手绘点: ${sketchText} · 匹配: ${matchText}${text ? ` · ${text}` : ''}`;
+      const extra = text ? ` · ${text}` : '';
+      statsEl.textContent = `区域: ${areaText} · 手绘点: ${sketchText} · 匹配: ${matchText}${extra}`;
+      areaChip.textContent = `区域: ${areaText}`;
+      sketchChip.textContent = `手绘点: ${sketchText}`;
+      matchChip.textContent = `匹配: ${matchText}`;
+    }
+
+    function updateAreaInfo() {
+      if (!areaData) {
+        areaInfo.textContent = '区域: 未选择';
+        return;
+      }
+      if (areaData.type === 'bbox') {
+        areaInfo.textContent = `矩形区域: N${areaData.north.toFixed(4)} · S${areaData.south.toFixed(4)} · E${areaData.east.toFixed(4)} · W${areaData.west.toFixed(4)}`;
+        return;
+      }
+      if (areaData.type === 'circle') {
+        areaInfo.textContent = `圆形区域: ${areaData.lat.toFixed(4)}, ${areaData.lng.toFixed(4)} · 半径 ${areaData.radius_km.toFixed(2)}km`;
+        return;
+      }
+      if (areaData.type === 'polygon') {
+        areaInfo.textContent = `多边形区域: ${areaData.points.length} 个点`;
+        return;
+      }
+      areaInfo.textContent = `区域: ${areaData.type}`;
     }
 
     function startDraw(mode, tool) {
@@ -284,27 +469,37 @@
 
     function drawCandidates(candidates) {
       resultLayer.clearLayers();
+      resultLines = [];
       lastCandidates = candidates || [];
       if (!lastCandidates.length) {
         setStatusList('<div class="hint">暂无匹配结果。</div>');
+        resultList.innerHTML = '<div class="hint">暂无匹配结果。</div>';
         updateStats();
         return;
       }
       lastCandidates.forEach((c, i) => {
         const latlngs = c.coords.map(pt => [pt[0], pt[1]]);
         const isBest = i === 0;
-        L.polyline(latlngs, {
+        const line = L.polyline(latlngs, {
           color: isBest ? '#ff4d4f' : '#444',
           weight: isBest ? 5 : 3,
           opacity: isBest ? 0.9 : 0.5,
           dashArray: isBest ? null : '6 6'
         }).addTo(resultLayer);
+        resultLines.push(line);
       });
       map.fitBounds(resultLayer.getBounds().pad(0.1));
-      setStatusList(lastCandidates.map((c, i) => `
-        <div class="result-row">#${i + 1} 相似度分数: ${c.score} · 路线长度: ${(c.length_m / 1000).toFixed(2)}km</div>
-      `).join(''));
+      setStatusList('<div class="hint">已生成匹配结果，可点击下方列表聚焦查看。</div>');
+      resultList.innerHTML = `
+        <div class="result-row">线路 · 匹配度 · 长度</div>
+      ` + lastCandidates.map((c, i) => `
+        <div class="result-item ${i === 0 ? 'active' : ''}" data-index="${i}">
+          <div>线路 ${i + 1} · 匹配度 ${c.score}</div>
+          <div class="point-meta">${(c.length_m / 1000).toFixed(2)}km</div>
+        </div>
+      `).join('');
       updateStats();
+      setTimeout(() => map.invalidateSize(), 120);
     }
 
     function clearAll() {
@@ -313,14 +508,21 @@
       areaData = null;
       sketchData = [];
       lastCandidates = [];
+      resultLines = [];
       setStatusList('<div class="hint">请先选择区域并手绘路线。</div>');
+      resultList.innerHTML = '<div class="hint">等待匹配结果。</div>';
+      pointsList.innerHTML = '<div class="hint">尚未添加手绘点。</div>';
+      progressBar.style.width = '0%';
+      progressWrap.classList.remove('indeterminate');
       updateStats();
+      updateAreaInfo();
       renderSketch();
     }
 
     function clearSketch() {
       sketchData = [];
       renderSketch();
+      renderPointsList();
       updateStats();
     }
 
@@ -328,6 +530,7 @@
       if (!sketchData.length) return;
       sketchData.pop();
       renderSketch();
+      renderPointsList();
       updateStats();
     }
 
@@ -343,6 +546,39 @@
         sketchCtx.lineTo(p.x * sketchCanvas.clientWidth, p.y * sketchCanvas.clientHeight);
       });
       sketchCtx.stroke();
+      sketchData.forEach(p => {
+        sketchCtx.beginPath();
+        sketchCtx.fillStyle = '#2ecc71';
+        sketchCtx.arc(p.x * sketchCanvas.clientWidth, p.y * sketchCanvas.clientHeight, 3, 0, Math.PI * 2);
+        sketchCtx.fill();
+      });
+    }
+
+    function renderPointsList() {
+      if (!sketchData.length) {
+        pointsList.innerHTML = '<div class="hint">尚未添加手绘点。</div>';
+        return;
+      }
+      pointsList.innerHTML = sketchData.map((p, i) => `
+        <div class="point-item">
+          <div>点 ${i + 1}<span class="point-meta">(${p.x.toFixed(3)}, ${p.y.toFixed(3)})</span></div>
+          <button data-action="remove" data-index="${i}">删除</button>
+        </div>
+      `).join('');
+    }
+
+    function setProgressByStatus(status) {
+      if (!status) return;
+      const indeterminate = ['fetch', 'start'].includes(status);
+      progressWrap.classList.toggle('indeterminate', indeterminate);
+      if (status === 'queued') progressBar.style.width = '30%';
+      else if (status === 'processing') progressBar.style.width = '70%';
+      else if (status === 'prepare') progressBar.style.width = '55%';
+      else if (status === 'snap') progressBar.style.width = '60%';
+      else if (status === 'route') progressBar.style.width = '75%';
+      else if (status === 'rank') progressBar.style.width = '85%';
+      else if (status === 'done') progressBar.style.width = '100%';
+      else if (status === 'error') progressBar.style.width = '0%';
     }
 
     async function matchRoute() {
@@ -351,9 +587,11 @@
         return;
       }
       updateStats('匹配中...');
+      progressBar.style.width = '20%';
       try {
         debugLog.innerHTML = '';
         logDebug('发送匹配请求...');
+        setStatusList('<div class="result-row">任务提交中...</div>');
         if (progressTimer) clearInterval(progressTimer);
         if (resultTimer) clearInterval(resultTimer);
         lastProgressKey = '';
@@ -371,10 +609,19 @@
               const key = `${pdata.progress.status}|${pdata.progress.detail}`;
               if (key !== lastProgressKey) {
                 lastProgressKey = key;
-                logDebug(`进度: ${pdata.progress.status} · ${pdata.progress.detail}`);
+                const percent = pdata.progress.percent;
+                logDebug(`进度: ${pdata.progress.status} · ${pdata.progress.detail}${typeof percent === 'number' ? ` · ${percent}%` : ''}`);
+                setStatusList(`<div class="result-row">进度: ${pdata.progress.status} · ${pdata.progress.detail}${typeof percent === 'number' ? ` · ${percent}%` : ''}</div>`);
+                if (typeof percent === 'number') {
+                  progressBar.style.width = `${percent}%`;
+                  progressWrap.classList.remove('indeterminate');
+                } else {
+                  setProgressByStatus(pdata.progress.status);
+                }
               }
               if (pdata.progress.status === 'done' || pdata.progress.status === 'error') {
                 clearInterval(progressTimer);
+                setProgressByStatus(pdata.progress.status);
               }
             }
           } catch (e) {
@@ -392,7 +639,7 @@
           body: JSON.stringify({
             area: areaData,
             sketch: sketchData.map(p => ({ x: p.x, y: p.y })),
-            top_k: 5,
+            top_k: Math.max(1, Math.min(20, Number(topKInput.value) || 8)),
             request_id: requestId
           })
         });
@@ -404,9 +651,12 @@
           logDebug(`失败: ${msg}`);
           if (progressTimer) clearInterval(progressTimer);
           matchBtn.disabled = false;
+          progressBar.style.width = '0%';
+          progressWrap.classList.remove('indeterminate');
           return;
         }
         logDebug(`已提交任务: ${enqueue.request_id}`);
+        progressBar.style.width = '45%';
 
         const pollResult = async () => {
           try {
@@ -421,12 +671,16 @@
                 logDebug(`失败: ${result.error || 'unknown'}`);
                 clearInterval(resultTimer);
                 matchBtn.disabled = false;
+                progressBar.style.width = '0%';
+                progressWrap.classList.remove('indeterminate');
                 return;
               }
               logDebug(`结果: ${JSON.stringify(result.debug || {})}`);
               drawCandidates(result.candidates || []);
               clearInterval(resultTimer);
               matchBtn.disabled = false;
+              progressBar.style.width = '100%';
+              progressWrap.classList.remove('indeterminate');
             }
           } catch (e) {
             logDebug(`结果异常: ${e && e.message ? e.message : 'unknown'}`);
@@ -447,6 +701,8 @@
         if (resultTimer) clearInterval(resultTimer);
         const matchBtn = document.getElementById('matchBtn');
         matchBtn.disabled = false;
+        progressBar.style.width = '0%';
+        progressWrap.classList.remove('indeterminate');
       }
     }
 
@@ -458,8 +714,10 @@
         areaData = buildAreaFromLayer(layer);
         resultLayer.clearLayers();
         lastCandidates = [];
+        resultLines = [];
         setStatusList('<div class="hint">区域已更新，请手绘路线。</div>');
         updateStats();
+        updateAreaInfo();
       }
       if (drawTool) drawTool.disable();
       drawTool = null;
@@ -475,8 +733,25 @@
     document.getElementById('drawCircleBtn').addEventListener('click', () => {
       startDraw('area', new L.Draw.Circle(map, { shapeOptions: { color: '#4e79ff' } }));
     });
-    document.getElementById('drawSketchBtn').addEventListener('click', () => {
+    document.getElementById('zoomAreaBtn').addEventListener('click', () => {
+      if (!areaData || !areaLayer.getBounds().isValid()) return;
+      map.fitBounds(areaLayer.getBounds().pad(0.2));
+    });
+    document.getElementById('clearAreaBtn').addEventListener('click', () => {
+      areaLayer.clearLayers();
+      areaData = null;
+      resultLayer.clearLayers();
+      lastCandidates = [];
+      resultLines = [];
+      resultList.innerHTML = '<div class="hint">等待匹配结果。</div>';
+      updateAreaInfo();
+      updateStats();
+    });
+    toggleSketchBtn.addEventListener('click', () => {
       isDrawing = !isDrawing;
+      toggleSketchBtn.classList.toggle('on', isDrawing);
+      toggleSketchBtn.textContent = `点选模式: ${isDrawing ? '开启' : '关闭'}`;
+      modeIndicator.textContent = isDrawing ? '当前正在点选绘制' : '当前未开启点选';
       logDebug(isDrawing ? '点选模式: 开启' : '点选模式: 关闭');
     });
     document.getElementById('clearSketchBtn').addEventListener('click', clearSketch);
@@ -496,6 +771,7 @@
       const p = canvasPointFromEvent(e);
       sketchData.push(p);
       renderSketch();
+      renderPointsList();
       updateStats();
       setStatusList('<div class="hint">已添加点，继续点击或开始匹配。</div>');
     });
@@ -507,17 +783,57 @@
       const p = canvasPointFromEvent(touch);
       sketchData.push(p);
       renderSketch();
+      renderPointsList();
       updateStats();
       setStatusList('<div class="hint">已添加点，继续点击或开始匹配。</div>');
     }, { passive: false });
 
-    window.addEventListener('resize', resizeCanvas);
+    pointsList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action="remove"]');
+      if (!btn) return;
+      const idx = Number(btn.dataset.index);
+      if (Number.isNaN(idx)) return;
+      sketchData.splice(idx, 1);
+      renderSketch();
+      renderPointsList();
+      updateStats();
+    });
+
+    resultList.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (!item) return;
+      const idx = Number(item.dataset.index);
+      if (Number.isNaN(idx)) return;
+      resultList.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
+      item.classList.add('active');
+      resultLines.forEach((line, i) => {
+        if (i === idx) {
+          line.setStyle({ color: '#ff4d4f', weight: 5, opacity: 0.95, dashArray: null });
+        } else {
+          line.setStyle({ color: '#444', weight: 3, opacity: 0.45, dashArray: '6 6' });
+        }
+      });
+      if (resultLines[idx]) {
+        map.fitBounds(resultLines[idx].getBounds().pad(0.2));
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      map.invalidateSize();
+    });
     window.addEventListener('beforeunload', () => {
       if (progressTimer) clearInterval(progressTimer);
       if (resultTimer) clearInterval(resultTimer);
     });
     resizeCanvas();
     setStatusList('<div class="hint">请先选择区域并手绘路线。</div>');
+    resultList.innerHTML = '<div class="hint">等待匹配结果。</div>';
+    pointsList.innerHTML = '<div class="hint">尚未添加手绘点。</div>';
+    toggleSketchBtn.classList.add('on');
+    toggleSketchBtn.textContent = '点选模式: 开启';
+    modeIndicator.textContent = '当前正在点选绘制';
+    updateAreaInfo();
     updateStats();
   </script>
 </body>
