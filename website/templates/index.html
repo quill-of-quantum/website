@@ -85,8 +85,8 @@
   <div class="page">
     <div class="container">
       <div class="page-header">
-        <h1>🏠 树莓派控制面板</h1>
-        <p>个人工具与系统状态概览</p>
+        <h1 id="motivation-line">加载中...</h1>
+        <p></p>
       </div>
 
       <!-- 最新物流进度 -->
@@ -222,6 +222,7 @@
   <script>
     // 初始化认证系统
     document.addEventListener('DOMContentLoaded', function() {
+      loadMotivationQuote();
       if (window.authManager) {
         authManager.createLoginStatusWidget();
         authManager.onAuthChange(function(isLoggedIn) {
@@ -235,6 +236,24 @@
         authManager.checkLoginStatus();
       }
     });
+
+    // 随机激励语
+    async function loadMotivationQuote() {
+      const el = document.getElementById('motivation-line');
+      if (!el) return;
+      try {
+        const res = await fetch('https://v1.hitokoto.cn/?c=k&encode=json');
+        const data = await res.json();
+        if (data && data.hitokoto) {
+          const from = data.from ? ` —— ${data.from}` : '';
+          el.textContent = `${data.hitokoto}${from}`;
+          return;
+        }
+        el.textContent = '继续前进，今天也会有收获。';
+      } catch (err) {
+        el.textContent = '继续前进，今天也会有收获。';
+      }
+    }
 
     // 加载最新物流状态
     async function loadLatest() {

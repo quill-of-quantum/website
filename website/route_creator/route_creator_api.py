@@ -216,6 +216,42 @@ def route_length_m(G, path_nodes):
     return total
 
 
+def _to_local_xy(lat, lng, center_lat):
+    # Equirectangular approximation.
+    x = lng * 111320.0 * max(0.1, abs(math.cos(math.radians(center_lat))))
+    y = lat * 110540.0
+    return x, y
+
+
+def _resample_polyline(points, segment_len_m):
+    if len(points) < 2:
+        return points
+    resampled = [points[0]]
+    remaining = segment_len_m
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        dx = x2 - x1
+        dy = y2 - y1
+        seg_len = (dx * dx + dy * dy) ** 0.5
+        if seg_len == 0:
+            continue
+        while seg_len >= remaining:
+            t = remaining / seg_len
+            nx = x1 + dx * t
+            ny = y1 + dy * t
+            resampled.append((nx, ny))
+            x1, y1 = nx, ny
+            dx = x2 - x1
+            dy = y2 - y1
+            seg_len = (dx * dx + dy * dy) ** 0.5
+            remaining = segment_len_m
+        remaining -= seg_len
+    if resampled[-1] != points[-1]:
+        resampled.append(points[-1])
+    return resampled
+
+
 @bp.route("/match", methods=["POST"])
 def match_route():
     try:
@@ -430,7 +466,7 @@ def _run_match(request_id, area, sketch, top_k):
     def nodes_to_coords(path_nodes):
         return [[G.nodes[n]["y"], G.nodes[n]["x"]] for n in path_nodes]
 
-    # Shape-only matching: sample random node pairs across the whole graph.
+    # Shape-guided beam search over the road graph.
     nodes_list = list(G.nodes)
     if len(nodes_list) < 2:
         _set_progress(request_id, "error", "empty road network")
@@ -443,63 +479,113 @@ def _run_match(request_id, area, sketch, top_k):
     except Exception:
         pass
 
-    max_attempts = 2000
-    max_candidates = max(top_k * 8, top_k)
-    target_good = top_k
-    target_score = 0.06
-    min_dist_m = 400.0
-    candidates = []
-    _set_progress(request_id, "search", "random paths", 70)
-    seen_pairs = set()
-    seen_paths = set()
-    good_hits = 0
-    for attempt in range(1, max_attempts + 1):
-        if good_hits >= target_good or len(candidates) >= max_candidates:
-            break
-        u = rand.choice(nodes_list)
-        v = rand.choice(nodes_list)
-        if u == v:
-            continue
-        pair = (u, v) if u < v else (v, u)
-        if pair in seen_pairs:
-            continue
-        seen_pairs.add(pair)
-        try:
-            uy, ux = G.nodes[u]["y"], G.nodes[u]["x"]
-            vy, vx = G.nodes[v]["y"], G.nodes[v]["x"]
-            if haversine_m(uy, ux, vy, vx) < min_dist_m:
-                continue
-        except Exception:
-            pass
-        try:
-            path = nx.shortest_path(G, u, v, weight="length")
-        except Exception:
-            continue
-        if not path or len(path) < 2:
-            continue
-        path_key = tuple(path)
-        if path_key in seen_paths:
-            continue
-        seen_paths.add(path_key)
+    center_lat = (north + south) / 2.0
+    sketch_xy = [_to_local_xy(lat, lng, center_lat) for lat, lng in sketch_pts]
+    total_len = 0.0
+    for a, b in zip(sketch_xy[:-1], sketch_xy[1:]):
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        total_len += (dx * dx + dy * dy) ** 0.5
+    seg_count = max(20, min(80, int(total_len / 150.0) if total_len > 0 else 20))
+    seg_len = max(40.0, total_len / max(1, seg_count))
+    resampled = _resample_polyline(sketch_xy, seg_len)
+    if len(resampled) < 2:
+        _set_progress(request_id, "error", "sketch too short")
+        _set_result(request_id, {"ok": False, "error": "sketch too short"})
+        return
 
+    dir_angles = []
+    for a, b in zip(resampled[:-1], resampled[1:]):
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        if dx == 0 and dy == 0:
+            dir_angles.append(0.0)
+        else:
+            dir_angles.append(math.atan2(dy, dx))
+
+    beam_width = max(20, min(80, top_k * 5))
+    start_count = max(8, min(30, top_k * 4))
+    max_candidates = max(top_k * 6, top_k)
+    target_score = 0.06
+
+    start_nodes = [rand.choice(nodes_list) for _ in range(start_count)]
+    beam = []
+    for n in start_nodes:
+        beam.append({
+            "path": [n],
+            "cost": 0.0,
+            "len": 0.0,
+            "prev_dir": None
+        })
+
+    candidates = []
+    _set_progress(request_id, "search", f"beam search K={beam_width}", 70)
+
+    def angle_diff(a, b):
+        d = abs(a - b) % (2 * math.pi)
+        return d if d <= math.pi else (2 * math.pi - d)
+
+    w_angle = 1.0
+    w_len = 0.25
+    w_turn = 0.15
+
+    for i, target_theta in enumerate(dir_angles, 1):
+        next_states = []
+        for state in beam:
+            u = state["path"][-1]
+            for v in G.successors(u):
+                data = G.get_edge_data(u, v) or {}
+                if not data:
+                    continue
+                length = min((d.get("length", 0.0) for d in data.values()), default=0.0)
+                if length <= 0:
+                    continue
+                try:
+                    uy, ux = G.nodes[u]["y"], G.nodes[u]["x"]
+                    vy, vx = G.nodes[v]["y"], G.nodes[v]["x"]
+                    x1, y1 = _to_local_xy(uy, ux, center_lat)
+                    x2, y2 = _to_local_xy(vy, vx, center_lat)
+                    theta = math.atan2(y2 - y1, x2 - x1)
+                except Exception:
+                    continue
+
+                adiff = angle_diff(theta, target_theta)
+                len_pen = abs(length - seg_len) / max(1.0, seg_len)
+                turn_pen = 0.0
+                if state["prev_dir"] is not None:
+                    turn_pen = angle_diff(theta, state["prev_dir"]) / math.pi
+
+                cost = state["cost"] + w_angle * adiff + w_len * len_pen + w_turn * turn_pen
+                next_states.append({
+                    "path": state["path"] + [v],
+                    "cost": cost,
+                    "len": state["len"] + length,
+                    "prev_dir": theta
+                })
+
+        if not next_states:
+            break
+
+        next_states.sort(key=lambda s: s["cost"])
+        beam = next_states[:beam_width]
+
+        if i % 5 == 0 or i == len(dir_angles):
+            pct = 70 + int(25 * i / max(1, len(dir_angles)))
+            _set_progress(request_id, "search", f"beam step {i}/{len(dir_angles)}", pct)
+
+    for state in beam:
+        path = state["path"]
+        if len(path) < 2:
+            continue
         coords = nodes_to_coords(path)
         score = polyline_distance_score_rot([(c[0], c[1]) for c in coords], sketch_pts)
-        length_m = route_length_m(G, path)
         candidates.append({
             "coords": coords,
             "score": round(score, 4),
-            "length_m": round(length_m, 1)
+            "length_m": round(state["len"], 1)
         })
-        if score <= target_score:
-            good_hits += 1
-
-        if attempt % 20 == 0:
-            _set_progress(
-                request_id,
-                "search",
-                f"random paths {attempt}/{max_attempts} · good {good_hits}",
-                70 + int(20 * attempt / max_attempts)
-            )
+        if len(candidates) >= max_candidates:
+            break
 
     candidates.sort(key=lambda x: (x["score"], x["length_m"]))
     top = candidates[:top_k]
@@ -514,6 +600,8 @@ def _run_match(request_id, area, sketch, top_k):
             "edges": len(G.edges),
             "sketch_points": len(sketch_pts),
             "candidate_count": len(candidates),
+            "beam_width": beam_width,
+            "segments": len(dir_angles),
             "request_id": request_id
         }
     })
