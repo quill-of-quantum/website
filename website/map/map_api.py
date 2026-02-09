@@ -366,8 +366,8 @@ def generate_folium_map(route_data, origin, destination, waypoints=None, waypoin
         location=[center_lat, center_lng],
         zoom_start=10,
         control_scale=True,
-        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-        attr='Google'
+        tiles='https://wprd01.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&style=7',
+        attr='高德地图'
     )
     
     # 路段类型配置
