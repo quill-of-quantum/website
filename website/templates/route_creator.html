@@ -341,7 +341,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script>
-    const map = L.map('map').setView([48.14, 11.58], 11);
+    const map = L.map('map').setView([39.92, 116.41], 11);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
@@ -604,7 +604,14 @@
         const pollProgress = async () => {
           try {
             const p = await fetch(`/api/route_creator/progress?request_id=${requestIdEnc}`);
-            const pdata = await p.json();
+            const ptext = await p.text();
+            let pdata = null;
+            try {
+              pdata = JSON.parse(ptext);
+            } catch (e) {
+              logDebug(`进度异常: 非JSON响应 (${p.status}) ${ptext.slice(0, 120)}`);
+              return;
+            }
             if (pdata && pdata.ok && pdata.progress) {
               const key = `${pdata.progress.status}|${pdata.progress.detail}`;
               if (key !== lastProgressKey) {
@@ -632,7 +639,7 @@
             logDebug('进度轮询超时，停止轮询。');
           }
         };
-        progressTimer = setInterval(pollProgress, 1500);
+        progressTimer = setInterval(pollProgress, 600);
         const res = await fetch('/api/route_creator/match', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -643,7 +650,20 @@
             request_id: requestId
           })
         });
-        const enqueue = await res.json();
+        const enqueueText = await res.text();
+        let enqueue = null;
+        try {
+          enqueue = JSON.parse(enqueueText);
+        } catch (e) {
+          setStatusList(`<div class="hint">匹配失败：服务返回非JSON (${res.status})</div>`);
+          updateStats('失败');
+          logDebug(`失败: 非JSON响应 ${res.status} ${enqueueText.slice(0, 160)}`);
+          if (progressTimer) clearInterval(progressTimer);
+          matchBtn.disabled = false;
+          progressBar.style.width = '0%';
+          progressWrap.classList.remove('indeterminate');
+          return;
+        }
         if (!enqueue.ok) {
           const msg = enqueue.error || 'enqueue failed';
           setStatusList(`<div class="hint">匹配失败：${msg}</div>`);
@@ -661,7 +681,14 @@
         const pollResult = async () => {
           try {
             const r = await fetch(`/api/route_creator/result?request_id=${requestIdEnc}`);
-            const rdata = await r.json();
+            const rtext = await r.text();
+            let rdata = null;
+            try {
+              rdata = JSON.parse(rtext);
+            } catch (e) {
+              logDebug(`结果异常: 非JSON响应 (${r.status}) ${rtext.slice(0, 120)}`);
+              return;
+            }
             if (rdata && rdata.ok && rdata.result) {
               if (progressTimer) clearInterval(progressTimer);
               const result = rdata.result;
@@ -691,7 +718,7 @@
             logDebug('结果轮询超时，停止轮询。');
           }
         };
-        resultTimer = setInterval(pollResult, 2000);
+        resultTimer = setInterval(pollResult, 800);
       } catch (e) {
         setStatusList(`<div class="hint">匹配失败：${e && e.message ? e.message : '网络或服务异常'}</div>`);
         updateStats('失败');

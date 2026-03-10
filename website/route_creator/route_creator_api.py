@@ -16,6 +16,26 @@ DATA_FILE = os.path.join(BASE_DIR, "routes.json")
 PROGRESS = {}
 RESULTS = {}
 
+# === 可调参数（匹配逻辑）===
+# 匹配允许的最大区域面积（平方公里）
+AREA_MAX_KM2 = 900.0
+# 本地 OSM 数据源（.pbf），优先使用；为空则走 Overpass
+LOCAL_OSM_PBF_PATH = "/home/bbdwz/projects/website/route_creator/beijing-latest.osm.pbf"
+# 旋转匹配角度集合（度），用于旋转相似度评分
+ROT_SCORE_ANGLES = list(range(0, 360, 10))
+# 变换搜索：缩放倍率集合（>1 放大，<1 缩小）
+TRANSFORM_SCALES = [0.6, 0.8, 1.0, 1.2]
+# 变换搜索：旋转角度集合（度）
+TRANSFORM_ROTATIONS = list(range(0, 360, 30))
+# 变换搜索：平移步长（归一化坐标，0~1）。越小越细，但更慢
+TRANSFORM_TRANSLATE_STRIDE = 0.08
+# 变换搜索：最大尝试次数（上限）
+TRANSFORM_MAX_ATTEMPTS = 2000
+# 变换搜索：最多保留的候选数量
+TRANSFORM_MAX_CANDIDATES_FACTOR = 8
+# 变换搜索：相似度阈值（越小越严格）
+TRANSFORM_TARGET_SCORE = 0.06
+
 
 def load_routes():
     if not os.path.exists(DATA_FILE):
@@ -174,7 +194,7 @@ def polyline_distance_score_rot(path_pts, sketch_pts, sample=180, angles_deg=Non
     if len(path_pts) < 2 or len(sketch_pts) < 2:
         return float("inf")
     if angles_deg is None:
-        angles_deg = list(range(0, 360, 10))
+        angles_deg = ROT_SCORE_ANGLES
     path_norm = normalize_points(path_pts)
     sketch_norm = normalize_points(sketch_pts)
     cx = sum(p[0] for p in sketch_norm) / len(sketch_norm)
@@ -354,7 +374,7 @@ def _run_match(request_id, area, sketch, top_k):
     height_km = abs(north - south) * 111.32
     area_km2 = width_km * height_km
     _set_progress(request_id, "debug", f"bbox {north:.6f},{south:.6f},{east:.6f},{west:.6f} area {area_km2:.2f} km2", 8)
-    if area_km2 > 900.0:
+    if area_km2 > AREA_MAX_KM2:
         _set_progress(request_id, "error", "area too large")
         _set_result(request_id, {"ok": False, "error": f"area too large ({area_km2:.1f} km2). please shrink area"})
         return
@@ -418,27 +438,59 @@ def _run_match(request_id, area, sketch, top_k):
         "https://overpass.nchc.org.tw/api/interpreter"
     ]
 
-    G = None
-    last_error = None
-    for i, endpoint in enumerate(overpass_endpoints, 1):
+    def build_graph_from_local_pbf():
+        if not LOCAL_OSM_PBF_PATH:
+            return None
+        if not os.path.exists(LOCAL_OSM_PBF_PATH):
+            return None
         try:
+            from pyrosm import OSM
+        except Exception:
+            return None
+        try:
+            _set_progress(request_id, "fetch", f"local pbf {os.path.basename(LOCAL_OSM_PBF_PATH)}", 12)
+            osm = OSM(LOCAL_OSM_PBF_PATH)
+            Gp = osm.get_network(network_type="driving")
+            if Gp is None or len(Gp.nodes) == 0:
+                return None
             try:
-                ox.settings.overpass_endpoint = endpoint
+                Gt = ox.truncate.truncate_graph_bbox(Gp, north, south, east, west, retain_all=False)
+                if Gt is not None and len(Gt.nodes) > 0:
+                    return Gt
             except Exception:
                 pass
-            _set_progress(request_id, "fetch", f"overpass {endpoint}", 10 + i * 5)
-            result = build_graph()
-            if isinstance(result, tuple):
-                _set_progress(request_id, "error", result[1])
-                _set_result(request_id, {"ok": False, "error": result[1]})
-                return
-            G = result
-            if G is not None and len(G.nodes) > 0:
-                break
-        except Exception as e:
-            last_error = f"{endpoint} -> {e}"
-            G = None
-            continue
+            return Gp
+        except Exception:
+            return None
+
+    G = None
+    last_error = None
+    # Prefer local PBF if available.
+    G = build_graph_from_local_pbf()
+    if G is not None and len(G.nodes) > 0:
+        _set_progress(request_id, "fetch", "local pbf ready", 15)
+    else:
+        G = None
+    if G is None:
+        for i, endpoint in enumerate(overpass_endpoints, 1):
+            try:
+                try:
+                    ox.settings.overpass_endpoint = endpoint
+                except Exception:
+                    pass
+                _set_progress(request_id, "fetch", f"overpass {endpoint}", 10 + i * 5)
+                result = build_graph()
+                if isinstance(result, tuple):
+                    _set_progress(request_id, "error", result[1])
+                    _set_result(request_id, {"ok": False, "error": result[1]})
+                    return
+                G = result
+                if G is not None and len(G.nodes) > 0:
+                    break
+            except Exception as e:
+                last_error = f"{endpoint} -> {e}"
+                G = None
+                continue
 
     if G is None:
         _set_progress(request_id, "error", f"graph build failed: {last_error or 'unknown'}")
@@ -466,7 +518,7 @@ def _run_match(request_id, area, sketch, top_k):
     def nodes_to_coords(path_nodes):
         return [[G.nodes[n]["y"], G.nodes[n]["x"]] for n in path_nodes]
 
-    # Shape-guided beam search over the road graph.
+    # Transform-search: scale/rotate/translate the sketch within the area, then match to the road graph.
     nodes_list = list(G.nodes)
     if len(nodes_list) < 2:
         _set_progress(request_id, "error", "empty road network")
@@ -479,113 +531,109 @@ def _run_match(request_id, area, sketch, top_k):
     except Exception:
         pass
 
-    center_lat = (north + south) / 2.0
-    sketch_xy = [_to_local_xy(lat, lng, center_lat) for lat, lng in sketch_pts]
-    total_len = 0.0
-    for a, b in zip(sketch_xy[:-1], sketch_xy[1:]):
-        dx = b[0] - a[0]
-        dy = b[1] - a[1]
-        total_len += (dx * dx + dy * dy) ** 0.5
-    seg_count = max(20, min(80, int(total_len / 150.0) if total_len > 0 else 20))
-    seg_len = max(40.0, total_len / max(1, seg_count))
-    resampled = _resample_polyline(sketch_xy, seg_len)
-    if len(resampled) < 2:
-        _set_progress(request_id, "error", "sketch too short")
-        _set_result(request_id, {"ok": False, "error": "sketch too short"})
-        return
+    # Normalized sketch (0..1) for transform.
+    if sketch and "x" in sketch[0]:
+        sketch_norm = [(float(p.get("x", 0)), float(p.get("y", 0))) for p in sketch]
+    else:
+        # Convert lat/lng to normalized bbox coordinates if needed.
+        sketch_norm = []
+        for lat, lng in sketch_pts:
+            x = (lng - west) / (east - west) if east != west else 0.5
+            y = 1 - (lat - south) / (north - south) if north != south else 0.5
+            sketch_norm.append((x, y))
 
-    dir_angles = []
-    for a, b in zip(resampled[:-1], resampled[1:]):
-        dx = b[0] - a[0]
-        dy = b[1] - a[1]
-        if dx == 0 and dy == 0:
-            dir_angles.append(0.0)
-        else:
-            dir_angles.append(math.atan2(dy, dx))
+    cx = sum(p[0] for p in sketch_norm) / len(sketch_norm)
+    cy = sum(p[1] for p in sketch_norm) / len(sketch_norm)
 
-    beam_width = max(20, min(80, top_k * 5))
-    start_count = max(8, min(30, top_k * 4))
-    max_candidates = max(top_k * 6, top_k)
-    target_score = 0.06
+    scales = TRANSFORM_SCALES
+    rotations = TRANSFORM_ROTATIONS
+    stride = max(0.01, float(TRANSFORM_TRANSLATE_STRIDE))
+    translations = []
+    t = 0.0
+    while t <= 1.00001:
+        translations.append(round(t, 4))
+        t += stride
+    translations = [(x, y) for x in translations for y in translations]
 
-    start_nodes = [rand.choice(nodes_list) for _ in range(start_count)]
-    beam = []
-    for n in start_nodes:
-        beam.append({
-            "path": [n],
-            "cost": 0.0,
-            "len": 0.0,
-            "prev_dir": None
-        })
+    max_attempts = TRANSFORM_MAX_ATTEMPTS
+    max_candidates = max(top_k * TRANSFORM_MAX_CANDIDATES_FACTOR, top_k)
+    target_score = TRANSFORM_TARGET_SCORE
+
+    transforms = [(s, r, t) for s in scales for r in rotations for t in translations]
+    rand.shuffle(transforms)
+    transforms = transforms[:max_attempts]
 
     candidates = []
-    _set_progress(request_id, "search", f"beam search K={beam_width}", 70)
+    _set_progress(request_id, "search", "transform search", 70)
 
-    def angle_diff(a, b):
-        d = abs(a - b) % (2 * math.pi)
-        return d if d <= math.pi else (2 * math.pi - d)
+    def apply_transform(points, scale, deg, tx, ty):
+        rad = math.radians(deg)
+        cosv = math.cos(rad)
+        sinv = math.sin(rad)
+        out = []
+        for x, y in points:
+            dx = (x - cx) * scale
+            dy = (y - cy) * scale
+            rx = dx * cosv - dy * sinv
+            ry = dx * sinv + dy * cosv
+            out.append((rx + tx, ry + ty))
+        return out
 
-    w_angle = 1.0
-    w_len = 0.25
-    w_turn = 0.15
+    def to_latlng(norm_pts):
+        pts = []
+        for x, y in norm_pts:
+            lat = south + (1 - y) * (north - south)
+            lng = west + x * (east - west)
+            pts.append((lat, lng))
+        return pts
 
-    for i, target_theta in enumerate(dir_angles, 1):
-        next_states = []
-        for state in beam:
-            u = state["path"][-1]
-            for v in G.successors(u):
-                data = G.get_edge_data(u, v) or {}
-                if not data:
-                    continue
-                length = min((d.get("length", 0.0) for d in data.values()), default=0.0)
-                if length <= 0:
-                    continue
-                try:
-                    uy, ux = G.nodes[u]["y"], G.nodes[u]["x"]
-                    vy, vx = G.nodes[v]["y"], G.nodes[v]["x"]
-                    x1, y1 = _to_local_xy(uy, ux, center_lat)
-                    x2, y2 = _to_local_xy(vy, vx, center_lat)
-                    theta = math.atan2(y2 - y1, x2 - x1)
-                except Exception:
-                    continue
-
-                adiff = angle_diff(theta, target_theta)
-                len_pen = abs(length - seg_len) / max(1.0, seg_len)
-                turn_pen = 0.0
-                if state["prev_dir"] is not None:
-                    turn_pen = angle_diff(theta, state["prev_dir"]) / math.pi
-
-                cost = state["cost"] + w_angle * adiff + w_len * len_pen + w_turn * turn_pen
-                next_states.append({
-                    "path": state["path"] + [v],
-                    "cost": cost,
-                    "len": state["len"] + length,
-                    "prev_dir": theta
-                })
-
-        if not next_states:
+    for idx, (s, r, (tx, ty)) in enumerate(transforms, 1):
+        if len(candidates) >= max_candidates:
             break
-
-        next_states.sort(key=lambda s: s["cost"])
-        beam = next_states[:beam_width]
-
-        if i % 5 == 0 or i == len(dir_angles):
-            pct = 70 + int(25 * i / max(1, len(dir_angles)))
-            _set_progress(request_id, "search", f"beam step {i}/{len(dir_angles)}", pct)
-
-    for state in beam:
-        path = state["path"]
-        if len(path) < 2:
+        norm_pts = apply_transform(sketch_norm, s, r, tx, ty)
+        # Skip if most points fall outside.
+        in_count = sum(1 for x, y in norm_pts if 0 <= x <= 1 and 0 <= y <= 1)
+        if in_count < max(2, int(len(norm_pts) * 0.7)):
             continue
-        coords = nodes_to_coords(path)
-        score = polyline_distance_score_rot([(c[0], c[1]) for c in coords], sketch_pts)
+
+        pts_latlng = to_latlng(norm_pts)
+        try:
+            nodes = [ox.distance.nearest_nodes(G, X=p[1], Y=p[0]) for p in pts_latlng]
+        except Exception:
+            continue
+
+        nodes = [n for i, n in enumerate(nodes) if i == 0 or n != nodes[i - 1]]
+        if len(nodes) < 2:
+            continue
+
+        try:
+            full_path = []
+            for i in range(len(nodes) - 1):
+                seg = nx.shortest_path(G, nodes[i], nodes[i + 1], weight="length")
+                if full_path:
+                    full_path.extend(seg[1:])
+                else:
+                    full_path.extend(seg)
+        except Exception:
+            continue
+
+        coords = nodes_to_coords(full_path)
+        score = polyline_distance_score([(c[0], c[1]) for c in coords], pts_latlng)
+        length_m = route_length_m(G, full_path)
         candidates.append({
             "coords": coords,
             "score": round(score, 4),
-            "length_m": round(state["len"], 1)
+            "length_m": round(length_m, 1),
+            "transform": {"scale": s, "rot": r, "tx": round(tx, 3), "ty": round(ty, 3)}
         })
-        if len(candidates) >= max_candidates:
-            break
+
+        if idx % 5 == 0:
+            _set_progress(
+                request_id,
+                "search",
+                f"transform {idx}/{len(transforms)} · found {len(candidates)} · scale {s:.2f} rot {r}° tx {tx:.2f} ty {ty:.2f}",
+                70 + int(20 * idx / max(1, len(transforms)))
+            )
 
     candidates.sort(key=lambda x: (x["score"], x["length_m"]))
     top = candidates[:top_k]
@@ -600,8 +648,7 @@ def _run_match(request_id, area, sketch, top_k):
             "edges": len(G.edges),
             "sketch_points": len(sketch_pts),
             "candidate_count": len(candidates),
-            "beam_width": beam_width,
-            "segments": len(dir_angles),
+            "transform_count": len(transforms),
             "request_id": request_id
         }
     })
