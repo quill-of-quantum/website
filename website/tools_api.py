@@ -4,12 +4,47 @@ import shutil
 import time
 from PIL import Image
 import io
+import json
+import uuid
 
 bp = Blueprint("tools", __name__)
 UPLOAD_FOLDER = "/home/bbdwz/projects/website/uploads"
 THUMBNAIL_FOLDER = "/home/bbdwz/projects/website/thumbnails"
+UPLOAD_META_PATH = os.path.join(UPLOAD_FOLDER, ".meta.json")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(THUMBNAIL_FOLDER, exist_ok=True)
+
+def _load_meta():
+    if not os.path.exists(UPLOAD_META_PATH):
+        return {}
+    try:
+        with open(UPLOAD_META_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_meta(meta):
+    tmp_path = f"{UPLOAD_META_PATH}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False)
+    os.replace(tmp_path, UPLOAD_META_PATH)
+
+def _is_allowed_extension(filename):
+    return True
+
+def _make_storage_name(original_filename):
+    ext = os.path.splitext(original_filename)[1].lower()
+    return f"{uuid.uuid4().hex}{ext}"
+
+def _resolve_stored_name(name, meta):
+    candidate = os.path.join(UPLOAD_FOLDER, name)
+    if os.path.exists(candidate):
+        return name
+    matches = [stored for stored, info in meta.items()
+               if info.get("original_name") == name]
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 # 判断是否为图片文件
 def is_image_file(filename):
@@ -65,21 +100,35 @@ def upload_file():
     if not file:
         return jsonify({"error": "未接收到文件"}), 400
 
-    filename = file.filename
-    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    original_filename = file.filename or ""
+    if not original_filename:
+        return jsonify({"error": "文件名为空"}), 400
+    if not _is_allowed_extension(original_filename):
+        return jsonify({"error": "不支持的文件类型"}), 400
+
+    stored_name = _make_storage_name(original_filename)
+    save_path = os.path.join(UPLOAD_FOLDER, stored_name)
     file.save(save_path)
 
     # 如果是图片文件，生成缩略图
-    if is_image_file(filename):
-        generate_thumbnail(save_path, filename)
+    if is_image_file(stored_name):
+        generate_thumbnail(save_path, stored_name)
 
-    message = f"✅ 文件已上传：{filename}"
+    meta = _load_meta()
+    meta[stored_name] = {
+        "original_name": original_filename,
+        "uploaded_at": time.time()
+    }
+    _save_meta(meta)
+
+    message = f"✅ 文件已上传：{original_filename}"
     print(f"[UPLOAD] 文件已保存: {save_path}")
 
     return jsonify({
         "ok": True,
         "message": message,
-        "filename": filename
+        "filename": stored_name,
+        "original_name": original_filename
     })
 
 
@@ -89,9 +138,12 @@ def list_files():
     sort_by = request.args.get("sort", "time")  # time 或 name
     order = request.args.get("order", "desc")   # asc 或 desc
     
+    meta = _load_meta()
     files = []
     for f in os.listdir(UPLOAD_FOLDER):
         path = os.path.join(UPLOAD_FOLDER, f)
+        if f == os.path.basename(UPLOAD_META_PATH):
+            continue
         if os.path.isfile(path):
             size_mb = os.path.getsize(path) / (1024 * 1024)
             create_time = os.path.getctime(path)
@@ -105,8 +157,13 @@ def list_files():
                 thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{f}")
                 has_thumbnail = os.path.exists(thumb_path)
             
+            info = meta.get(f, {})
+            display_name = info.get("original_name", f)
             files.append({
                 "name": f,
+                "stored_name": f,
+                "original_name": info.get("original_name", f),
+                "display_name": display_name,
                 "size": f"{size_mb:.2f} MB",
                 "create_time": create_time,
                 "ext": ext,
@@ -143,11 +200,18 @@ def delete_file(name):
         return jsonify({"error": "需要登录后才能删除文件", "require_login": True}), 403
     
     try:
-        os.remove(os.path.join(UPLOAD_FOLDER, name))
-        if is_image_file(name):
-            thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{name}")
+        meta = _load_meta()
+        stored_name = _resolve_stored_name(name, meta)
+        if not stored_name:
+            return jsonify({"message": "未找到文件"}), 404
+        os.remove(os.path.join(UPLOAD_FOLDER, stored_name))
+        if is_image_file(stored_name):
+            thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{stored_name}")
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
+        if stored_name in meta:
+            meta.pop(stored_name)
+            _save_meta(meta)
         removed = cleanup_orphan_thumbnails()
         msg = f"🗑️ 已删除 {name}"
         if removed:
@@ -160,18 +224,40 @@ def delete_file(name):
 # 文件下载
 @bp.route("/api/tools/download/<path:filename>")
 def download_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename, as_attachment=True)
+    meta = _load_meta()
+    stored_name = _resolve_stored_name(filename, meta)
+    if not stored_name:
+        return jsonify({"error": "未找到文件"}), 404
+    info = meta.get(stored_name, {})
+    download_name = info.get("original_name") or stored_name
+    return send_from_directory(UPLOAD_FOLDER, stored_name, as_attachment=True, download_name=download_name)
 
 
 # 文件访问（直接访问）
 @bp.route("/uploads/<path:filename>")
 def serve_upload(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    meta = _load_meta()
+    stored_name = _resolve_stored_name(filename, meta)
+    if not stored_name:
+        return jsonify({"error": "未找到文件"}), 404
+    return send_from_directory(UPLOAD_FOLDER, stored_name)
 
 # 缩略图访问
 @bp.route("/thumbnails/<path:filename>")
 def serve_thumbnail(filename):
-    return send_from_directory(THUMBNAIL_FOLDER, filename)
+    meta = _load_meta()
+    if filename.startswith("thumb_"):
+        original = filename[len("thumb_"):]
+        stored_name = _resolve_stored_name(original, meta)
+        if not stored_name:
+            return jsonify({"error": "未找到文件"}), 404
+        thumb_name = f"thumb_{stored_name}"
+    else:
+        stored_name = _resolve_stored_name(filename, meta)
+        if not stored_name:
+            return jsonify({"error": "未找到文件"}), 404
+        thumb_name = f"thumb_{stored_name}"
+    return send_from_directory(THUMBNAIL_FOLDER, thumb_name)
 
 # 手动清理缩略图
 @bp.route("/api/tools/clean_thumbnails", methods=["POST"])

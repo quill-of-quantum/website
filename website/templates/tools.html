@@ -192,7 +192,7 @@
   function updateSelectionInfo() {
     const info = document.getElementById("selectionInfo");
     const count = selectedFiles.size;
-    const totalMB = [...selectedFiles.values()].reduce((a, b) => a + b, 0);
+    const totalMB = [...selectedFiles.values()].reduce((a, b) => a + b.size, 0);
     info.textContent = count
       ? `已选择 ${count} 个文件，共 ${formatSize(totalMB)}`
       : "未选择文件";
@@ -211,8 +211,10 @@
     const caption = document.getElementById("imageCaption");
 
     const f = imageFiles[index];
-    img.src = `/uploads/${encodeURIComponent(f.name)}`;
-    caption.textContent = `${f.name} (${f.size})`;
+    const storedName = f.stored_name || f.name;
+    const displayName = f.display_name || f.original_name || f.name;
+    img.src = `/uploads/${encodeURIComponent(storedName)}`;
+    caption.textContent = `${displayName} (${f.size})`;
 
     overlay.style.display = "flex";
     attachViewerKeyListener();
@@ -264,7 +266,11 @@
     const res = await fetch(`/api/tools/files?sort=${currentSort}&order=${currentOrder}`);
     const data = await res.json();
     totalFiles = data.files || [];
-    imageFiles = totalFiles.filter(f => isImageFile(f.name));
+    totalFiles.forEach(f => {
+      f.display_name = f.display_name || f.original_name || f.name;
+      f.stored_name = f.stored_name || f.name;
+    });
+    imageFiles = totalFiles.filter(f => isImageFile(f.stored_name));
 
     if (data.disk) {
       const d = data.disk;
@@ -290,15 +296,17 @@
     data.files.forEach((f, idx) => {
       const div = document.createElement("div");
       div.className = "file-item";
-      const isImg = isImageFile(f.name);
+      const storedName = f.stored_name || f.name;
+      const displayName = f.display_name || f.original_name || f.name;
+      const isImg = isImageFile(storedName);
       const timeStr = formatTime(f.create_time);
-      const typeDisplay = getFileTypeDisplay(f.ext, f.name);
+      const typeDisplay = getFileTypeDisplay(f.ext, storedName);
 
       // 生成缩略图或图标
       let thumbnailHtml = '';
       if (isImg && f.has_thumbnail) {
-        thumbnailHtml = `<img class="thumbnail" src="/thumbnails/thumb_${encodeURIComponent(f.name)}" 
-                         alt="${f.name}" onclick="openImageViewer(${imageFiles.findIndex(im=>im.name===f.name)})"
+        thumbnailHtml = `<img class="thumbnail" src="/thumbnails/thumb_${encodeURIComponent(storedName)}" 
+                         alt="${displayName}" onclick="openImageViewer(${imageFiles.findIndex(im=>im.stored_name===storedName)})"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                          <div class="file-icon" style="display:none;">🖼️</div>`;
       } else {
@@ -315,22 +323,22 @@
 
       div.innerHTML = `
         <div class="file-info">
-          <input type="checkbox" class="file-checkbox" data-name="${f.name}" data-size="${parseFloat(f.size)}">
+          <input type="checkbox" class="file-checkbox" data-name="${storedName}" data-display="${displayName}" data-size="${parseFloat(f.size)}">
           ${thumbnailHtml}
           <span>
-            ${currentSort === "name" ? typeDisplay + " " : ""}${f.name}
+            ${currentSort === "name" ? typeDisplay + " " : ""}${displayName}
             <small style="color:#777;">
               (${f.size}${currentSort === "time" ? " - " + timeStr : ""})
             </small>
           </span>
         </div>
         <span>
-          <a href="/api/tools/download/${encodeURIComponent(f.name)}">下载</a>
+          <a href="/api/tools/download/${encodeURIComponent(storedName)}">下载</a>
           ${isImg
-            ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.name===f.name)})">查看</a>`
-            : `<a href="/uploads/${encodeURIComponent(f.name)}" target="_blank">查看</a>`
+            ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.stored_name===storedName)})">查看</a>`
+            : `<a href="/uploads/${encodeURIComponent(storedName)}" target="_blank">查看</a>`
           }
-          <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.name}')">删除</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteFile('${storedName}','${displayName.replace(/'/g, "\\'")}')">删除</button>
         </span>`;
       list.appendChild(div);
     });
@@ -338,8 +346,9 @@
     document.querySelectorAll(".file-checkbox").forEach(cb => {
       cb.addEventListener("change", e => {
         const name = e.target.dataset.name;
+        const display = e.target.dataset.display;
         const size = parseFloat(e.target.dataset.size);
-        if (e.target.checked) selectedFiles.set(name, size);
+        if (e.target.checked) selectedFiles.set(name, { size, display });
         else selectedFiles.delete(name);
         updateSelectionInfo();
       });
@@ -349,7 +358,7 @@
       selectedFiles.clear();
       document.querySelectorAll(".file-checkbox").forEach(cb => {
         cb.checked = true;
-        selectedFiles.set(cb.dataset.name, parseFloat(cb.dataset.size));
+        selectedFiles.set(cb.dataset.name, { size: parseFloat(cb.dataset.size), display: cb.dataset.display });
       });
       updateSelectionInfo();
     };
@@ -374,7 +383,8 @@
       alert("⚠️ 请先选择要删除的文件！");
       return;
     }
-    if (!confirm(`确定删除以下 ${selectedFiles.size} 个文件吗？\n${[...selectedFiles.keys()].join("\n")}`)) return;
+    const displayList = [...selectedFiles.values()].map(v => v.display).join("\n");
+    if (!confirm(`确定删除以下 ${selectedFiles.size} 个文件吗？\n${displayList}`)) return;
 
     for (const name of selectedFiles.keys()) {
       try {
@@ -401,11 +411,11 @@
       alert("⚠️ 请先选择要下载的文件！");
       return;
     }
-    [...selectedFiles.keys()].forEach((name, i) => {
+    [...selectedFiles.entries()].forEach(([name, info], i) => {
       setTimeout(() => {
         const a = document.createElement("a");
         a.href = `/api/tools/download/${encodeURIComponent(name)}`;
-        a.download = name;
+        a.download = info.display || name;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -497,10 +507,11 @@
   }
 
   // --- 修改删除单个文件函数 ---
-  async function deleteFile(name) {
+  async function deleteFile(name, displayName) {
     if (!authManager.requireLogin()) return;
     
-    if (!confirm(`确定删除 ${name} 吗？`)) return;
+    const shown = displayName || name;
+    if (!confirm(`确定删除 ${shown} 吗？`)) return;
     
     try {
       const res = await fetch(`/api/tools/delete/${encodeURIComponent(name)}`, { method: "POST" });
