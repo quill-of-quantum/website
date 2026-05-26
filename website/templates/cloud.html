@@ -107,8 +107,8 @@
       </div>
 
       <div class="toolbar">
-        <input class="input" type="file" id="fileInput" multiple />
-        <button class="btn btn-primary" id="uploadBtn">上传</button>
+        <input type="file" id="fileInput" multiple style="display:none;" />
+        <button class="btn btn-primary" id="uploadBtn">选择文件</button>
         <a class="btn btn-ghost" href="/">🏠 返回首页</a>
       </div>
 
@@ -263,7 +263,7 @@
 
   // --- 加载文件列表 ---
   async function loadFiles() {
-    const res = await fetch(`/api/tools/files?sort=${currentSort}&order=${currentOrder}`);
+    const res = await fetch(`/api/cloud/files?sort=${currentSort}&order=${currentOrder}`);
     const data = await res.json();
     totalFiles = data.files || [];
     totalFiles.forEach(f => {
@@ -333,7 +333,7 @@
           </span>
         </div>
         <span>
-          <a href="/api/tools/download/${encodeURIComponent(storedName)}">下载</a>
+          <a href="/api/cloud/download/${encodeURIComponent(storedName)}">下载</a>
           ${isImg
             ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.stored_name===storedName)})">查看</a>`
             : `<a href="/uploads/${encodeURIComponent(storedName)}" target="_blank">查看</a>`
@@ -388,7 +388,7 @@
 
     for (const name of selectedFiles.keys()) {
       try {
-        const res = await fetch(`/api/tools/delete/${encodeURIComponent(name)}`, { method: "POST" });
+        const res = await fetch(`/api/cloud/delete/${encodeURIComponent(name)}`, { method: "POST" });
         const data = await res.json();
         
         if (res.status === 403 && data.require_login) {
@@ -414,7 +414,7 @@
     [...selectedFiles.entries()].forEach(([name, info], i) => {
       setTimeout(() => {
         const a = document.createElement("a");
-        a.href = `/api/tools/download/${encodeURIComponent(name)}`;
+        a.href = `/api/cloud/download/${encodeURIComponent(name)}`;
         a.download = info.display || name;
         document.body.appendChild(a);
         a.click();
@@ -439,7 +439,7 @@
       formData.append("file", file);
 
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/tools/upload");
+      xhr.open("POST", "/api/cloud/upload");
 
       progressBar.value = 0;
       progressBar.style.display = "block";
@@ -503,6 +503,7 @@
       progressBar.style.display = "none";
       speedText.textContent = "";
       input.value = "";
+      document.getElementById("uploadBtn").textContent = "选择文件";
     });
   }
 
@@ -514,7 +515,7 @@
     if (!confirm(`确定删除 ${shown} 吗？`)) return;
     
     try {
-      const res = await fetch(`/api/tools/delete/${encodeURIComponent(name)}`, { method: "POST" });
+      const res = await fetch(`/api/cloud/delete/${encodeURIComponent(name)}`, { method: "POST" });
       const data = await res.json();
       
       if (res.status === 403 && data.require_login) {
@@ -565,10 +566,28 @@
     document.getElementById("orderAsc").classList.toggle("active", currentOrder === "asc");
   }
 
-  document.getElementById("uploadBtn").addEventListener("click", uploadFile);
-  loadFiles();
+  document.getElementById("uploadBtn").addEventListener("click", () => {
+    const input = document.getElementById("fileInput");
+    if (input.files.length === 0) {
+      input.click();
+    } else {
+      uploadFile();
+    }
+  });
 
-  </script>
+  document.getElementById("fileInput").addEventListener("change", function() {
+    const btn = document.getElementById("uploadBtn");
+    if (this.files.length > 0) {
+      btn.textContent = `上传 (${this.files.length} 个文件)`;
+      statusDiv.textContent = `已选择 ${this.files.length} 个文件，点击“上传”开始。`;
+    } else {
+      btn.textContent = "选择文件";
+      statusDiv.textContent = "";
+    }
+  });
+
+  loadFiles();
+</script>
 
   <!-- ✅ 图片预览弹窗 -->
   <style>

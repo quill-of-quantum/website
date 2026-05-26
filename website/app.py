@@ -32,8 +32,8 @@ os.makedirs(os.path.dirname(VISITER_LOG_PATH), exist_ok=True)
 from tracker_api import bp as tracker_bp
 app.register_blueprint(tracker_bp)
 
-from tools_api import bp as tools_bp
-app.register_blueprint(tools_bp)
+from cloud_api import bp as cloud_bp
+app.register_blueprint(cloud_bp)
 
 from admin_api import bp as admin_bp
 from admin_api import record_visit, record_request_timing, is_lan_ip
@@ -125,10 +125,10 @@ def index():
     """主页"""
     return render_template("index.html")
 
-@app.route("/tools")
-def tools():
-    """工具页"""
-    return render_template("tools.html")
+@app.route("/cloud")
+def cloud():
+    """云盘页"""
+    return render_template("cloud.html")
 
 
 @app.route("/tracker")

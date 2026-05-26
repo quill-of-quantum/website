@@ -7,7 +7,7 @@ import io
 import json
 import uuid
 
-bp = Blueprint("tools", __name__)
+bp = Blueprint("cloud", __name__)
 UPLOAD_FOLDER = "/home/bbdwz/projects/website/uploads"
 THUMBNAIL_FOLDER = "/home/bbdwz/projects/website/thumbnails"
 UPLOAD_META_PATH = os.path.join(UPLOAD_FOLDER, ".meta.json")
@@ -94,7 +94,7 @@ def cleanup_orphan_thumbnails():
     return removed
 
 # 上传文件（仅保存）
-@bp.route("/api/tools/upload", methods=["POST"])
+@bp.route("/api/cloud/upload", methods=["POST"])
 def upload_file():
     file = request.files.get("file")
     if not file:
@@ -133,7 +133,7 @@ def upload_file():
 
 
 # 列出文件 + 存储空间信息
-@bp.route("/api/tools/files")
+@bp.route("/api/cloud/files")
 def list_files():
     sort_by = request.args.get("sort", "time")  # time 或 name
     order = request.args.get("order", "desc")   # asc 或 desc
@@ -192,7 +192,7 @@ def list_files():
 
 
 # 删除文件
-@bp.route("/api/tools/delete/<path:name>", methods=["POST"])
+@bp.route("/api/cloud/delete/<path:name>", methods=["POST"])
 def delete_file(name):
     """删除文件 - 需要登录"""
     # 检查登录状态
@@ -222,7 +222,7 @@ def delete_file(name):
 
 
 # 文件下载
-@bp.route("/api/tools/download/<path:filename>")
+@bp.route("/api/cloud/download/<path:filename>")
 def download_file(filename):
     meta = _load_meta()
     stored_name = _resolve_stored_name(filename, meta)
@@ -260,7 +260,7 @@ def serve_thumbnail(filename):
     return send_from_directory(THUMBNAIL_FOLDER, thumb_name)
 
 # 手动清理缩略图
-@bp.route("/api/tools/clean_thumbnails", methods=["POST"])
+@bp.route("/api/cloud/clean_thumbnails", methods=["POST"])
 def clean_thumbnails():
     """清理多余缩略图 - 需要登录"""
     if not session.get("logged_in"):
