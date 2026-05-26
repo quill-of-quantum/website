@@ -9,7 +9,7 @@ import math
 import folium
 import io
 from flask import Blueprint, request, jsonify, send_file
-from datetime import datetime
+from datetime import datetime, timezone
 
 bp = Blueprint('map', __name__, url_prefix='/api/map')
 
@@ -70,15 +70,20 @@ def save_history(history):
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-def geocode_address(address):
+def geocode_address(address, search_region="全国", depth=0):
     """
-    使用百度地图 Geocoding API 将地名转换为经纬度
-    返回: "latitude,longitude" 或 None 如果失败
+    使用百度地图地点检索 API 将地名转换为经纬度
+    返回: 包含 coords/name/province/city/address 的字典，或 None
     """
-    api_path = "/geocoding/v3/"
+    if depth > 2:
+        print(f"❌ 递归层数过深，放弃解析 ({address})")
+        return None
+
+    api_path = "/place/v3/region"
     
     params = {
-        "address": address,
+        "query": address,
+        "region": search_region,
         "output": "json",
         "ak": AK,
     }
@@ -98,9 +103,24 @@ def geocode_address(address):
         resp = requests.get(full_url, timeout=10)
         data = resp.json()
         
-        if data.get("status") == 0:
-            location = data["result"]["location"]
-            return f"{location['lat']},{location['lng']}"
+        if data.get("status") == 0 and data.get("results"):
+            result_type = data.get("result_type", "")
+
+            if result_type == "city_type":
+                top_city = data["results"][0].get("name")
+                print(f"⚠️ [{address}] 触发城市列表，自动重定向至最热城市: {top_city}")
+                return geocode_address(address, search_region=top_city, depth=depth + 1)
+
+            res = data["results"][0]
+            location = res.get("location")
+            if location:
+                return {
+                    "coords": f"{location['lat']},{location['lng']}",
+                    "name": res.get("name"),
+                    "province": res.get("province", ""),
+                    "city": res.get("city", ""),
+                    "address": res.get("address", "")
+                }
     except Exception as e:
         print(f"❌ 地理编码失败 ({address}): {e}")
     
@@ -342,14 +362,28 @@ def bd09_to_wgs84(bd_lat, bd_lng):
     wgs_lat = z * math.sin(theta) - 0.006
     return wgs_lat, wgs_lng
 
-def generate_folium_map(route_data, origin, destination, waypoints=None, waypoint_addresses=None):
+def generate_folium_map(route_data, origin_info, destination_info, waypoints_info=None, waypoint_addresses=None):
     """
     使用folium生成交互式地图HTML
     返回: HTML字符串
     """
+    if isinstance(origin_info, str):
+        origin_coords = origin_info
+        origin_name = "起点"
+    else:
+        origin_coords = origin_info.get("coords")
+        origin_name = origin_info.get("name", "起点")
+
+    if isinstance(destination_info, str):
+        dest_coords = destination_info
+        dest_name = "终点"
+    else:
+        dest_coords = destination_info.get("coords")
+        dest_name = destination_info.get("name", "终点")
+
     # 解析坐标 (格式: lat,lng)
-    origin_parts = origin.split(',')
-    dest_parts = destination.split(',')
+    origin_parts = origin_coords.split(',')
+    dest_parts = dest_coords.split(',')
     origin_lat, origin_lng = float(origin_parts[0]), float(origin_parts[1])
     dest_lat, dest_lng = float(dest_parts[0]), float(dest_parts[1])
     
@@ -447,27 +481,31 @@ def generate_folium_map(route_data, origin, destination, waypoints=None, waypoin
     try:
         folium.Marker(
             location=[origin_lat, origin_lng],
-            popup='<b>起点</b>',
-            tooltip='出发地',
+            popup=f'<b>起点: {origin_name}</b>',
+            tooltip=origin_name,
             icon=folium.Icon(color='green', icon='play', prefix='fa')
         ).add_to(m)
     except Exception as e:
         print(f"⚠️ 起点标记添加失败: {e}")
     
     # 添加途径点标记
-    if waypoints:
-        for idx, wp in enumerate(waypoints):
+    if waypoints_info:
+        for idx, wp in enumerate(waypoints_info):
             try:
-                wp_parts = wp.split(',')
+                if isinstance(wp, str):
+                    wp_coords = wp
+                    wp_name = waypoint_addresses[idx] if waypoint_addresses and idx < len(waypoint_addresses) else f'途径点 {idx + 1}'
+                else:
+                    wp_coords = wp.get("coords")
+                    wp_name = wp.get("name", f'途径点 {idx + 1}')
+
+                wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
                 wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
                 
-                # 获取途径点名称，如果没有提供则使用默认序号
-                wp_name = waypoint_addresses[idx] if waypoint_addresses and idx < len(waypoint_addresses) else f'途径点 {idx + 1}'
-                
                 folium.Marker(
                     location=[wp_lat, wp_lng],
-                    popup=f'<b>{wp_name}</b>',
+                    popup=f'<b>途径点 {idx + 1}: {wp_name}</b>',
                     tooltip=wp_name,
                     icon=folium.Icon(color='blue', icon='map-pin', prefix='fa')
                 ).add_to(m)
@@ -478,8 +516,8 @@ def generate_folium_map(route_data, origin, destination, waypoints=None, waypoin
     try:
         folium.Marker(
             location=[dest_lat, dest_lng],
-            popup='<b>终点</b>',
-            tooltip='目的地',
+            popup=f'<b>终点: {dest_name}</b>',
+            tooltip=dest_name,
             icon=folium.Icon(color='red', icon='stop', prefix='fa')
         ).add_to(m)
     except Exception as e:
@@ -620,7 +658,7 @@ def geocode():
     
     coords = geocode_address(address)
     if coords:
-        return jsonify({"status": "ok", "coords": coords, "address": address})
+        return jsonify({"status": "ok", **coords, "address": address})
     else:
         return jsonify({"error": "地理编码失败"}), 400
 
@@ -628,30 +666,49 @@ def geocode():
 def route():
     """计算路线"""
     data = request.get_json() or {}
-    origin = data.get("origin")
-    destination = data.get("destination")
-    waypoints = data.get("waypoints")
+    origin_obj = data.get("origin")
+    dest_obj = data.get("destination")
+    waypoints_objs = data.get("waypoints", [])
     
     # 获取原始地址（用于历史记录）
     origin_address = data.get("origin_address")
     destination_address = data.get("destination_address")
     waypoint_addresses = data.get("waypoint_addresses", [])
     
-    if not origin or not destination:
+    if not origin_obj or not dest_obj:
         return jsonify({"error": "缺少起点或终点"}), 400
     
-    route_data = calculate_route(origin, destination, waypoints)
+    if isinstance(origin_obj, dict):
+        origin_coords = origin_obj.get("coords")
+    else:
+        origin_coords = origin_obj
+
+    if isinstance(dest_obj, dict):
+        dest_coords = dest_obj.get("coords")
+    else:
+        dest_coords = dest_obj
+
+    wp_coords = []
+    for wp in waypoints_objs:
+        if isinstance(wp, dict):
+            wp_coords.append(wp.get("coords"))
+        else:
+            wp_coords.append(wp)
+    if not wp_coords:
+        wp_coords = None
+
+    route_data = calculate_route(origin_coords, dest_coords, wp_coords)
     
     if route_data:
-        config = load_config()
+        config = data.get("config") or load_config()
         distance_km, duration_min, toll, oil_cost, other_cost, total_cost, breakdown, electric_cost, electric_total_cost = calculate_route_cost(route_data, config)
         
         # 生成地图URL
-        map_url = generate_static_map(origin, destination, waypoints)
+        map_url = generate_static_map(origin_coords, dest_coords, wp_coords)
         
         # 生成folium交互式地图（传入waypoints和waypoint_addresses）
         try:
-            map_html = generate_folium_map(route_data, origin, destination, waypoints, waypoint_addresses)
+            map_html = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs, waypoint_addresses)
         except Exception as e:
             print(f"❌ 生成folium地图失败: {e}")
             map_html = None
@@ -688,9 +745,9 @@ def route():
         # 保存到历史记录（包含地址信息）
         history = load_history()
         history["trips"].append({
-            "timestamp": datetime.now().isoformat(),
-            "origin_address": origin_address or origin,
-            "destination_address": destination_address or destination,
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "origin_address": origin_address or (origin_obj.get("name") if isinstance(origin_obj, dict) else origin_coords),
+            "destination_address": destination_address or (dest_obj.get("name") if isinstance(dest_obj, dict) else dest_coords),
             "waypoint_addresses": waypoint_addresses or [],
             "distance_km": distance_km,
             "duration_min": duration_min,
@@ -732,20 +789,40 @@ def clear_history():
 def get_map():
     """生成并返回路线地图"""
     data = request.get_json() or {}
-    origin = data.get("origin")
-    destination = data.get("destination")
-    waypoints = data.get("waypoints")
+    origin_obj = data.get("origin")
+    dest_obj = data.get("destination")
+    waypoints_objs = data.get("waypoints", [])
     
-    if not origin or not destination:
+    if not origin_obj or not dest_obj:
         return jsonify({"error": "缺少起点或终点"}), 400
+
+    if isinstance(origin_obj, dict):
+        origin_coords = origin_obj.get("coords")
+    else:
+        origin_coords = origin_obj
+
+    if isinstance(dest_obj, dict):
+        dest_coords = dest_obj.get("coords")
+    else:
+        dest_coords = dest_obj
+
+    wp_coords = []
+    if waypoints_objs:
+        for wp in waypoints_objs:
+            if isinstance(wp, dict):
+                wp_coords.append(wp.get("coords"))
+            else:
+                wp_coords.append(wp)
+    if not wp_coords:
+        wp_coords = None
     
-    route_data = calculate_route(origin, destination, waypoints)
+    route_data = calculate_route(origin_coords, dest_coords, wp_coords)
     
     if not route_data:
         return jsonify({"error": "未找到合适的路线"}), 404
     
     # 生成Folium地图
-    map_file = generate_folium_map(route_data, map_type="route")
+    map_file = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs)
     
-    # 读取地图文件并返回
-    return send_file(map_file, mimetype='text/html')
+    # 直接返回 HTML 文本
+    return map_file, 200, {'Content-Type': 'text/html; charset=utf-8'}

@@ -1082,6 +1082,8 @@
             <div class="results-header">
               <h3>✅ 路线规划结果</h3>
             </div>
+
+            <div id="addressDetails"></div>
             
             <!-- 地图展示 -->
             <div class="map-container">
@@ -1190,22 +1192,22 @@
           
           <div class="form-group">
             <label class="form-label" for="oilPrice">⛽ 当前油价 (¥/升)</label>
-            <input type="number" id="oilPrice" class="form-input" step="0.1" value="7.0" onchange="saveConfig()">
+            <input type="number" id="oilPrice" class="form-input" step="0.1" value="8.5" onchange="saveConfig()">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="consumptionHighway">🛣️ 高速公路油耗 (L/100km)</label>
-            <input type="number" id="consumptionHighway" class="form-input" step="0.1" value="6.5" onchange="saveConfig()">
+            <input type="number" id="consumptionHighway" class="form-input" step="0.1" value="9" onchange="saveConfig()">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="consumptionNational">🛤️ 国道省道油耗 (L/100km)</label>
-            <input type="number" id="consumptionNational" class="form-input" step="0.1" value="7.5" onchange="saveConfig()">
+            <input type="number" id="consumptionNational" class="form-input" step="0.1" value="10" onchange="saveConfig()">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="consumptionUrban">🏙️ 市区道路油耗 (L/100km)</label>
-            <input type="number" id="consumptionUrban" class="form-input" step="0.1" value="9.0" onchange="saveConfig()">
+            <input type="number" id="consumptionUrban" class="form-input" step="0.1" value="10.7" onchange="saveConfig()">
           </div>
         </div>
 
@@ -1224,12 +1226,12 @@
 
           <div class="form-group">
             <label class="form-label" for="electricConsumptionNational">🛤️ 国道省道电耗 (kWh/100km)</label>
-            <input type="number" id="electricConsumptionNational" class="form-input" step="0.1" value="18.0" onchange="saveConfig()">
+            <input type="number" id="electricConsumptionNational" class="form-input" step="0.1" value="13.0" onchange="saveConfig()">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="electricConsumptionUrban">🏙️ 市区道路电耗 (kWh/100km)</label>
-            <input type="number" id="electricConsumptionUrban" class="form-input" step="0.1" value="22.0" onchange="saveConfig()">
+            <input type="number" id="electricConsumptionUrban" class="form-input" step="0.1" value="12.0" onchange="saveConfig()">
           </div>
         </div>
 
@@ -1238,7 +1240,7 @@
           
           <div class="form-group">
             <label class="form-label" for="other">其他费用 (¥)</label>
-            <input type="number" id="other" class="form-input" step="0.5" value="15.0" onchange="saveConfig()">
+            <input type="number" id="other" class="form-input" step="0.5" value="0.0" onchange="saveConfig()">
             <small style="color: #718096; font-size: 0.9em;">如停车费、过桥费等其他开支</small>
           </div>
         </div>
@@ -1286,6 +1288,34 @@ function saveFormData() {
     routeResult: currentRoute
   };
   localStorage.setItem('routePlannerData', JSON.stringify(formData));
+}
+
+const DEFAULT_CONFIG = {
+  oil_price: 8.5,
+  electric_price: 1.5,
+  other: 0,
+  oil_consumption: {
+    highway: 9,
+    national: 10,
+    urban: 10.7
+  },
+  electric_consumption: {
+    highway: 16.0,
+    national: 13.0,
+    urban: 12.0
+  }
+};
+
+function getCurrentConfig() {
+  const saved = localStorage.getItem('mapUserConfig');
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      console.error('加载本地配置失败', e);
+    }
+  }
+  return DEFAULT_CONFIG;
 }
 
 // 从 localStorage 加载表单数据
@@ -1352,10 +1382,9 @@ function switchTab(index) {
 }
 
 // 加载配置
-async function loadConfig() {
+function loadConfig() {
   try {
-    const res = await fetch('/api/map/config');
-    const config = await res.json();
+    const config = getCurrentConfig();
     
     document.getElementById('oilPrice').value = config.oil_price;
     document.getElementById('other').value = config.other;
@@ -1380,8 +1409,8 @@ async function loadConfig() {
       document.getElementById('electricConsumptionUrban').value = config.electric_consumption.urban || 22.0;
     } else {
       document.getElementById('electricConsumptionHighway').value = 16.0;
-      document.getElementById('electricConsumptionNational').value = 18.0;
-      document.getElementById('electricConsumptionUrban').value = 22.0;
+      document.getElementById('electricConsumptionNational').value = 13.0;
+      document.getElementById('electricConsumptionUrban').value = 12.0;
     }
   } catch (e) {
     console.error('加载配置失败', e);
@@ -1407,18 +1436,10 @@ async function saveConfig() {
   };
 
   try {
-    const res = await fetch('/api/map/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
-    });
-    const result = await res.json();
-    
-    if (result.status === 'ok') {
-      showMessage('✅ 配置已保存', 'success');
-    }
+    localStorage.setItem('mapUserConfig', JSON.stringify(config));
+    showMessage('✅ 配置已保存在浏览器本地', 'success');
   } catch (e) {
-    showMessage('❌ 保存失败: ' + e.message, 'error');
+    showMessage('❌ 保存本地失败: ' + e.message, 'error');
   }
 }
 
@@ -1587,36 +1608,39 @@ async function calculateRoute() {
     const waypointAddresses = [...waypoints];
 
     // 先地理编码
-    const originCoords = await geocodeAddress(origin);
-    const destCoords = await geocodeAddress(destination);
+    const originInfo = await geocodeAddress(origin);
+    const destInfo = await geocodeAddress(destination);
 
-    if (!originCoords || !destCoords) {
+    if (!originInfo || !destInfo) {
       showMessage('❌ 地址解析失败，请检查地址是否正确', 'error');
       return;
     }
 
     // 地理编码途径点
-    let waypointCoords = [];
+    let waypointInfos = [];
     if (waypoints.length > 0) {
       for (const wp of waypoints) {
-        const coords = await geocodeAddress(wp);
-        if (coords) {
-          waypointCoords.push(coords);
+        const info = await geocodeAddress(wp);
+        if (info) {
+          waypointInfos.push(info);
         }
       }
     }
+
+    const currentConfig = getCurrentConfig();
 
     // 调用路线规划 API
     const res = await fetch('/api/map/route', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        origin: originCoords,
-        destination: destCoords,
-        waypoints: waypointCoords.length > 0 ? waypointCoords : null,
+        origin: originInfo,
+        destination: destInfo,
+        waypoints: waypointInfos,
         origin_address: originAddress,
         destination_address: destinationAddress,
-        waypoint_addresses: waypointAddresses
+        waypoint_addresses: waypointAddresses,
+        config: currentConfig
       })
     });
 
@@ -1645,7 +1669,7 @@ async function geocodeAddress(address) {
     const data = await res.json();
     
     if (data.status === 'ok') {
-      return data.coords;
+      return data;
     }
   } catch (e) {
     console.error('地理编码失败', e);
@@ -1927,6 +1951,32 @@ function displayResults(data) {
   // 显示电动车费用
   document.getElementById('result_electric_cost').textContent = data.electric_cost || '0.00';
   document.getElementById('result_electric_total').textContent = data.electric_total_cost || '0.00';
+
+  if (data.origin_detail && data.dest_detail) {
+    const originDetail = data.origin_detail;
+    const destDetail = data.dest_detail;
+    let addressHtml = `
+      <div style="margin-bottom: 24px; padding: 16px; background: #fffbe6; border-radius: 8px; font-size: 0.9em; border: 1px solid #ffe58f;">
+        <div style="margin-bottom: 12px;"><strong>📍 起点: ${originDetail.name || ''}</strong><br/>
+        <span style="color: #666;">${originDetail.province || ''}${originDetail.city || ''} ${originDetail.address || ''}</span></div>
+
+        <div style="margin-bottom: 12px;"><strong>🏁 终点: ${destDetail.name || ''}</strong><br/>
+        <span style="color: #666;">${destDetail.province || ''}${destDetail.city || ''} ${destDetail.address || ''}</span></div>
+    `;
+
+    if (data.waypoints_detail && data.waypoints_detail.length > 0) {
+      data.waypoints_detail.forEach((wp, i) => {
+        addressHtml += `
+          <div style="margin-bottom: 12px;"><strong>📌 途径 ${i + 1}: ${wp.name || ''}</strong><br/>
+          <span style="color: #666;">${wp.province || ''}${wp.city || ''} ${wp.address || ''}</span></div>
+        `;
+      });
+    }
+    addressHtml += `</div>`;
+    document.getElementById('addressDetails').innerHTML = addressHtml;
+  } else {
+    document.getElementById('addressDetails').innerHTML = '';
+  }
   
   // 计算和显示成本差额
   const oilTotal = parseFloat(data.total_cost) || 0;
@@ -2046,10 +2096,27 @@ async function loadHistory() {
     
     // 按时间倒序排列
     const trips = data.trips.reverse();
+
+    function formatHistoryTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) {
+        return timestamp || '';
+      }
+      const parts = new Intl.DateTimeFormat(undefined, {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).formatToParts(date);
+      const lookup = Object.fromEntries(parts.map(part => [part.type, part.value]));
+      return `${lookup.year}-${lookup.month}-${lookup.day} ${lookup.hour}:${lookup.minute}`;
+    }
     
     historyDiv.innerHTML = trips.map((trip, tripIndex) => {
-      const date = new Date(trip.timestamp);
-      const timeStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      const timeStr = formatHistoryTimestamp(trip.timestamp);
       
       // 构建途径点显示文本
       let waypointText = '';
