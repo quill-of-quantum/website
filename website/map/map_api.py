@@ -8,6 +8,7 @@ import urllib.parse
 import math
 import folium
 import io
+import sqlite3
 from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime, timezone
 
@@ -19,6 +20,26 @@ bp = Blueprint('map', __name__, url_prefix='/api/map')
 MAP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(MAP_DIR, "config.json")
 HISTORY_FILE = os.path.join(MAP_DIR, "history.json")
+DB_FILE = os.path.join(MAP_DIR, "geocode_cache.db")  # 👈 新增：数据库文件路径
+
+# 自动初始化 SQLite 数据库
+def init_db():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS geocode_cache (
+                query_keyword TEXT PRIMARY KEY,
+                result_data TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
+
+init_db() # 模块加载时立刻执行建表
 
 # 你的百度地图 API 凭证
 AK = "8xLEtsdbow5oHCPBDWLP5OBgbo61CCst"
@@ -70,19 +91,60 @@ def save_history(history):
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
+def get_cached_geocode(keyword):
+    """从数据库读取地点缓存"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT result_data FROM geocode_cache WHERE query_keyword = ?', (keyword,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return json.loads(row[0])
+    except Exception as e:
+        print(f"⚠️ 读取地点缓存失败: {e}")
+    return None
+
+def save_cached_geocode(keyword, data):
+    """将成功的解析结果存入数据库"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        # 使用 REPLACE INTO：如果关键词已存在就覆盖更新，不存在就插入新记录
+        cursor.execute('''
+            REPLACE INTO geocode_cache (query_keyword, result_data, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (keyword, json.dumps(data, ensure_ascii=False)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ 写入地点缓存失败: {e}")
+
 def geocode_address(address, search_region="全国", depth=0):
     """
-    使用百度地图地点检索 API 将地名转换为经纬度
-    返回: 包含 coords/name/province/city/address 的字典，或 None
+    使用百度地图地点检索 API 将地名转换为经纬度（带 SQLite 缓存）
     """
+    # 1. 净化输入关键词
+    clean_address = address.strip()
+    if not clean_address:
+        return None
+
+    # 2. 拦截：如果是初次查询，先查本地数据库缓存
+    if depth == 0:
+        cached_result = get_cached_geocode(clean_address)
+        if cached_result:
+            print(f"⚡ 命中本地缓存，免 API 调用: [{clean_address}]")
+            return cached_result
+
+    # 3. 缓存未命中，按原逻辑继续调用百度 API
     if depth > 2:
         print(f"❌ 递归层数过深，放弃解析 ({address})")
         return None
 
     api_path = "/place/v3/region"
-    
     params = {
-        "query": address,
+        "query": clean_address,  # 使用清洗后的词
         "region": search_region,
         "output": "json",
         "ak": AK,
@@ -90,14 +152,11 @@ def geocode_address(address, search_region="全国", depth=0):
     
     sorted_params = sorted(params.items(), key=lambda x: x[0])
     query_str = api_path + "?" + "&".join([f"{k}={v}" for k, v in sorted_params])
-    
     encoded_str = urllib.parse.quote(query_str, safe="/:=&?#+!$,;'@()*[]")
     raw_str = encoded_str + SK
-    quoted_plus_str = urllib.parse.quote_plus(raw_str)
-    sn = hashlib.md5(quoted_plus_str.encode()).hexdigest()
+    sn = hashlib.md5(urllib.parse.quote_plus(raw_str).encode()).hexdigest()
     
-    url = "https://api.map.baidu.com" + api_path
-    full_url = url + "?" + "&".join([f"{k}={v}" for k, v in sorted_params]) + f"&sn={sn}"
+    full_url = "https://api.map.baidu.com" + api_path + "?" + "&".join([f"{k}={v}" for k, v in sorted_params]) + f"&sn={sn}"
     
     try:
         resp = requests.get(full_url, timeout=10)
@@ -108,21 +167,27 @@ def geocode_address(address, search_region="全国", depth=0):
 
             if result_type == "city_type":
                 top_city = data["results"][0].get("name")
-                print(f"⚠️ [{address}] 触发城市列表，自动重定向至最热城市: {top_city}")
-                return geocode_address(address, search_region=top_city, depth=depth + 1)
+                print(f"⚠️ [{clean_address}] 触发城市列表，自动重定向至最热城市: {top_city}")
+                return geocode_address(clean_address, search_region=top_city, depth=depth + 1)
 
             res = data["results"][0]
             location = res.get("location")
             if location:
-                return {
+                final_result = {
                     "coords": f"{location['lat']},{location['lng']}",
                     "name": res.get("name"),
                     "province": res.get("province", ""),
                     "city": res.get("city", ""),
                     "address": res.get("address", "")
                 }
+                
+                # 4. 落地：拿到准确结果后，将其写入本地数据库缓存
+                save_cached_geocode(clean_address, final_result)
+                print(f"💾 新地点已存入数据库: [{clean_address}]")
+                
+                return final_result
     except Exception as e:
-        print(f"❌ 地理编码失败 ({address}): {e}")
+        print(f"❌ 地理编码失败 ({clean_address}): {e}")
     
     return None
 
