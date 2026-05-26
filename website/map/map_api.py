@@ -528,10 +528,15 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     all_lngs = [origin_lng, dest_lng]
     
     # 添加途径点坐标到边界计算
-    if waypoints:
-        for wp in waypoints:
+    if waypoints_info:
+        for wp in waypoints_info:
             try:
-                wp_parts = wp.split(',')
+                if isinstance(wp, str):
+                    wp_coords = wp
+                else:
+                    wp_coords = wp.get("coords")
+                    
+                wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
                 wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
                 all_lats.append(wp_lat)
@@ -739,7 +744,10 @@ def route():
             "map_url": map_url,
             "map_html": map_html,
             "electric_cost": electric_cost,
-            "electric_total_cost": electric_total_cost
+            "electric_total_cost": electric_total_cost,
+            "origin_detail": origin_obj if isinstance(origin_obj, dict) else {},
+            "dest_detail": dest_obj if isinstance(dest_obj, dict) else {},
+            "waypoints_detail": [wp for wp in waypoints_objs if isinstance(wp, dict)]
         }
         
         # 保存到历史记录（包含地址信息）
