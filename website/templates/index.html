@@ -35,10 +35,25 @@
       width: 100% !important;
       height: 220px !important;
     }
-    .chart-caption {
-      margin-top: 0.5rem;
-      font-size: 0.9rem;
+    /* 工具分组标题 */
+    .tool-group-title {
+      font-size: 0.95rem;
+      font-weight: 600;
       color: var(--muted);
+      margin: 1.5rem 0 0.8rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tool-group-title:first-of-type {
+      margin-top: 0.5rem;
+    }
+    .tool-group-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+      opacity: 0.6;
     }
 
     /* 工具按钮样式 */
@@ -98,36 +113,59 @@
       <!-- 工具区 -->
       <div class="card">
         <h2 class="card-title">🧰 工具区</h2>
-        <p class="card-subtitle"></p>
         
-        <div class="tool-buttons">
-          <a href="/tools" class="btn btn-primary tool-btn">
-            <span>☁️</span>
-            <span>进入云盘</span>
-          </a>
+        <div class="tool-group">
+          <div class="tool-group-title">常用</div>
+          <div class="tool-buttons">
+            <a href="/tools" class="btn btn-primary tool-btn">
+              <span>☁️</span>
+              <span>进入云盘</span>
+            </a>
+            <a href="/map" class="btn tool-btn">
+              <span>🗺️</span>
+              <span>路线规划计价器</span>
+            </a>
+          </div>
+        </div>
 
-          <a href="/letter" class="btn tool-btn">
-            <span>🔤</span>
-            <span>字母游戏助手</span>
-          </a>
-          
-          <a href="/map" class="btn tool-btn">
-            <span>🗺️</span>
-            <span>路线规划计价器</span>
-          </a>
+        <div class="tool-group">
+          <div class="tool-group-title">辅助</div>
+          <div class="tool-buttons">
+            <a href="/letter" class="btn tool-btn">
+              <span>🔤</span>
+              <span>字母游戏助手</span>
+            </a>
+            <a href="/aurora" class="btn tool-btn">
+              <span>🍀</span>
+              <span>极光预报</span>
+            </a>
+          </div>
+        </div>
 
-          <a href="/route_creator" class="btn tool-btn">
-            <span>🧭</span>
-            <span>路线创作</span>
-          </a>
+        <div class="tool-group">
+          <div class="tool-group-title">其他</div>
+          <div class="tool-buttons">
+            <a href="/viewer" class="btn tool-btn">
+              <span>👁️</span>
+              <span>3D 模型查看器</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="tool-group">
+          <div class="tool-group-title">开发中</div>
+          <div class="tool-buttons">
+            <a href="/route_creator" class="btn tool-btn">
+              <span>🧭</span>
+              <span>路线创作</span>
+            </a>
+            <a href="/game" class="btn tool-btn">
+              <span>🎮</span>
+              <span>实时游戏平台</span>
+            </a>
+          </div>
         </div>
       </div>
-
-      <!-- 极光 -->
-      <a class="card card-link" href="/aurora">
-        <h2 class="card-title">🍀极光</h2>
-        <p class="card-subtitle">API + 社交媒体检索预留</p>
-      </a>
 
       <!-- 汇率走势 -->
       <div class="card">
