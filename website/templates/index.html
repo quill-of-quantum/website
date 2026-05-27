@@ -125,6 +125,10 @@
               <span>🗺️</span>
               <span>路线规划计价器</span>
             </a>
+            <a href="/clipboard" class="btn tool-btn">
+              <span>📋</span>
+              <span>剪贴板</span>
+            </a>
           </div>
         </div>
 
@@ -679,8 +683,8 @@
         const usdMinIdx = usdStats.min_idx ?? 0;
         const usdMaxIdx = usdStats.max_idx ?? 0;
 
-        buildChart("exchangeChartEur", "EUR/CNY", data.eur_cny, eurMinIdx, eurMaxIdx, "rgba(54, 162, 235, 0.9)");
-        buildChart("exchangeChartUsd", "USD/CNY", data.usd_cny, usdMinIdx, usdMaxIdx, "rgba(75, 192, 192, 0.9)");
+        buildChart("exchangeChartEur", "🇪🇺 EUR/CNY 🇨🇳", data.eur_cny, eurMinIdx, eurMaxIdx, "rgba(54, 162, 235, 0.9)");
+        buildChart("exchangeChartUsd", "🇺🇸 USD/CNY 🇨🇳", data.usd_cny, usdMinIdx, usdMaxIdx, "rgba(75, 192, 192, 0.9)");
 
         function renderStats(elId, label, stats, nowVal) {
           const minVal = stats.min ?? 0;
@@ -718,8 +722,8 @@
 
         const eurNow = (data.latest_eur ?? data.eur_cny[data.eur_cny.length - 1]) || 0;
         const usdNow = (data.latest_usd ?? data.usd_cny[data.usd_cny.length - 1]) || 0;
-        renderStats("exchange-stats-eur", "EUR/CNY", eurStats, eurNow);
-        renderStats("exchange-stats-usd", "USD/CNY", usdStats, usdNow);
+        renderStats("exchange-stats-eur", "🇪🇺 EUR/CNY 🇨🇳", eurStats, eurNow);
+        renderStats("exchange-stats-usd", "🇺🇸 USD/CNY 🇨🇳", usdStats, usdNow);
       } catch {
         container.innerHTML = "⚠️ Network error";
       }

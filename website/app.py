@@ -62,6 +62,9 @@ start_sensor_logger()
 
 from tools.tool_1 import bp as vision_bp
 app.register_blueprint(vision_bp)
+
+from tools.tool_2 import bp as clipboard_bp
+app.register_blueprint(clipboard_bp)
 # ===============================
 # 基础配置
 # ===============================

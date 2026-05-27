@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌐 互联网集散剪贴板</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --primary: #3b82f6;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --r-md: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .title { font-size: 1.25rem; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+        .status { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+        .status-dot.active { background: #22c55e; animation: pulse 2s infinite; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .clipboard-container {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--r-md);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #clipboard {
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            border: none;
+            outline: none;
+            resize: none;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: var(--text);
+            background: transparent;
+            font-family: inherit;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover { background: #f1f5f9; }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: #2563eb; }
+
+        #copyMsg {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">📋 剪贴板</div>
+        <div class="status">
+            <div id="statusDot" class="status-dot"></div>
+            <span id="statusText">正在同步...</span>
+        </div>
+    </div>
+
+    <div class="clipboard-container">
+        <textarea id="clipboard" placeholder="在此输入内容，所有端实时同步..."></textarea>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn btn-primary" onclick="copyAll()">一键复制</button>
+        <button class="btn" onclick="clearContent()">快速清空</button>
+        <button class="btn" onclick="location.href='/'">返回主页</button>
+    </div>
+
+    <div id="copyMsg">已复制到剪贴板</div>
+
+    <script>
+        const clipboard = document.getElementById('clipboard');
+        const statusText = document.getElementById('statusText');
+        const statusDot = document.getElementById('statusDot');
+        
+        let lastServerTimestamp = 0;
+        let isTyping = false;
+        let debounceTimer;
+
+        // 初始化加载
+        fetchData();
+
+        // 轮询同步 (每1.5秒检查一次更新)
+        setInterval(() => {
+            if (!isTyping) {
+                fetchData();
+            }
+        }, 1500);
+
+        // 监听输入
+        clipboard.addEventListener('input', () => {
+            isTyping = true;
+            statusText.textContent = "正在输入...";
+            statusDot.className = "status-dot active";
+            
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                sendData();
+            }, 500); // 500ms 停顿后同步
+        });
+
+        clipboard.addEventListener('blur', () => {
+            isTyping = false;
+        });
+
+        async function fetchData() {
+            try {
+                const res = await fetch('/api/clipboard');
+                const data = await res.json();
+                
+                // 如果发现服务器的时间戳更新了，且当前没在输入，或者内容确实不一致
+                if (data.timestamp > lastServerTimestamp) {
+                    if (clipboard.value !== data.content) {
+                        // 保存光标位置
+                        const start = clipboard.selectionStart;
+                        const end = clipboard.selectionEnd;
+                        
+                        clipboard.value = data.content;
+                        
+                        // 尽可能恢复光标
+                        if (document.activeElement === clipboard) {
+                            clipboard.setSelectionRange(start, end);
+                        }
+                    }
+                    lastServerTimestamp = data.timestamp;
+                }
+                
+                statusText.textContent = "已同步";
+                statusDot.className = "status-dot active";
+            } catch (err) {
+                statusText.textContent = "同步失败";
+                statusDot.className = "status-dot";
+            }
+        }
+
+        async function sendData() {
+            try {
+                const res = await fetch('/api/clipboard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        content: clipboard.value,
+                        timestamp: lastServerTimestamp
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.error === "conflict") {
+                    // 发生冲突，说明别人先改了，强制恢复成服务器内容
+                    clipboard.value = data.content;
+                    statusText.textContent = "检测到并发冲突，已还原";
+                    setTimeout(() => statusText.textContent = "已同步", 2000);
+                }
+                
+                lastServerTimestamp = data.timestamp;
+                if (!data.error) statusText.textContent = "已同步";
+                isTyping = false;
+            } catch (err) {
+                statusText.textContent = "发送失败";
+            }
+        }
+
+        function copyAll() {
+            clipboard.select();
+            document.execCommand('copy');
+            showMsg("全选内容已复制");
+        }
+
+        function clearContent() {
+            if (confirm("确定要清空剪贴板吗？")) {
+                clipboard.value = "";
+                sendData();
+            }
+        }
+
+        function showMsg(txt) {
+            const msg = document.getElementById('copyMsg');
+            msg.textContent = txt;
+            msg.style.opacity = "1";
+            setTimeout(() => msg.style.opacity = "0", 2000);
+        }
+    </script>
+</body>
+</html>
