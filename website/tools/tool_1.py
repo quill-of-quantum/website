@@ -56,8 +56,13 @@ def analyze_image():
         if img is None:
             return jsonify({"error": "Could not read image file"}), 500
         
-        # 性能优化：如果图片太大，缩放处理 (保持长宽比)
-        max_dim = 1280
+        # 性能优化：对于 AI 检测，我们保留更高的分辨率以识别远处的小目标
+        # 对于传统 CV (circles)，我们则保持较小的分辨率以提升处理速度
+        if target in ['people', 'cars']:
+            max_dim = 1920 # 提升到 Full HD 级别，帮助 YOLO 识别远端小目标
+        else:
+            max_dim = 1000 # 传统 CV 保持原样，防止形态学运算过慢
+            
         h, w = img.shape[:2]
         if max(h, w) > max_dim:
             scale = max_dim / max(h, w)
@@ -70,8 +75,8 @@ def analyze_image():
         if target in ['people', 'cars']:
             target_class_id = 0 if target == 'people' else 2  # YOLO 类别字典: 0=person, 2=car
             
-            # 推理
-            results = model(img, verbose=False)[0]
+            # 推理：增加 imgsz 参数明确检测分辨率，增加 conf 阈值微调
+            results = model(img, verbose=False, imgsz=max_dim, conf=0.20)[0]
             for box in results.boxes:
                 cls_id = int(box.cls[0].item())
                 if cls_id == target_class_id:
