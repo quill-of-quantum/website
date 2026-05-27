@@ -22,10 +22,55 @@ def encode_image_to_base64(img_array):
     _, buffer = cv2.imencode('.jpg', img_array)
     return base64.b64encode(buffer).decode('utf-8')
 
+def cleanup_old_files(folder, max_size_mb=100):
+    """清理旧文件，保持目录大小在指定限制内"""
+    import time
+    try:
+        max_size_bytes = max_size_mb * 1024 * 1024
+        files = []
+        total_size = 0
+        
+        # 遍历目录获取文件信息
+        for filename in os.listdir(folder):
+            filepath = os.path.join(folder, filename)
+            if os.path.isfile(filepath):
+                size = os.path.getsize(filepath)
+                mtime = os.path.getmtime(filepath)
+                files.append({
+                    "path": filepath,
+                    "size": size,
+                    "mtime": mtime,
+                    "id": filename.split('.')[0] # 用于清理内存缓存
+                })
+                total_size += size
+        
+        # 如果超出限制，按修改时间排序并删除旧文件
+        if total_size > max_size_bytes:
+            # 排序：最早的在前
+            files.sort(key=lambda x: x["mtime"])
+            
+            for f in files:
+                if total_size <= max_size_bytes:
+                    break
+                try:
+                    os.remove(f["path"])
+                    total_size -= f["size"]
+                    # 同时清理内存缓存，防止内存泄漏
+                    if f["id"] in IMAGE_CACHE:
+                        del IMAGE_CACHE[f["id"]]
+                    # print(f"Cleaned up old file: {f['path']}")
+                except Exception as e:
+                    print(f"Error removing file {f['path']}: {e}")
+    except Exception as e:
+        print(f"Cleanup error: {e}")
+
 @bp.route('/api/vision/upload', methods=['POST'])
 def upload_image():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
+    
+    # 每次上传前执行一次目录清理，确保不超出 100MB
+    cleanup_old_files(UPLOAD_FOLDER, max_size_mb=100)
     
     file = request.files['file']
     img_id = str(uuid.uuid4())
