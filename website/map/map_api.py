@@ -191,6 +191,41 @@ def geocode_address(address, search_region="全国", depth=0):
     
     return None
 
+@bp.route('/reverse_geocode', methods=['GET'])
+def api_reverse_geocode():
+    """逆地理编码接口，用于将经纬度转为地名"""
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    if not lat or not lon:
+        return jsonify({"error": "Missing coordinates"}), 400
+    
+    api_path = "/reverse_geocoding/v3/"
+    params = {
+        "ak": AK,
+        "output": "json",
+        "coordtype": "wgs84ll",
+        "location": f"{lat},{lon}"
+    }
+    
+    sorted_params = sorted(params.items(), key=lambda x: x[0])
+    query_str = api_path + "?" + "&".join([f"{k}={v}" for k, v in sorted_params])
+    encoded_str = urllib.parse.quote(query_str, safe="/:=&?#+!$,;'@()*[]")
+    raw_str = encoded_str + SK
+    sn = hashlib.md5(urllib.parse.quote_plus(raw_str).encode()).hexdigest()
+    
+    full_url = "https://api.map.baidu.com" + api_path + "?" + "&".join([f"{k}={v}" for k, v in sorted_params]) + f"&sn={sn}"
+    
+    try:
+        resp = requests.get(full_url, timeout=10)
+        data = resp.json()
+        if data.get("status") == 0:
+            address = data["result"].get("formatted_address")
+            return jsonify({"address": address})
+    except Exception as e:
+        print(f"❌ 逆地理编码失败: {e}")
+    
+    return jsonify({"error": "Reverse geocoding failed"}), 500
+
 def calculate_route(origin, destination, waypoints=None):
     """
     调用百度地图路线规划 API
@@ -719,12 +754,27 @@ def set_config():
 
 @bp.route('/geocode', methods=['POST'])
 def geocode():
-    """地理编码"""
+    """地理编码 (增强版：支持直接跳过坐标字符串)"""
     data = request.get_json() or {}
-    address = data.get("address")
+    address = data.get("address", "").strip()
     
     if not address:
         return jsonify({"error": "缺少地址"}), 400
+    
+    # 核心增强：如果是经纬度格式 (如 39.915,116.404)，直接原样返回作为坐标
+    parts = address.split(',')
+    if len(parts) == 2:
+        try:
+            lat = float(parts[0])
+            lng = float(parts[1])
+            return jsonify({
+                "status": "ok", 
+                "coords": f"{lat},{lng}", 
+                "name": "当前定位位置",
+                "address": address
+            })
+        except ValueError:
+            pass # 不是有效的坐标格式，继续走百度查询逻辑
     
     coords = geocode_address(address)
     if coords:
