@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>👁️ 智能视觉检测</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    /* 视觉专属样式补充 */
+    .preview-container {
+      width: 100%;
+      min-height: 200px;
+      background: #f8f9fa;
+      border: 2px dashed var(--border);
+      border-radius: var(--r-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      overflow: hidden;
+      position: relative;
+    }
+    .preview-container img {
+      max-width: 100%;
+      height: auto;
+      display: none;
+      border-radius: var(--r-lg);
+    }
+    .placeholder-text {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .action-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 1rem;
+    }
+    .action-btn {
+      flex: 1;
+      min-width: 120px;
+      justify-content: center;
+    }
+    .action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      border-color: transparent;
+    }
+    .result-badge {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: var(--primary);
+    }
+    /* 调试步骤图片网格 */
+    .debug-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 1rem;
+    }
+    .debug-item {
+      flex: 1 1 calc(50% - 12px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 8px;
+      text-align: center;
+    }
+    .debug-item img {
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .debug-title {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 6px;
+      font-weight: 600;
+    }
+    @media (max-width: 768px) {
+      .debug-item { flex: 1 1 100%; }
+    }
+    /* 隐藏原生 input */
+    #imgUpload { display: none; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="page-header">
+        <h1>👁️ 视觉测算</h1>
+        <p>嘻嘻～</p>
+      </div>
+
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="card-title">📷 图像输入</h2>
+          <a class="btn btn-ghost" href="/">🏠 返回首页</a>
+        </div>
+        
+        <div class="preview-container" id="previewBox">
+          <span class="placeholder-text" id="placeholderText">请上传图片或拍照...</span>
+          <img id="previewImg" src="" alt="预览图">
+        </div>
+
+        <input type="file" id="imgUpload" accept="image/*" capture="environment">
+        
+        <div class="tool-buttons">
+          <button class="btn btn-primary tool-btn" label="拍照 / 选择图片" onclick="document.getElementById('imgUpload').click()">
+            <span>📸</span>
+            <span>拍照 / 选择图片</span>
+          </button>
+          <button class="btn tool-btn" disabled title="开发中，敬请期待">
+            <span>📑</span>
+            <span>批量多图统计 (WIP)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">🧠 本地 AI 分析</h2>
+        <div class="tool-group-title">选择检测目标</div>
+        <div class="action-buttons">
+          <button class="btn action-btn" id="btnPeople" disabled onclick="analyze('people')">👤 统计人数</button>
+          <button class="btn action-btn" id="btnCars" disabled onclick="analyze('cars')">🚗 统计车辆</button>
+          <button class="btn action-btn" id="btnCircles" disabled onclick="analyze('circles')">🎋 统计竹签</button>
+        </div>
+      </div>
+
+      <div class="card" id="resultCard" hidden>
+        <h2 class="card-title">📊 检测结果</h2>
+        <p style="font-size: 1.1rem; margin-top: 0.5rem;">
+          检测到的数量: <span class="result-badge" id="resultCount">0</span>
+        </p>
+      </div>
+
+      <div class="card" id="debugCard" hidden>
+        <h2 class="card-title">⚙️ 算法过程调试 (Developer Mode)</h2>
+        <div class="debug-grid" id="debugGrid">
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentImageId = null;
+    const imgUpload = document.getElementById('imgUpload');
+    const previewImg = document.getElementById('previewImg');
+    const placeholderText = document.getElementById('placeholderText');
+    const resultCard = document.getElementById('resultCard');
+    const resultCount = document.getElementById('resultCount');
+    
+    // 需要在图片上传后激活的按钮
+    const actionBtns = [
+      document.getElementById('btnPeople'),
+      document.getElementById('btnCars'),
+      document.getElementById('btnCircles')
+    ];
+
+    // 处理图片选择与上传
+    imgUpload.addEventListener('change', async function() {
+      const file = this.files[0];
+      if (!file) return;
+
+      // 1. 本地预览
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        previewImg.src = e.target.result;
+        previewImg.style.display = 'block';
+        placeholderText.style.display = 'none';
+        resultCard.hidden = true; // 换了新图，隐藏旧结果
+      }
+      reader.readAsDataURL(file);
+
+      // 2. 上传到树莓派后端
+      placeholderText.textContent = "正在上传至树莓派...";
+      placeholderText.style.display = 'block';
+      previewImg.style.display = 'none'; // 暂时隐藏等上传完
+      actionBtns.forEach(btn => btn.disabled = true);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/api/vision/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        
+        if (data.image_id) {
+          currentImageId = data.image_id;
+          // 上传成功，展示预览，激活按钮
+          previewImg.style.display = 'block';
+          placeholderText.style.display = 'none';
+          actionBtns.forEach(btn => btn.disabled = false);
+        }
+      } catch (err) {
+        alert("上传失败，请检查网络或后端日志");
+        placeholderText.textContent = "上传失败";
+      }
+    });
+
+    // 触发分析
+    async function analyze(targetType) {
+      if (!currentImageId) return;
+
+      const btn = event.currentTarget;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '⏳ 计算中...';
+      actionBtns.forEach(b => b.disabled = true);
+      document.getElementById('debugCard').hidden = true; // 重置隐藏调试区
+
+      try {
+        const res = await fetch('/api/vision/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_id: currentImageId, target: targetType })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          alert(data.error);
+        } else {
+          // 1. 更新主结果图和数量
+          previewImg.src = data.image_base64;
+          resultCount.textContent = data.count;
+          resultCard.hidden = false;
+
+          // 2. 渲染过程调试图片
+          if (data.debug_images && Object.keys(data.debug_images).length > 0) {
+            const debugGrid = document.getElementById('debugGrid');
+            debugGrid.innerHTML = ''; // 清空上次记录
+            
+            // 按字典 key 排序 (保证按步骤 1,2,3... 显示)
+            const steps = Object.keys(data.debug_images).sort();
+            
+            steps.forEach(stepName => {
+              const b64Data = data.debug_images[stepName];
+              
+              const itemDiv = document.createElement('div');
+              itemDiv.className = 'debug-item';
+              
+              const imgEl = document.createElement('img');
+              imgEl.src = `data:image/jpeg;base64,${b64Data}`;
+              
+              const titleEl = document.createElement('div');
+              titleEl.className = 'debug-title';
+              titleEl.textContent = stepName;
+              
+              itemDiv.appendChild(imgEl);
+              itemDiv.appendChild(titleEl);
+              debugGrid.appendChild(itemDiv);
+            });
+            
+            document.getElementById('debugCard').hidden = false;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        alert("请求分析失败");
+      } finally {
+        btn.innerHTML = originalText;
+        actionBtns.forEach(b => b.disabled = false);
+      }
+    }
+  </script>
+</body>
+</html>

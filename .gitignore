@@ -27,3 +27,5 @@ website_new/
 gallery/photos/
 gallery/featured.db
 website/map/history.json
+website/yolov8n.pt
+*.json

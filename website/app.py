@@ -59,6 +59,9 @@ start_room_cleaner()
 from sensor.sensor_api import bp as sensor_bp, start_sensor_logger
 app.register_blueprint(sensor_bp)
 start_sensor_logger()
+
+from tools.tool_1 import bp as vision_bp
+app.register_blueprint(vision_bp)
 # ===============================
 # 基础配置
 # ===============================
@@ -135,6 +138,11 @@ def cloud():
 def tracker_ui():
     """追踪页"""
     return render_template("tracker.html")
+
+@app.route("/vision")
+def vision_ui():
+    """智能视觉检测页"""
+    return render_template("tool_1.html")
 
 @app.route("/viewer")
 def viewer():
