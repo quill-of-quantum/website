@@ -20,6 +20,7 @@ bp = Blueprint('map', __name__, url_prefix='/api/map')
 MAP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(MAP_DIR, "config.json")
 HISTORY_FILE = os.path.join(MAP_DIR, "history.json")
+FAVORITES_FILE = os.path.join(MAP_DIR, "favorites.json")
 DB_FILE = os.path.join(MAP_DIR, "geocode_cache.db")  # 👈 新增：数据库文件路径
 
 # 自动初始化 SQLite 数据库
@@ -90,6 +91,21 @@ def save_history(history):
     """保存历史记录"""
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+def load_favorites():
+    """加载收藏路线"""
+    if os.path.exists(FAVORITES_FILE):
+        try:
+            with open(FAVORITES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"favorites": []}
+
+def save_favorites(favorites):
+    """保存收藏路线"""
+    with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
+        json.dump(favorites, f, ensure_ascii=False, indent=2)
 
 def get_cached_geocode(keyword):
     """从数据库读取地点缓存"""
@@ -907,6 +923,61 @@ def clear_history():
         return jsonify({"status": "ok"})
     except Exception as e:
         return jsonify({"error": "清除历史记录失败", "message": str(e)}), 500
+
+@bp.route('/favorites', methods=['GET'])
+def get_favorites():
+    """获取收藏记录"""
+    favorites = load_favorites()
+    return jsonify(favorites)
+
+@bp.route('/favorites', methods=['POST'])
+def toggle_favorite():
+    """添加或删除收藏"""
+    data = request.get_json() or {}
+    trip_id = data.get("id") # 使用地址和距离的哈希作为 ID
+    trip_data = data.get("trip")
+    
+    favorites = load_favorites()
+    found_idx = -1
+    
+    if not trip_id:
+        # 如果没传 ID，根据 origin, destination, distance 生成一个
+        origin = trip_data.get("origin_address", "")
+        dest = trip_data.get("destination_address", "")
+        dist = trip_data.get("distance_km", 0)
+        trip_id = hashlib.md5(f"{origin}{dest}{dist}".encode()).hexdigest()
+
+    for idx, fav in enumerate(favorites["favorites"]):
+        if fav.get("id") == trip_id:
+            found_idx = idx
+            break
+            
+    if found_idx >= 0:
+        # 已存在，则删除（取消收藏）
+        favorites["favorites"].pop(found_idx)
+        save_favorites(favorites)
+        return jsonify({"status": "ok", "action": "removed", "id": trip_id})
+    else:
+        # 不存在，则添加
+        new_fav = trip_data.copy()
+        new_fav["id"] = trip_id
+        new_fav["favorite_at"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        favorites["favorites"].insert(0, new_fav)
+        save_favorites(favorites)
+        return jsonify({"status": "ok", "action": "added", "id": trip_id})
+
+@bp.route('/favorites/<fav_id>', methods=['DELETE'])
+def delete_favorite(fav_id):
+    """直接删除指定收藏"""
+    favorites = load_favorites()
+    new_favs = [f for f in favorites["favorites"] if f.get("id") != fav_id]
+    
+    if len(new_favs) == len(favorites["favorites"]):
+        return jsonify({"error": "未找到该收藏"}), 404
+        
+    favorites["favorites"] = new_favs
+    save_favorites(favorites)
+    return jsonify({"status": "ok"})
 
 @bp.route('/map', methods=['POST'])
 def get_map():

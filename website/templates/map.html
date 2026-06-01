@@ -587,6 +587,17 @@
       background: #f8fafc;
     }
 
+    .history-map-thumb {
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .history-map-thumb:hover {
+      transform: scale(1.05);
+      z-index: 10;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
     .history-item-header {
       display: flex;
       justify-content: space-between;
@@ -1078,8 +1089,9 @@
     <!-- 标签页导航 -->
     <div class="tabs-nav">
       <button class="tab-button active" onclick="switchTab(0)">📍 路线规划</button>
-      <button class="tab-button" onclick="switchTab(1)">⚙️ 系统配置</button>
-      <button class="tab-button" onclick="switchTab(2)">📜 历史记录</button>
+      <button class="tab-button" onclick="switchTab(1)">❤️ 收藏路线</button>
+      <button class="tab-button" onclick="switchTab(2)">⚙️ 系统配置</button>
+      <button class="tab-button" onclick="switchTab(3)">📜 历史记录</button>
     </div>
 
     <!-- 标签页 1: 路线规划 -->
@@ -1137,8 +1149,11 @@
         <div class="results-panel">
           <!-- 有结果时显示 -->
           <div class="results-content" id="results">
-            <div class="results-header">
+            <div class="results-header" style="display: flex; justify-content: space-between; align-items: center;">
               <h3>✅ 路线规划结果</h3>
+              <button id="favoriteBtn" class="btn btn-secondary btn-small" onclick="toggleFavorite()" style="background: white; border: 1px solid #e2e8f0; color: #718096; display: flex; align-items: center; gap: 5px; margin-bottom: 12px; transition: all 0.3s ease;">
+                <span id="favoriteIcon">🤍</span> <span id="favoriteText">收藏</span>
+              </button>
             </div>
 
             <div id="addressDetails"></div>
@@ -1242,8 +1257,24 @@
       </div>
     </div>
 
-    <!-- 标签页 2: 系统配置 -->
+    <!-- 标签页 2: 收藏路线 -->
     <div class="tab-content" id="tab1">
+      <div class="history-layout">
+        <div class="history-controls">
+          <h3 style="margin: 0; color: #2d3748;">❤️ 收藏路线</h3>
+        </div>
+        
+        <div class="history-list" id="favoritesList">
+          <div class="empty-state">
+            <div class="empty-state-icon">❤️</div>
+            <div class="empty-state-text">暂无收藏路线</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签页 3: 系统配置 -->
+    <div class="tab-content" id="tab2">
       <div class="config-layout">
         <div class="config-section">
           <h3>🚗 燃油车配置</h3>
@@ -1305,8 +1336,8 @@
       </div>
     </div>
 
-    <!-- 标签页 3: 历史记录 -->
-    <div class="tab-content" id="tab2">
+    <!-- 标签页 4: 历史记录 -->
+    <div class="tab-content" id="tab3">
       <div class="history-layout">
         <div class="history-controls">
           <h3 style="margin: 0; color: #2d3748;">📜 历史记录</h3>
@@ -1490,9 +1521,239 @@ function switchTab(index) {
       if (roadTypeChart) roadTypeChart.resize();
     }, 100);
   } else if (index === 1) {
-    loadConfig();
+    loadFavorites();
   } else if (index === 2) {
+    loadConfig();
+  } else if (index === 3) {
     loadHistory();
+  }
+}
+
+// 收藏相关功能
+async function toggleFavorite() {
+  if (!currentRoute) return;
+  
+  const btn = document.getElementById('favoriteBtn');
+  const icon = document.getElementById('favoriteIcon');
+  const text = document.getElementById('favoriteText');
+  
+  // 提取当前路线关键信息
+  const tripData = {
+    origin_address: document.getElementById('origin').value,
+    destination_address: document.getElementById('destination').value,
+    waypoint_addresses: [...waypoints],
+    distance_km: currentRoute.distance_km,
+    duration_min: currentRoute.duration_min,
+    toll: currentRoute.toll,
+    other: currentRoute.other,
+    oil_cost: currentRoute.oil_cost,
+    total_cost: currentRoute.total_cost,
+    electric_cost: currentRoute.electric_cost,
+    electric_total_cost: currentRoute.electric_total_cost,
+    map_url: currentRoute.map_url,
+    origin_detail: currentRoute.origin_detail,
+    dest_detail: currentRoute.dest_detail,
+    waypoints_detail: currentRoute.waypoints_detail
+  };
+
+  try {
+    const res = await fetch('/api/map/favorites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trip: tripData })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'ok') {
+      if (data.action === 'added') {
+        icon.textContent = '❤️';
+        text.textContent = '已收藏';
+        btn.style.color = '#e53e3e';
+        btn.style.borderColor = '#feb2b2';
+        showMessage('✅ 已添加至收藏', 'success');
+      } else {
+        icon.textContent = '🤍';
+        text.textContent = '收藏';
+        btn.style.color = '#718096';
+        btn.style.borderColor = '#e2e8f0';
+        showMessage('✅ 已取消收藏', 'success');
+      }
+    }
+  } catch (e) {
+    showMessage('❌ 操作失败: ' + e.message, 'error');
+  }
+}
+
+async function checkIsFavorite() {
+  if (!currentRoute) return;
+  
+  try {
+    const res = await fetch('/api/map/favorites');
+    const data = await res.json();
+    
+    const origin = document.getElementById('origin').value;
+    const dest = document.getElementById('destination').value;
+    const dist = currentRoute.distance_km;
+    
+    const isFav = data.favorites.some(f => 
+       f.origin_address === origin && 
+       f.destination_address === dest && 
+       Math.abs(f.distance_km - dist) < 0.1
+    );
+    
+    const icon = document.getElementById('favoriteIcon');
+    const text = document.getElementById('favoriteText');
+    const btn = document.getElementById('favoriteBtn');
+    
+    if (isFav) {
+      icon.textContent = '❤️';
+      text.textContent = '已收藏';
+      btn.style.color = '#e53e3e';
+      btn.style.borderColor = '#feb2b2';
+    } else {
+      icon.textContent = '🤍';
+      text.textContent = '收藏';
+      btn.style.color = '#718096';
+      btn.style.borderColor = '#e2e8f0';
+    }
+  } catch (e) {
+    console.error('检查收藏状态失败', e);
+  }
+}
+
+async function loadFavorites() {
+  const favoritesDiv = document.getElementById('favoritesList');
+  
+  try {
+    const res = await fetch('/api/map/favorites');
+    const data = await res.json();
+    
+    if (!data.favorites || data.favorites.length === 0) {
+      favoritesDiv.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">❤️</div>
+          <div class="empty-state-text">暂无收藏路线</div>
+        </div>
+      `;
+      return;
+    }
+    
+    favoritesDiv.innerHTML = data.favorites.map((fav, index) => {
+      const oilTotal = parseFloat(fav.total_cost) || 0;
+      const electricTotal = parseFloat(fav.electric_total_cost) || 0;
+      const difference = Math.abs(oilTotal - electricTotal);
+      const savingsPercentage = Math.max(oilTotal, electricTotal) > 0 
+        ? ((difference / Math.max(oilTotal, electricTotal)) * 100).toFixed(1) 
+        : 0;
+      
+      const comparisonText = oilTotal > electricTotal 
+        ? `电动车比燃油车便宜 ${savingsPercentage}%`
+        : `燃油车比电动车便宜 ${savingsPercentage}%`;
+
+      // 构建标题序列
+      let titleSequence = `📍 ${fav.origin_address}`;
+      if (fav.waypoint_addresses && fav.waypoint_addresses.length > 0) {
+        fav.waypoint_addresses.forEach(wp => {
+          titleSequence += ` ➜ ${wp}`;
+        });
+      }
+      titleSequence += ` ➜ 🏁 ${fav.destination_address}`;
+
+      let routeHtml = '';
+      if (fav.origin_detail && fav.dest_detail) {
+        routeHtml += `
+          <div style="margin-top: 10px; padding: 12px; background: #fffbe6; border-radius: 8px; font-size: 0.9em; border: 1px solid #ffe58f; margin-bottom: 15px;">
+            <div style="margin-bottom: 8px;"><strong>📍 起点: ${fav.origin_detail.name || ''}</strong> <span style="color: #666;">${fav.origin_detail.address || ''}</span></div>
+        `;
+        if (fav.waypoints_detail && fav.waypoints_detail.length > 0) {
+          fav.waypoints_detail.forEach((wp, i) => {
+            routeHtml += `<div style="margin-bottom: 8px;"><strong>📌 途径 ${i + 1}: ${wp.name || ''}</strong> <span style="color: #666;">${wp.address || ''}</span></div>`;
+          });
+        }
+        routeHtml += `<div><strong>🏁 终点: ${fav.dest_detail.name || ''}</strong> <span style="color: #666;">${fav.dest_detail.address || ''}</span></div></div>`;
+      }
+
+      return `
+        <div class="history-item">
+          <div class="history-item-header">
+            <div class="history-item-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;">
+              ${titleSequence}
+            </div>
+            <button class="btn btn-secondary btn-small" onclick="deleteFavorite('${fav.id}', event)" style="padding: 4px 8px; font-size: 0.8em; background: #fff5f5; color: #e53e3e; border-color: #feb2b2;">🗑️ 删除</button>
+          </div>
+          
+          ${routeHtml}
+
+          <div class="history-item-details" style="display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start;">
+            <div class="history-map-thumb" style="width: 200px; height: 140px; border-radius: 8px; overflow: hidden; background: #f7fafc; border: 1px solid #e2e8f0; cursor: pointer;" onclick="importHistoryTrip('${fav.origin_address}', '${fav.destination_address}', ${JSON.stringify(fav.waypoint_addresses || []).replace(/"/g, '&quot;')})">
+              ${fav.map_url ? `<img src="${fav.map_url}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #a0aec0;">无地图</div>'}
+            </div>
+            
+            <div class="history-item-stats" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+              <div class="history-stat">
+                <div class="history-stat-label">🗺️ 距离</div>
+                <div class="history-stat-value">${fav.distance_km} km</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-label">⏱️ 预计耗时</div>
+                <div class="history-stat-value">${Math.floor(fav.duration_min / 60)}小时${Math.floor(fav.duration_min % 60)}分钟</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-label">💰 过路费</div>
+                <div class="history-stat-value">¥${fav.toll}</div>
+              </div>
+              <div class="history-stat">
+                <div class="history-stat-label">📝 其他费用</div>
+                <div class="history-stat-value">¥${fav.other || 0}</div>
+              </div>
+              <div class="history-stat" style="background: rgba(102, 126, 234, 0.05);">
+                <div class="history-stat-label">🚗 燃油车总成本</div>
+                <div class="history-stat-value">¥${fav.total_cost}</div>
+                <div style="font-size: 0.75em; color: #718096;">油费: ¥${fav.oil_cost}</div>
+              </div>
+              <div class="history-stat" style="background: rgba(67, 233, 123, 0.05);">
+                <div class="history-stat-label">🔋 电动车总成本</div>
+                <div class="history-stat-value">¥${fav.electric_total_cost}</div>
+                <div style="font-size: 0.75em; color: #718096;">电费: ¥${fav.electric_cost}</div>
+              </div>
+              <div class="history-stat" style="background: ${oilTotal > electricTotal ? 'rgba(67, 233, 123, 0.1)' : 'rgba(102, 126, 234, 0.1)'}; grid-column: 1 / -1;">
+                <div class="history-stat-label">💡 成本对比</div>
+                <div class="history-stat-value">¥${difference.toFixed(2)}</div>
+                <div style="font-size: 0.75em; color: ${oilTotal > electricTotal ? '#2f855a' : '#4a5568'};">${comparisonText}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+  } catch (e) {
+    console.error('加载收藏失败', e);
+  }
+}
+
+async function deleteFavorite(id, event) {
+  if (event) event.stopPropagation();
+  
+  if (!confirm('确定要删除该收藏路线吗？')) return;
+  
+  try {
+    const res = await fetch(`/api/map/favorites/${id}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    
+    if (data.status === 'ok') {
+      showMessage('✅ 收藏已删除', 'success');
+      loadFavorites();
+      
+      // 如果当前显示的路线正是删除的这个，更新按钮状态
+      if (currentRoute) {
+        checkIsFavorite();
+      }
+    }
+  } catch (e) {
+    showMessage('❌ 删除失败: ' + e.message, 'error');
   }
 }
 
@@ -2091,9 +2352,6 @@ function displayResults(data) {
       <div style="margin-bottom: 24px; padding: 16px; background: #fffbe6; border-radius: 8px; font-size: 0.9em; border: 1px solid #ffe58f;">
         <div style="margin-bottom: 12px;"><strong>📍 起点: ${originDetail.name || ''}</strong><br/>
         <span style="color: #666;">${originDetail.province || ''}${originDetail.city || ''} ${originDetail.address || ''}</span></div>
-
-        <div style="margin-bottom: 12px;"><strong>🏁 终点: ${destDetail.name || ''}</strong><br/>
-        <span style="color: #666;">${destDetail.province || ''}${destDetail.city || ''} ${destDetail.address || ''}</span></div>
     `;
 
     if (data.waypoints_detail && data.waypoints_detail.length > 0) {
@@ -2104,6 +2362,12 @@ function displayResults(data) {
         `;
       });
     }
+
+    addressHtml += `
+        <div style="margin-bottom: 12px;"><strong>🏁 终点: ${destDetail.name || ''}</strong><br/>
+        <span style="color: #666;">${destDetail.province || ''}${destDetail.city || ''} ${destDetail.address || ''}</span></div>
+    `;
+    
     addressHtml += `</div>`;
     document.getElementById('addressDetails').innerHTML = addressHtml;
   } else {
@@ -2162,6 +2426,9 @@ function displayResults(data) {
   
   // 保存结果
   saveFormData();
+  
+  // 检查收藏状态
+  checkIsFavorite();
 }
 
 // 显示消息
