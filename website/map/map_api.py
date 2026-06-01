@@ -10,6 +10,7 @@ import folium
 import io
 import sqlite3
 import shutil
+import branca.colormap as cm
 import time
 from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime, timezone
@@ -723,36 +724,51 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
             print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
             continue
 
-    # 添加一个可选的海拔图层
+# 添加一个可选的海拔图层 (彩虹色阶)
     if elevation_data_list and len(elevation_data_list) > 1:
-        ele_group = folium.FeatureGroup(name='海拔颜色分布 (高到低: 红到蓝)', show=False)
-        elevations = [pt['ele'] for pt in elevation_data_list]
+        # 改为默认显示 (show=True)
+        ele_group = folium.FeatureGroup(name='🌈 海拔彩虹路线 (紫低红高)', show=True)
+        
+        # 为了防止路线过长导致浏览器卡顿，这里保留抽稀逻辑，ColorLine 性能较好，放宽到 500 个点
+        step_sz = max(1, len(elevation_data_list) // 500)
+        chart_elevation_list = elevation_data_list[::step_sz]
+        
+        # 提取坐标点和对应的海拔高度
+        coords = [[pt['gcj_lat'], pt['gcj_lng']] for pt in chart_elevation_list]
+        elevations = [pt['ele'] for pt in chart_elevation_list]
+        
         min_ele = min(elevations)
         max_ele = max(elevations)
         
-        # 优化性能：将彩虹高程绘制抽稀到最多300根短线
-        step_sz = max(1, len(elevation_data_list) // 300)
-        chart_elevation_list = elevation_data_list[::step_sz]
+        # 防止平路导致除数为0的错误
+        if min_ele == max_ele:
+            max_ele += 1
+            
+        # 定义与前端 Chart.js 完全对应的彩虹色阶
+        # 紫(最低) -> 蓝 -> 青 -> 绿 -> 黄 -> 橙 -> 红(最高)
+        colormap = cm.LinearColormap(
+            colors=['#8b00ff', '#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff7f00', '#ff0000'],
+            vmin=min_ele,
+            vmax=max_ele
+        )
         
-        for i in range(len(chart_elevation_list) - 1):
-            pt1 = chart_elevation_list[i]
-            pt2 = chart_elevation_list[i+1]
-            avg_ele = (pt1['ele'] + pt2['ele']) / 2
-            color = get_elevation_color(avg_ele, min_ele, max_ele)
-            
-            # 使用 wgs84的坐标转换为 gcj02以使得能够在高德地图上对齐
-            # 注意之前存入elevation_data_list的是 WGS84 的 lat 和 lng
-            # 但其实 Folium 上的底图是 GCJ-02，这里我们要特殊做一下反向转换或者只存经纬度
-            
-            folium.PolyLine(
-                [[pt1['gcj_lat'], pt1['gcj_lng']], [pt2['gcj_lat'], pt2['gcj_lng']]],
-                color=color,
-                weight=6,
-                opacity=1.0,
-            ).add_to(ele_group)
+        # 使用 ColorLine 自动根据海拔上色
+        folium.ColorLine(
+            positions=coords,
+            colors=elevations,
+            colormap=colormap,
+            weight=7,       # 加粗一点覆盖在原路线上更清晰
+            opacity=0.9
+        ).add_to(ele_group)
+        
+        # 将彩色图例添加到地图右下角
+        colormap.caption = '海拔高度 (米)'
+        colormap.add_to(m)
+        
         ele_group.add_to(m)
+        # 添加图层控制，允许用户在右上角自由切换路段/海拔图层
         folium.LayerControl(position='topright').add_to(m)
-    
+        
     # 添加起点标记
     try:
         folium.Marker(
