@@ -1168,6 +1168,20 @@
               </div>
               <img id="routeMap" class="map-image" alt="路线地图" style="display: none;">
             </div>
+
+            <!-- 海拔剖面图 -->
+            <div id="elevationSection" style="margin-bottom: 24px; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #2d3748; font-size: 1.2em;">🏔️ 海拔与坡度剖面</h3>
+                <div style="font-size: 0.85em; color: #718096; background: #e2e8f0; padding: 4px 8px; border-radius: 4px;">
+                  累计爬升: <span id="total_climb_val" style="font-weight: bold; color: #e53e3e;">--</span> m | 
+                  最高海拔: <span id="max_ele_val" style="font-weight: bold; color: #e53e3e;">--</span> m
+                </div>
+              </div>
+              <div style="position: relative; width: 100%; height: 200px;">
+                <canvas id="elevationChart"></canvas>
+              </div>
+            </div>
             
             <!-- 路线统计 -->
             <div class="route-stats">
@@ -1236,7 +1250,7 @@
       <!-- 路段分析面板 -->
       <div class="analysis-panel" id="analysisSection" style="display: none;">
         <div class="analysis-section">
-          <h3>📈 跄段类型分析</h3>
+          <h3>📈 路段类型分析</h3>
           <div style="position: relative; width: 100%; height: 320px; margin-top: 20px;">
             <canvas id="roadTypeChart"></canvas>
           </div>
@@ -1253,6 +1267,10 @@
         <div class="analysis-section">
           <h3>📋 详细路段信息</h3>
           <div id="stepsList" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+        
+        <div class="analysis-section" style="text-align: center; color: #a0aec0; font-size: 0.8em; margin-top: 20px; border-top: 1px solid #edf2f7; padding-top: 15px;">
+          <p>💾 本地海拔DEM数据缓存占用: <span id="cache_size_val">0</span> MB / 10GB (超过10GB将自动清理)</p>
         </div>
       </div>
     </div>
@@ -2416,6 +2434,85 @@ function displayResults(data) {
     document.getElementById('routeMap').style.display = 'block';
     document.getElementById('mapLoading').style.display = 'none';
     document.getElementById('foliumMapContainer').style.display = 'none';
+  }
+
+  // 海拔数据渲染
+  if (data.elevation) {
+    document.getElementById('elevationSection').style.display = 'block';
+    document.getElementById('total_climb_val').textContent = data.elevation.total_climb_m;
+    document.getElementById('max_ele_val').textContent = data.elevation.max_ele_m;
+    document.getElementById('cache_size_val').textContent = data.elevation.cache_size_mb;
+    
+    // 绘制海拔图
+    if (data.elevation.profile && data.elevation.profile.length > 0) {
+      if (window.elevationChartInstance) {
+        window.elevationChartInstance.destroy();
+      }
+      const ctx = document.getElementById('elevationChart').getContext('2d');
+      const labels = data.elevation.profile.map(pt => pt.distance_km + 'km');
+      const eleData = data.elevation.profile.map(pt => pt.ele);
+      
+      // 创建渐变效果（根据Y轴海拔高度，顶部红，中间黄绿，底部蓝）
+      const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+      gradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');       // 高海拔：红
+      gradient.addColorStop(0.3, 'rgba(255, 165, 0, 0.8)');   // 橙
+      gradient.addColorStop(0.6, 'rgba(0, 255, 0, 0.8)');     // 中海拔：绿
+      gradient.addColorStop(1, 'rgba(0, 0, 255, 0.8)');       // 低海拔：蓝
+
+      const bgGradient = ctx.createLinearGradient(0, 0, 0, 200);
+      bgGradient.addColorStop(0, 'rgba(255, 0, 0, 0.2)');
+      bgGradient.addColorStop(0.3, 'rgba(255, 165, 0, 0.2)');
+      bgGradient.addColorStop(0.6, 'rgba(0, 255, 0, 0.2)');
+      bgGradient.addColorStop(1, 'rgba(0, 0, 255, 0.2)');
+
+      window.elevationChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '海拔 (m)',
+            data: eleData,
+            borderColor: gradient,
+            backgroundColor: bgGradient,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 0,           // 隐藏点
+            pointHoverRadius: 4       // hover时显示点
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: function(context) {
+                  return '距离: ' + context[0].label;
+                },
+                label: function(context) {
+                  return '海拔: ' + context.parsed.y + ' m';
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { maxTicksLimit: 10 }
+            },
+            y: {
+              title: { display: true, text: '海拔 (米)' },
+              suggestedMin: Math.floor(Math.min(...eleData) / 100) * 100, // 向下取整到百位
+              suggestedMax: Math.ceil(Math.max(...eleData) / 100) * 100   // 向上取整到百位
+            }
+          }
+        }
+      });
+    }
+  } else {
+    document.getElementById('elevationSection').style.display = 'none';
   }
 
   document.getElementById('results').style.display = 'block';

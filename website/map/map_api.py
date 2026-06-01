@@ -9,8 +9,15 @@ import math
 import folium
 import io
 import sqlite3
+import shutil
+import time
 from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime, timezone
+
+try:
+    import srtm
+except ImportError:
+    print("Warning: srtm module is not installed")
 
 bp = Blueprint('map', __name__, url_prefix='/api/map')
 
@@ -467,18 +474,142 @@ def analyze_route_types(route_data):
 # 坐标转换函数
 # ========================
 
-def bd09_to_wgs84(bd_lat, bd_lng):
+def bd09_to_gcj02(bd_lat, bd_lng):
     """
-    将百度坐标 (BD09) 转换为 WGS84 坐标
+    将百度坐标 (BD09) 转换为 GCJ02 (高德/腾讯) 坐标
     """
     x_pi = 3.14159265358979324 * 3000.0 / 180.0
     z = math.sqrt(bd_lng * bd_lng + bd_lat * bd_lat) + 0.00002 * math.sin(bd_lat * x_pi)
     theta = math.atan2(bd_lat, bd_lng) + 0.000003 * math.cos(bd_lng * x_pi)
-    wgs_lng = z * math.cos(theta) - 0.0065
-    wgs_lat = z * math.sin(theta) - 0.006
-    return wgs_lat, wgs_lng
+    gcj_lng = z * math.cos(theta) - 0.0065
+    gcj_lat = z * math.sin(theta) - 0.006
+    return gcj_lat, gcj_lng
 
-def generate_folium_map(route_data, origin_info, destination_info, waypoints_info=None, waypoint_addresses=None):
+def bd09_to_wgs84(bd_lat, bd_lng):
+    """
+    将百度坐标 (BD09) 转换为 WGS84 坐标 (两步走)
+    """
+    gcj_lat, gcj_lng = bd09_to_gcj02(bd_lat, bd_lng)
+    
+    # gcj02 to wgs84
+    ee = 0.00669342162296594323
+    a = 6378245.0
+    pi = 3.1415926535897932384626
+    
+    def transformlat(lng, lat):
+        ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * math.sqrt(math.fabs(lng))
+        ret += (20.0 * math.sin(6.0 * lng * pi) + 20.0 * math.sin(2.0 * lng * pi)) * 2.0 / 3.0
+        ret += (20.0 * math.sin(lat * pi) + 40.0 * math.sin(lat / 3.0 * pi)) * 2.0 / 3.0
+        ret += (160.0 * math.sin(lat / 12.0 * pi) + 320 * math.sin(lat * pi / 30.0)) * 2.0 / 3.0
+        return ret
+
+    def transformlng(lng, lat):
+        ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * math.sqrt(math.fabs(lng))
+        ret += (20.0 * math.sin(6.0 * lng * pi) + 20.0 * math.sin(2.0 * lng * pi)) * 2.0 / 3.0
+        ret += (20.0 * math.sin(lng * pi) + 40.0 * math.sin(lng / 3.0 * pi)) * 2.0 / 3.0
+        ret += (150.0 * math.sin(lng / 12.0 * pi) + 300.0 * math.sin(lng / 30.0 * pi)) * 2.0 / 3.0
+        return ret
+        
+    dlat = transformlat(gcj_lng - 105.0, gcj_lat - 35.0)
+    dlng = transformlng(gcj_lng - 105.0, gcj_lat - 35.0)
+    radlat = gcj_lat / 180.0 * pi
+    magic = math.sin(radlat)
+    magic = 1 - ee * magic * magic
+    sqrtmagic = math.sqrt(magic)
+    dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * pi)
+    dlng = (dlng * 180.0) / (a / sqrtmagic * math.cos(radlat) * pi)
+    mglat = gcj_lat + dlat
+    mglng = gcj_lng + dlng
+    
+    return gcj_lat * 2 - mglat, gcj_lng * 2 - mglng
+
+def haversine_distance(lon1, lat1, lon2, lat2):
+    R = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2) * math.sin(dlam/2)**2
+    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1-a)))
+
+# === WGS84 to GCJ02 (用于从WGS84插值点还原到高德底图绘制) ===
+def wgs84_to_gcj02(lng, lat):
+    ee = 0.00669342162296594323
+    a = 6378245.0
+    pi = 3.1415926535897932384626
+    def transformlat(lng, lat):
+        ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * math.sqrt(math.fabs(lng))
+        ret += (20.0 * math.sin(6.0 * lng * pi) + 20.0 * math.sin(2.0 * lng * pi)) * 2.0 / 3.0
+        ret += (20.0 * math.sin(lat * pi) + 40.0 * math.sin(lat / 3.0 * pi)) * 2.0 / 3.0
+        ret += (160.0 * math.sin(lat / 12.0 * pi) + 320 * math.sin(lat * pi / 30.0)) * 2.0 / 3.0
+        return ret
+    def transformlng(lng, lat):
+        ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * math.sqrt(math.fabs(lng))
+        ret += (20.0 * math.sin(6.0 * lng * pi) + 20.0 * math.sin(2.0 * lng * pi)) * 2.0 / 3.0
+        ret += (20.0 * math.sin(lng * pi) + 40.0 * math.sin(lng / 3.0 * pi)) * 2.0 / 3.0
+        ret += (150.0 * math.sin(lng / 12.0 * pi) + 300.0 * math.sin(lng / 30.0 * pi)) * 2.0 / 3.0
+        return ret
+    
+    dlat = transformlat(lng - 105.0, lat - 35.0)
+    dlng = transformlng(lng - 105.0, lat - 35.0)
+    radlat = lat / 180.0 * pi
+    magic = math.sin(radlat)
+    magic = 1 - ee * magic * magic
+    sqrtmagic = math.sqrt(magic)
+    dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * pi)
+    dlng = (dlng * 180.0) / (a / sqrtmagic * math.cos(radlat) * pi)
+    mglat = lat + dlat
+    mglng = lng + dlng
+    return mglat, mglng
+
+def interpolate_line(points, interval=50):
+    if not points: return []
+    sampled = [points[0]]
+    for i in range(1, len(points)):
+        p1, p2 = points[i-1], points[i]
+        dist = haversine_distance(p1[0], p1[1], p2[0], p2[1])
+        if dist > interval:
+            steps = int(dist // interval)
+            for j in range(1, steps + 1):
+                fraction = j / (steps + 1)
+                new_lon = p1[0] + (p2[0] - p1[0]) * fraction
+                new_lat = p1[1] + (p2[1] - p1[1]) * fraction
+                sampled.append((new_lon, new_lat))
+        sampled.append(p2)
+    return sampled
+
+import colorsys
+
+def check_and_clean_srtm_cache(cache_dir, limit_gb=10):
+    """检查 SRTM 缓存大小，如果超过限制则清理"""
+    if not os.path.exists(cache_dir):
+        return 0
+    
+    total_size = 0
+    for dirpath, _, filenames in os.walk(cache_dir):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+                
+    if total_size > limit_gb * 1024 * 1024 * 1024:
+        print(f"⚠️ SRTM 缓存超过 {limit_gb}GB，执行清空...")
+        shutil.rmtree(cache_dir)
+        os.makedirs(cache_dir)
+        return 0
+    
+    return total_size
+
+def get_elevation_color(elevation, min_ele, max_ele):
+    """根据海拔返回彩虹颜色分布 (蓝 -> 绿 -> 黄 -> 红)"""
+    if max_ele == min_ele:
+        return '#00FF00'
+    ratio = (elevation - min_ele) / (max_ele - min_ele)
+    # hue从0.66(蓝色240度) 变化到 0.0(红色0度)
+    h = (1.0 - ratio) * 0.666
+    r, g, b = colorsys.hsv_to_rgb(h, 1.0, 1.0)
+    return f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}'
+
+def generate_folium_map(route_data, origin_info, destination_info, waypoints_info=None, waypoint_addresses=None, elevation_data_list=None):
     """
     使用folium生成交互式地图HTML
     返回: HTML字符串
@@ -503,9 +634,9 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     origin_lat, origin_lng = float(origin_parts[0]), float(origin_parts[1])
     dest_lat, dest_lng = float(dest_parts[0]), float(dest_parts[1])
     
-    # 转换坐标到 WGS84
-    origin_lat, origin_lng = bd09_to_wgs84(origin_lat, origin_lng)
-    dest_lat, dest_lng = bd09_to_wgs84(dest_lat, dest_lng)
+    # 修改为使用 GCJ02 (适配高德底图)，解决不重合和不显示起点的问题
+    origin_lat, origin_lng = bd09_to_gcj02(origin_lat, origin_lng)
+    dest_lat, dest_lng = bd09_to_gcj02(dest_lat, dest_lng)
     
     # 计算地图中心
     center_lat = (origin_lat + dest_lat) / 2
@@ -545,6 +676,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     steps = route_data.get('steps', [])
     valid_segments = 0
     
+    # 原始地图路段（根据 road_type 画不同颜色）
     for idx, step in enumerate(steps):
         try:
             distance_km = step.get('distance', 0) / 1000
@@ -552,20 +684,18 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
             road_type = int(step.get('road_type', 6))
             instruction = step.get('instruction', '').replace('<b>', '').replace('</b>', '')
             
-            # 使用 path 字段而不是 polyline
             polyline = step.get('path', '')
             if not polyline:
                 continue
             
-            # 解析坐标：格式为 "lng,lat;lng,lat;..."
             try:
                 coords = []
                 for point_str in polyline.split(';'):
                     if point_str.strip():
                         lng, lat = point_str.split(',')
-                        # 转换百度坐标到 WGS84
-                        wgs_lat, wgs_lng = bd09_to_wgs84(float(lat), float(lng))
-                        coords.append([wgs_lat, wgs_lng])
+                        # 底图使用GCJ02渲染，解决偏移
+                        gcj_lat, gcj_lng = bd09_to_gcj02(float(lat), float(lng))
+                        coords.append([gcj_lat, gcj_lng])
                 
                 if len(coords) < 2:
                     continue
@@ -577,7 +707,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                 folium.PolyLine(
                     coords,
                     color=color,
-                    weight=3,
+                    weight=5,
                     opacity=0.8,
                     popup=f"<b>第 {idx + 1} 段 - {road_name}</b><br/>{distance_km:.2f} km | {duration_min:.0f} 分钟<br/>{instruction[:50]}",
                     tooltip=f"{road_name}: {distance_km:.2f} km"
@@ -592,6 +722,36 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         except Exception as e:
             print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
             continue
+
+    # 添加一个可选的海拔图层
+    if elevation_data_list and len(elevation_data_list) > 1:
+        ele_group = folium.FeatureGroup(name='海拔颜色分布 (高到低: 红到蓝)', show=False)
+        elevations = [pt['ele'] for pt in elevation_data_list]
+        min_ele = min(elevations)
+        max_ele = max(elevations)
+        
+        # 优化性能：将彩虹高程绘制抽稀到最多300根短线
+        step_sz = max(1, len(elevation_data_list) // 300)
+        chart_elevation_list = elevation_data_list[::step_sz]
+        
+        for i in range(len(chart_elevation_list) - 1):
+            pt1 = chart_elevation_list[i]
+            pt2 = chart_elevation_list[i+1]
+            avg_ele = (pt1['ele'] + pt2['ele']) / 2
+            color = get_elevation_color(avg_ele, min_ele, max_ele)
+            
+            # 使用 wgs84的坐标转换为 gcj02以使得能够在高德地图上对齐
+            # 注意之前存入elevation_data_list的是 WGS84 的 lat 和 lng
+            # 但其实 Folium 上的底图是 GCJ-02，这里我们要特殊做一下反向转换或者只存经纬度
+            
+            folium.PolyLine(
+                [[pt1['gcj_lat'], pt1['gcj_lng']], [pt2['gcj_lat'], pt2['gcj_lng']]],
+                color=color,
+                weight=6,
+                opacity=1.0,
+            ).add_to(ele_group)
+        ele_group.add_to(m)
+        folium.LayerControl(position='topright').add_to(m)
     
     # 添加起点标记
     try:
@@ -617,7 +777,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
 
                 wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
-                wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
+                wp_lat, wp_lng = bd09_to_gcj02(wp_lat, wp_lng)
                 
                 folium.Marker(
                     location=[wp_lat, wp_lng],
@@ -654,7 +814,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                     
                 wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
-                wp_lat, wp_lng = bd09_to_wgs84(wp_lat, wp_lng)
+                wp_lat, wp_lng = bd09_to_gcj02(wp_lat, wp_lng)
                 all_lats.append(wp_lat)
                 all_lngs.append(wp_lng)
             except:
@@ -669,9 +829,9 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                 for point_str in polyline.split(';'):
                     if point_str.strip():
                         lng, lat = point_str.split(',')
-                        wgs_lat, wgs_lng = bd09_to_wgs84(float(lat), float(lng))
-                        all_lats.append(wgs_lat)
-                        all_lngs.append(wgs_lng)
+                        gcj_lat, gcj_lng = bd09_to_gcj02(float(lat), float(lng))
+                        all_lats.append(gcj_lat)
+                        all_lngs.append(gcj_lng)
         except:
             pass
     
@@ -711,8 +871,8 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     
     # 添加控制面板（显示/隐藏路段类型按钮）
     control_html = '''
-    <div style="position: fixed; 
-                top: 10px; right: 10px; z-index:10000;">
+    <div style="position: absolute; display: flex; gap: 10px;
+                top: 10px; right: 60px; z-index:9999;">
         <button id="toggleLegend" onclick="toggleMapLegend()" style="
             padding: 8px 12px;
             background-color: #667eea;
@@ -839,12 +999,90 @@ def route():
         config = data.get("config") or load_config()
         distance_km, duration_min, toll, oil_cost, other_cost, total_cost, breakdown, electric_cost, electric_total_cost = calculate_route_cost(route_data, config)
         
+        # -----------------------------
+        # 高程插值与查询
+        # -----------------------------
+        elevation_data_list = []
+        total_climb = 0.0
+        max_ele = 0.0
+        min_ele = 0.0
+        cache_size_gb = 0.0
+        cache_size_bytes = 0
+        
+        try:
+            raw_points_bd09 = []
+            steps = route_data.get("steps", [])
+            for step in steps:
+                path_str = step.get("path", "")
+                if not path_str: continue
+                for pt_str in path_str.split(";"):
+                    if not pt_str.strip(): continue
+                    lng_str, lat_str = pt_str.split(",")
+                    lon, lat = float(lng_str), float(lat_str)
+                    if not raw_points_bd09 or raw_points_bd09[-1] != (lon, lat):
+                        raw_points_bd09.append((lon, lat))
+            
+            if raw_points_bd09 and 'srtm' in globals():
+                # 转换坐标
+                points_wgs84 = []
+                for lon, lat in raw_points_bd09:
+                    wgs_lat, wgs_lng = bd09_to_wgs84(lat, lon)
+                    points_wgs84.append((wgs_lng, wgs_lat)) # lon, lat格式
+                
+                # 插值
+                sampled_points = interpolate_line(points_wgs84, interval=100) # 采样间距100m
+                
+                # 初始化SRTM
+                # SRTM 默认会缓存到 ~/.cache/srtm，我们查验并清理这个目录
+                cache_dir = os.path.expanduser('~/.cache/srtm')
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_size_bytes = check_and_clean_srtm_cache(cache_dir, limit_gb=10)
+                
+                elevation_data = srtm.get_data()
+                
+                last_ele = None
+                distance_acc = 0.0
+                elevations = []
+                
+                for i, (wgs_lon, wgs_lat) in enumerate(sampled_points):
+                    ele = elevation_data.get_elevation(wgs_lat, wgs_lon)
+                    if ele is None: ele = 0
+                    elevations.append(ele)
+                    
+                    if i > 0:
+                        prev_lon, prev_lat = sampled_points[i-1]
+                        dist = haversine_distance(prev_lon, prev_lat, wgs_lon, wgs_lat)
+                        distance_acc += dist
+                    
+                    # 额外转换一份 GCJ02 提供给 Folium 从 WGS84 投影到底图
+                    gcj_lat, gcj_lon = wgs84_to_gcj02(wgs_lon, wgs_lat)
+                    
+                    elevation_data_list.append({
+                        "distance_km": round(distance_acc / 1000, 2),
+                        "ele": ele,
+                        "lat": wgs_lat,
+                        "lng": wgs_lon,
+                        "gcj_lat": gcj_lat,
+                        "gcj_lng": gcj_lon
+                    })
+                    
+                    if last_ele is not None and ele > last_ele:
+                        total_climb += (ele - last_ele)
+                    last_ele = ele
+                
+                if elevations:
+                    max_ele = max(elevations)
+                    min_ele = min(elevations)
+                    
+        except Exception as e:
+            print(f"⚠️ 高程计算失败: {e}")
+
         # 生成地图URL
         map_url = generate_static_map(origin_coords, dest_coords, wp_coords)
         
-        # 生成folium交互式地图（传入waypoints和waypoint_addresses）
+        # 生成folium交互式地图（传入waypoints和waypoint_addresses, 并带高程数据用于上色）
         try:
-            map_html = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs, waypoint_addresses)
+            map_html = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs, waypoint_addresses, elevation_data_list=elevation_data_list)
         except Exception as e:
             print(f"❌ 生成folium地图失败: {e}")
             map_html = None
@@ -860,6 +1098,12 @@ def route():
         
         # 分析路段类型
         road_type_analysis = analyze_route_types(route_data)
+        
+        # 只取部分 elevation nodes 返回前端（抽稀到最多300个点绘图，否则前端太卡）
+        chart_elevation_list = []
+        if elevation_data_list:
+            step_size = max(1, len(elevation_data_list) // 300)
+            chart_elevation_list = elevation_data_list[::step_size]
         
         result = {
             "status": "ok",
@@ -878,7 +1122,14 @@ def route():
             "electric_total_cost": electric_total_cost,
             "origin_detail": origin_obj if isinstance(origin_obj, dict) else {},
             "dest_detail": dest_obj if isinstance(dest_obj, dict) else {},
-            "waypoints_detail": [wp for wp in waypoints_objs if isinstance(wp, dict)]
+            "waypoints_detail": [wp for wp in waypoints_objs if isinstance(wp, dict)],
+            "elevation": {
+                "profile": chart_elevation_list,
+                "total_climb_m": round(total_climb, 1),
+                "max_ele_m": round(max_ele, 1),
+                "min_ele_m": round(min_ele, 1),
+                "cache_size_mb": round(cache_size_bytes / (1024 * 1024), 2)
+            }
         }
         
         # 保存到历史记录（包含地址信息）
