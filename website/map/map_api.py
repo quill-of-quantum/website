@@ -724,7 +724,8 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
             print(f"⚠️ 路段 {idx + 1} 处理异常: {e}")
             continue
 
-# 添加一个可选的海拔图层 (彩虹色阶)
+    ele_var_name = None  # 👈 新增：先初始化变量
+    # 添加一个可选的海拔图层 (彩虹色阶)
     if elevation_data_list and len(elevation_data_list) > 1:
         # 改为默认显示 (show=True)
         ele_group = folium.FeatureGroup(name='🌈 海拔彩虹路线 (紫低红高)', show=True)
@@ -767,7 +768,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         
         ele_group.add_to(m)
         # 添加图层控制，允许用户在右上角自由切换路段/海拔图层
-        folium.LayerControl(position='topright').add_to(m)
+        ele_var_name = ele_group.get_name()
         
     # 添加起点标记
     try:
@@ -886,9 +887,98 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     m.get_root().html.add_child(folium.Element(legend_html))
     
     # 添加控制面板（显示/隐藏路段类型按钮）
-    control_html = '''
+# 获取底图的 JS 变量名
+    map_var_name = m.get_name()
+    
+    # 如果有海拔数据，动态生成海拔开关按钮和 JS 逻辑
+    ele_btn_html = ""
+    ele_js = ""
+    if ele_var_name:
+        ele_btn_html = f'''
+        <button id="toggleEleBtn" onclick="toggleElevationLayer()" style="
+            padding: 8px 12px;
+            background-color: #e53e3e;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 12px;
+            display: block;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        " onmouseover="this.style.transform='scale(1.05)'" 
+           onmouseout="this.style.transform='scale(1)'">
+            🌈 海拔开关
+        </button>
+        '''
+        ele_js = f'''
+        // 延迟执行以确保 Leaflet 地图和图例完全加载
+        setTimeout(function() {{
+            var eleBtn = document.getElementById('toggleEleBtn');
+            if (!eleBtn) return;
+            eleBtn.dataset.active = 'true'; // 初始状态为开启
+            
+            // 【核心逻辑】寻找并控制海拔图例
+            var colormapContainer = null;
+            var allSvgs = document.querySelectorAll('svg');
+            for (var i = 0; i < allSvgs.length; i++) {{
+                // 找到带有我们标题文字的 SVG
+                if (allSvgs[i].textContent.includes('海拔高度')) {{
+                    // 获取 Folium 自动生成的图例外层容器
+                    colormapContainer = allSvgs[i].closest('.leaflet-control') || allSvgs[i];
+                    
+                    // 1. 解决重叠：将图例往下推 50px
+                    colormapContainer.style.marginTop = '50px';
+                    
+                    // 2. 解决响应式缩放：利用 CSS Transform 缩放适配小屏幕
+                    colormapContainer.style.transformOrigin = 'top right';
+                    if (window.innerWidth <= 768) {{
+                        colormapContainer.style.transform = 'scale(0.75)';
+                    }} else {{
+                        colormapContainer.style.transform = 'scale(1)';
+                    }}
+                    
+                    // 监听窗口大小改变，动态缩放图例
+                    window.addEventListener('resize', function() {{
+                        if (window.innerWidth <= 768) {{
+                            colormapContainer.style.transform = 'scale(0.75)';
+                        }} else {{
+                            colormapContainer.style.transform = 'scale(1)';
+                        }}
+                    }});
+                    
+                    break;
+                }}
+            }}
+            
+            // 绑定按钮点击事件
+            window.toggleElevationLayer = function() {{
+                var myMap = {map_var_name};
+                var eleLayer = {ele_var_name};
+                
+                if (eleBtn.dataset.active === 'true') {{
+                    // 关闭图层和图例
+                    myMap.removeLayer(eleLayer);
+                    eleBtn.dataset.active = 'false';
+                    eleBtn.style.background = '#a0aec0'; // 变灰
+                    if (colormapContainer) colormapContainer.style.display = 'none'; // 隐藏图例
+                }} else {{
+                    // 开启图层和图例
+                    myMap.addLayer(eleLayer);
+                    eleBtn.dataset.active = 'true';
+                    eleBtn.style.background = '#e53e3e'; // 变红
+                    if (colormapContainer) colormapContainer.style.display = 'block'; // 显示图例
+                }}
+            }};
+        }}, 1000);
+        '''
+
+    # 构建并排的两个控制按钮（Flex 布局）
+    control_html = f'''
     <div style="position: absolute; display: flex; gap: 10px;
-                top: 10px; right: 60px; z-index:9999;">
+                top: 10px; right: 10px; z-index:9999;">
+        {ele_btn_html}
         <button id="toggleLegend" onclick="toggleMapLegend()" style="
             padding: 8px 12px;
             background-color: #667eea;
@@ -901,24 +991,25 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
             display: block;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             transition: all 0.3s ease;
-        " onmouseover="this.style.background='#764ba2'; this.style.transform='scale(1.05)'" 
-           onmouseout="this.style.background='#667eea'; this.style.transform='scale(1)'">
+        " onmouseover="this.style.transform='scale(1.05)'" 
+           onmouseout="this.style.transform='scale(1)'">
             🛣️ 路段类型
         </button>
     </div>
     
     <script>
-    function toggleMapLegend() {
+    function toggleMapLegend() {{
         const legendDiv = document.getElementById('mapLegend');
         const btn = document.getElementById('toggleLegend');
-        if (legendDiv.style.display === 'none') {
+        if (legendDiv.style.display === 'none') {{
             legendDiv.style.display = 'block';
             btn.style.background = '#38b000';
-        } else {
+        }} else {{
             legendDiv.style.display = 'none';
             btn.style.background = '#667eea';
-        }
-    }
+        }}
+    }}
+    {ele_js}
     </script>
     '''
     
