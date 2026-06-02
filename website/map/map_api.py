@@ -731,7 +731,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         ele_group = folium.FeatureGroup(name='🌈 海拔彩虹路线 (紫低红高)', show=True)
         
         # 为了防止路线过长导致浏览器卡顿，这里保留抽稀逻辑，ColorLine 性能较好，放宽到 500 个点
-        step_sz = max(1, len(elevation_data_list) // 500)
+        step_sz = max(1, len(elevation_data_list) // 5000)
         chart_elevation_list = elevation_data_list[::step_sz]
         
         # 提取坐标点和对应的海拔高度
@@ -741,16 +741,34 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         min_ele = min(elevations)
         max_ele = max(elevations)
         
-        # 防止平路导致除数为0的错误
-        if min_ele == max_ele:
-            max_ele += 1
+        # 1. 对齐前端的 Y 轴极值算法 (向上下取百位整数)
+        import math
+        chart_min_ele = math.floor(min_ele / 100.0) * 100
+        chart_max_ele = math.ceil(max_ele / 100.0) * 100
+        
+        if chart_min_ele == chart_max_ele:
+            chart_max_ele += 100
             
-        # 定义与前端 Chart.js 完全对应的彩虹色阶
-        # 紫(最低) -> 蓝 -> 青 -> 绿 -> 黄 -> 橙 -> 红(最高)
+        ele_range = chart_max_ele - chart_min_ele
+        
+        # 2. 精确匹配前端 Canvas 渐变停靠点 (从低到高排列)
+        # 前端从上(红)到下(紫)比例为: 0, 0.15, 0.3, 0.5, 0.65, 0.8, 1
+        color_index = [
+            chart_min_ele,                               # 紫 (最低点)
+            chart_min_ele + ele_range * (1 - 0.80),      # 蓝
+            chart_min_ele + ele_range * (1 - 0.65),      # 青
+            chart_min_ele + ele_range * (1 - 0.50),      # 绿
+            chart_min_ele + ele_range * (1 - 0.30),      # 黄
+            chart_min_ele + ele_range * (1 - 0.15),      # 橙
+            chart_max_ele                                # 红 (最高点)
+        ]
+        
+        # 生成完全对齐的色带
         colormap = cm.LinearColormap(
             colors=['#8b00ff', '#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff7f00', '#ff0000'],
-            vmin=min_ele,
-            vmax=max_ele
+            index=color_index,
+            vmin=chart_min_ele,
+            vmax=chart_max_ele
         )
         
         # 使用 ColorLine 自动根据海拔上色
@@ -1151,9 +1169,21 @@ def route():
                 distance_acc = 0.0
                 elevations = []
                 
+                # 新增：用于记录上一个有效的高程数据
+                last_valid_ele = None 
+                
                 for i, (wgs_lon, wgs_lat) in enumerate(sampled_points):
                     ele = elevation_data.get_elevation(wgs_lat, wgs_lon)
-                    if ele is None: ele = 0
+                    
+                    # 🚀 核心修复：处理雷达数据盲区 (None)
+                    if ele is None:
+                        if last_valid_ele is not None:
+                            ele = last_valid_ele  # 沿用上一个有效点的海拔
+                        else:
+                            ele = 0  # 如果极端情况下连起点都没有数据，才用 0 兜底
+                    else:
+                        last_valid_ele = ele  # 更新最新有效海拔
+                        
                     elevations.append(ele)
                     
                     if i > 0:
@@ -1209,7 +1239,7 @@ def route():
         # 只取部分 elevation nodes 返回前端（抽稀到最多300个点绘图，否则前端太卡）
         chart_elevation_list = []
         if elevation_data_list:
-            step_size = max(1, len(elevation_data_list) // 300)
+            step_size = max(1, len(elevation_data_list) // 3000)
             chart_elevation_list = elevation_data_list[::step_size]
         
         result = {
