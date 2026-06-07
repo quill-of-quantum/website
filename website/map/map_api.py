@@ -904,113 +904,209 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     
     m.get_root().html.add_child(folium.Element(legend_html))
     
-    # 添加控制面板（显示/隐藏路段类型按钮）
-# 获取底图的 JS 变量名
+# === 提前计算好 WGS84 的区域边界，注入给前端备用 ===
+    topo_bounds_json = "null"
+    if elevation_data_list and len(elevation_data_list) > 1:
+        wgs_lats = [pt['lat'] for pt in chart_elevation_list]
+        wgs_lngs = [pt['lng'] for pt in chart_elevation_list]
+        min_wlat, max_wlat = min(wgs_lats), max(wgs_lats)
+        min_wlng, max_wlng = min(wgs_lngs), max(wgs_lngs)
+        lat_margin = max((max_wlat - min_wlat) * 0.5, 0.02)
+        lng_margin = max((max_wlng - min_wlng) * 0.5, 0.02)
+        
+        import json
+        topo_bounds_json = json.dumps({
+            "min_lat": min_wlat - lat_margin,
+            "max_lat": max_wlat + lat_margin,
+            "min_lng": min_wlng - lng_margin,
+            "max_lng": max_wlng + lng_margin
+        })
+
+    # 获取底图的 JS 变量名
     map_var_name = m.get_name()
     
-    # 如果有海拔数据，动态生成海拔开关按钮和 JS 逻辑
     ele_btn_html = ""
-    ele_js = ""
+    topo_btn_html = ""
     if ele_var_name:
         ele_btn_html = f'''
         <button id="toggleEleBtn" onclick="toggleElevationLayer()" style="
-            padding: 8px 12px;
-            background-color: #e53e3e;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 12px;
-            display: block;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            transition: all 0.3s ease;
-        " onmouseover="this.style.transform='scale(1.05)'" 
-           onmouseout="this.style.transform='scale(1)'">
-            🌈 海拔开关
+            padding: 8px 12px; background-color: #e53e3e; color: white; border: none;
+            border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s ease;
+        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            🌈 海拔线
         </button>
         '''
-        ele_js = f'''
-        // 延迟执行以确保 Leaflet 地图和图例完全加载
-        setTimeout(function() {{
-            var eleBtn = document.getElementById('toggleEleBtn');
-            if (!eleBtn) return;
-            eleBtn.dataset.active = 'true'; // 初始状态为开启
-            
-            // 【核心逻辑】寻找并控制海拔图例
-            var colormapContainer = null;
-            var allSvgs = document.querySelectorAll('svg');
-            for (var i = 0; i < allSvgs.length; i++) {{
-                // 找到带有我们标题文字的 SVG
-                if (allSvgs[i].textContent.includes('海拔高度')) {{
-                    // 获取 Folium 自动生成的图例外层容器
-                    colormapContainer = allSvgs[i].closest('.leaflet-control') || allSvgs[i];
-                    
-                    // 1. 解决重叠：将图例往下推 50px
-                    colormapContainer.style.marginTop = '50px';
-                    
-                    // 2. 解决响应式缩放：利用 CSS Transform 缩放适配小屏幕
-                    colormapContainer.style.transformOrigin = 'top right';
-                    if (window.innerWidth <= 768) {{
-                        colormapContainer.style.transform = 'scale(0.75)';
-                    }} else {{
-                        colormapContainer.style.transform = 'scale(1)';
-                    }}
-                    
-                    // 监听窗口大小改变，动态缩放图例
-                    window.addEventListener('resize', function() {{
-                        if (window.innerWidth <= 768) {{
-                            colormapContainer.style.transform = 'scale(0.75)';
-                        }} else {{
-                            colormapContainer.style.transform = 'scale(1)';
-                        }}
-                    }});
-                    
-                    break;
-                }}
-            }}
-            
-            // 绑定按钮点击事件
-            window.toggleElevationLayer = function() {{
-                var myMap = {map_var_name};
-                var eleLayer = {ele_var_name};
-                
-                if (eleBtn.dataset.active === 'true') {{
-                    // 关闭图层和图例
-                    myMap.removeLayer(eleLayer);
-                    eleBtn.dataset.active = 'false';
-                    eleBtn.style.background = '#a0aec0'; // 变灰
-                    if (colormapContainer) colormapContainer.style.display = 'none'; // 隐藏图例
-                }} else {{
-                    // 开启图层和图例
-                    myMap.addLayer(eleLayer);
-                    eleBtn.dataset.active = 'true';
-                    eleBtn.style.background = '#e53e3e'; // 变红
-                    if (colormapContainer) colormapContainer.style.display = 'block'; // 显示图例
-                }}
-            }};
-        }}, 1000);
+        topo_btn_html = f'''
+        <button id="toggleTopoBtn" onclick="toggleTopoLayer()" style="
+            padding: 8px 12px; background-color: #a0aec0; color: white; border: none;
+            border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s ease;
+        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+            🌍 区域地形
+        </button>
         '''
 
-    # 构建并排的两个控制按钮（Flex 布局）
+    ele_js = f'''
+    setTimeout(function() {{
+        var myMap = {map_var_name};
+        var eleBtn = document.getElementById('toggleEleBtn');
+        var topoBtn = document.getElementById('toggleTopoBtn');
+        var colormapContainer = null;
+        var topoLayer = null; // 存放前端渲染的地形图层
+        var grid_sz = 500;    // 👈 你可以在这里方便地调整请求的矩阵尺寸
+        
+        // 找图例并自动缩放移动
+        var allSvgs = document.querySelectorAll('svg');
+        for (var i = 0; i < allSvgs.length; i++) {{
+            if (allSvgs[i].textContent.includes('海拔高度')) {{
+                colormapContainer = allSvgs[i].closest('.leaflet-control') || allSvgs[i];
+                colormapContainer.style.marginTop = '50px';
+                colormapContainer.style.transformOrigin = 'top right';
+                if (window.innerWidth <= 768) colormapContainer.style.transform = 'scale(0.75)';
+                break;
+            }}
+        }}
+        
+        // HSL 转 RGB 的工具函数
+        function hslToRgb(h, s, l) {{
+            var r, g, b;
+            if (s == 0) {{ r = g = b = l; }} else {{
+                var hue2rgb = function(p, q, t) {{
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                }};
+                var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                var p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }}
+            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        }}
+        
+        if (eleBtn) {{
+            eleBtn.dataset.active = 'true';
+            window.toggleElevationLayer = function() {{
+                var eleLayer = {ele_var_name if ele_var_name else 'null'};
+                if (!eleLayer) return;
+                if (eleBtn.dataset.active === 'true') {{
+                    myMap.removeLayer(eleLayer);
+                    eleBtn.dataset.active = 'false';
+                    eleBtn.style.background = '#a0aec0';
+                    if (colormapContainer) colormapContainer.style.display = 'none';
+                }} else {{
+                    myMap.addLayer(eleLayer);
+                    eleBtn.dataset.active = 'true';
+                    eleBtn.style.background = '#e53e3e';
+                    if (colormapContainer) colormapContainer.style.display = 'block';
+                }}
+            }};
+        }}
+        
+        if (topoBtn) {{
+            topoBtn.dataset.active = 'false';
+            window.toggleTopoLayer = function() {{
+                if (topoBtn.dataset.active === 'true') {{
+                    myMap.removeLayer(topoLayer);
+                    topoBtn.dataset.active = 'false';
+                    topoBtn.style.background = '#a0aec0';
+                }} else {{
+                    // 如果还未加载，则发起请求
+                    if (!topoLayer) {{
+                        var bounds = {topo_bounds_json};
+                        if (!bounds) return;
+                        
+                        topoBtn.innerHTML = '⏳ 加载中...';
+                        topoBtn.style.background = '#d69e2e';
+                        
+                        fetch('/api/map/topo', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{bounds: bounds, grid_size: grid_sz}})
+                        }}).then(r => r.json()).then(data => {{
+                            // 前端创建不可见 Canvas 进行极速像素渲染
+                            var canvas = document.createElement('canvas');
+                            canvas.width = grid_sz;
+                            canvas.height = grid_sz;
+                            var ctx = canvas.getContext('2d');
+                            var imgData = ctx.createImageData(grid_sz, grid_sz);
+                            
+                            var min = data.min_ele;
+                            var max = data.max_ele;
+                            if (min === max) max += 100;
+                            
+                            // 🚀 核心修复：建立视觉均匀的分段色阶 (红,橙,黄,绿,青,蓝,紫对应的 Hue 值)
+                            var stops = [0, 30, 60, 120, 180, 240, 270]; 
+                            
+                            for (var r = 0; r < grid_sz; r++) {{
+                                for (var c = 0; c < grid_sz; c++) {{
+                                    var val = data.grid[r][c];
+                                    var ratio = (val - min) / (max - min);
+                                    if (ratio < 0) ratio = 0; if (ratio > 1) ratio = 1;
+                                    
+                                    // 强制将数据比例等分成 6 个视觉区间进行插值
+                                    var revRatio = 1 - ratio; // 反转，0为最高海拔(红)，1为最低海拔(紫)
+                                    var segment = Math.floor(revRatio * 6);
+                                    var h = 270 / 360; // 默认兜底为紫色
+                                    
+                                    if (segment < 6) {{
+                                        var fraction = (revRatio * 6) - segment;
+                                        h = (stops[segment] + fraction * (stops[segment+1] - stops[segment])) / 360;
+                                    }}
+                                    
+                                    // 轻微调高明度(L)，让红黄暖色调在地图底色上更通透
+                                    var rgb = hslToRgb(h, 1, 0.55);
+                                    
+                                    var canvasY = (grid_sz - 1) - r;
+                                    var idx = (canvasY * grid_sz + c) * 4;
+                                    imgData.data[idx] = rgb[0];
+                                    imgData.data[idx+1] = rgb[1];
+                                    imgData.data[idx+2] = rgb[2];
+                                    // 适度提高基础不透明度，让高海拔暖色更扎实
+                                    imgData.data[idx+3] = 140; 
+                                }}
+                            }}
+                            ctx.putImageData(imgData, 0, 0);
+                            
+                            // 生成 Base64 并盖到 Leaflet 图层上
+                            var imgUrl = canvas.toDataURL();
+                            topoLayer = L.imageOverlay(imgUrl, data.gcj_bounds, {{opacity: 0.75}});
+                            myMap.addLayer(topoLayer);
+                            
+                            topoBtn.innerHTML = '🌍 区域地形';
+                            topoBtn.dataset.active = 'true';
+                        }}).catch(err => {{
+                            console.error(err);
+                            topoBtn.innerHTML = '❌ 加载失败';
+                            setTimeout(() => {{ topoBtn.innerHTML = '🌍 区域地形'; topoBtn.style.background = '#a0aec0'; }}, 2000);
+                        }});
+                        return;
+                    }}
+                    
+                    // 已加载过，直接显示
+                    myMap.addLayer(topoLayer);
+                    topoBtn.dataset.active = 'true';
+                    topoBtn.style.background = '#d69e2e';
+                }}
+            }};
+        }}
+    }}, 1000);
+    '''
+
     control_html = f'''
-    <div style="position: absolute; display: flex; gap: 10px;
-                top: 10px; right: 10px; z-index:9999;">
+    <div style="position: absolute; display: flex; gap: 10px; top: 10px; right: 10px; z-index:9999;">
+        {topo_btn_html}
         {ele_btn_html}
         <button id="toggleLegend" onclick="toggleMapLegend()" style="
-            padding: 8px 12px;
-            background-color: #667eea;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 12px;
-            display: block;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            transition: all 0.3s ease;
-        " onmouseover="this.style.transform='scale(1.05)'" 
-           onmouseout="this.style.transform='scale(1)'">
+            padding: 8px 12px; background-color: #667eea; color: white; border: none;
+            border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s ease;
+        " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
             🛣️ 路段类型
         </button>
     </div>
@@ -1033,8 +1129,25 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     
     m.get_root().html.add_child(folium.Element(control_html))
     
-    # 返回HTML字符串
-    return m._repr_html_()
+    # === 完美填满容器且解决跨域请求的核心修复 ===
+    import html
+    
+    # 1. 获取地图纯 HTML 内容
+    html_data = m.get_root().render()
+    
+    # 2. 将 HTML 进行转义，以便安全地放入双引号中
+    escaped_html = html.escape(html_data)
+    
+    # 3. 手动构建 iframe，使用 srcdoc 属性！
+    # srcdoc 会让 iframe 完美继承父网页的域名，fetch 请求就不会被拦截了
+    iframe_html = f'''
+    <iframe srcdoc="{escaped_html}" 
+            style="width: 100%; height: 100%; border: none; margin: 0; padding: 0; display: block;"
+            allowfullscreen>
+    </iframe>
+    '''
+    
+    return iframe_html
 
 # ========================
 # API 端点
@@ -1082,6 +1195,69 @@ def geocode():
         return jsonify({"status": "ok", **coords, "address": address})
     else:
         return jsonify({"error": "地理编码失败"}), 400
+
+@bp.route('/topo', methods=['POST'])
+def get_topo():
+    """获取区域地形矩阵数据 (按需懒加载)"""
+    data = request.get_json() or {}
+    bounds = data.get('bounds')
+    grid_sz = int(data.get('grid_size', 100))  # 留好空间，默认100x100
+    
+    if not bounds:
+        return jsonify({"error": "Missing bounds"}), 400
+        
+    wlat_start = float(bounds['min_lat'])
+    wlat_end = float(bounds['max_lat'])
+    wlng_start = float(bounds['min_lng'])
+    wlng_end = float(bounds['max_lng'])
+    
+    try:
+        import srtm
+        elevation_data = srtm.get_data()
+        
+        grid = []
+        min_ele = float('inf')
+        max_ele = float('-inf')
+        
+        # 均匀计算步长
+        lat_step = (wlat_end - wlat_start) / max(1, grid_sz - 1)
+        lng_step = (wlng_end - wlng_start) / max(1, grid_sz - 1)
+        
+        last_valid_ele = 0
+        for i in range(grid_sz):
+            glat = wlat_start + i * lat_step
+            row = []
+            for j in range(grid_sz):
+                glng = wlng_start + j * lng_step
+                val = elevation_data.get_elevation(glat, glng)
+                
+                # 填补盲区数据
+                if val is None:
+                    val = last_valid_ele
+                else:
+                    last_valid_ele = val
+                    
+                row.append(val)
+                if val < min_ele: min_ele = val
+                if val > max_ele: max_ele = val
+            grid.append(row)
+            
+        if min_ele == float('inf'): 
+            min_ele, max_ele = 0, 100
+            
+        # 计算该区域贴在 Leaflet 上的 GCJ02 边界
+        sw_lat, sw_lng = wgs84_to_gcj02(wlng_start, wlat_start)
+        ne_lat, ne_lng = wgs84_to_gcj02(wlng_end, wlat_end)
+        
+        return jsonify({
+            "status": "ok",
+            "grid": grid,
+            "min_ele": min_ele,
+            "max_ele": max_ele,
+            "gcj_bounds": [[sw_lat, sw_lng], [ne_lat, ne_lng]]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/route', methods=['POST'])
 def route():

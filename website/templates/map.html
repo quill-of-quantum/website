@@ -683,6 +683,23 @@
       border-left: 4px solid #3182ce;
     }
 
+    /* 全局流体地图容器（一劳永逸版） */
+    #foliumMapContainer {
+      display: block;
+      width: 100%;
+      /* 🚀 核心魔法：像弹簧一样伸缩。最小350px，首选占屏幕高度60%，最大600px */
+      height: clamp(350px, 60vh, 600px); 
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+      border: 3px solid white;
+      margin-bottom: 24px;
+    }
+    
+    #mapLoading {
+      display: none;
+    }
+
     /* 响应式设计 */
     @media (max-width: 1200px) {
       .route-planning-layout {
@@ -922,22 +939,7 @@
       }
 
       /* 手机竖屏地图容器 */
-      #foliumMapContainer {
-        display: block !important;
-        height: 300px !important;
-        width: 100% !important;
-        border-radius: 12px !important;
-        overflow: hidden !important;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
-        border: 3px solid white !important;
-        margin-bottom: 24px !important;
-        margin: 0 !important;
-      }
 
-      /* 隐藏加载文字 */
-      #mapLoading {
-        display: none !important;
-      }
     }
 
     @media (max-width: 480px) {
@@ -1050,23 +1052,7 @@
         display: block;
       }
 
-      /* 手机竖屏地图容器 */
-      #foliumMapContainer {
-        display: block !important;
-        height: 280px !important;
-        width: 100% !important;
-        border-radius: 8px !important;
-        overflow: hidden !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.12) !important;
-        border: 2px solid white !important;
-        margin-bottom: 12px !important;
-        margin: 0 !important;
-      }
 
-      /* 隐藏加载文字 */
-      #mapLoading {
-        display: none !important;
-      }
     }
   </style>
 </head>
@@ -1163,9 +1149,8 @@
               <div id="mapLoading" style="text-align: center; padding: 40px; color: #a0aec0; display: none;">
                 加载地图中...
               </div>
-              <div id="foliumMapContainer" style="height: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.15); border: 3px solid white; margin-bottom: 24px; width: 100%;">
-                <!-- folium地图将插入这里 -->
-              </div>
+              <div id="foliumMapContainer">
+                </div>
               <img id="routeMap" class="map-image" alt="路线地图" style="display: none;">
             </div>
 
@@ -2451,7 +2436,7 @@ function displayResults(data) {
       const ctx = document.getElementById('elevationChart').getContext('2d');
       const labels = data.elevation.profile.map(pt => pt.distance_km + 'km');
       const eleData = data.elevation.profile.map(pt => pt.ele);
-      
+
       const chartHeight = ctx.canvas.clientHeight || 200;
       // 创建渐变效果（根据Y轴海拔高度，顶部红，中间黄绿，底部蓝）
       const gradient = ctx.createLinearGradient(0, 0, 0, chartHeight);
