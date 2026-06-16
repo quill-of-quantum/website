@@ -12,7 +12,7 @@ import sqlite3
 import shutil
 import branca.colormap as cm
 import time
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from datetime import datetime, timezone
 
 try:
@@ -29,6 +29,7 @@ MAP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(MAP_DIR, "config.json")
 HISTORY_FILE = os.path.join(MAP_DIR, "history.json")
 FAVORITES_FILE = os.path.join(MAP_DIR, "favorites.json")
+FAVORITE_IMAGES_DIR = os.path.join(MAP_DIR, "favorite_images")
 DB_FILE = os.path.join(MAP_DIR, "geocode_cache.db")  # 👈 新增：数据库文件路径
 
 # 自动初始化 SQLite 数据库
@@ -57,6 +58,7 @@ SK = "6IASi6Zx1bSRvytGKnHZpxmVpA60FPoN"
 STATIC_MAP_AK = "KUjoGY4YXn9O86A3AXKpSZO3ZfTTAdpU"
 
 os.makedirs(MAP_DIR, exist_ok=True)
+os.makedirs(FAVORITE_IMAGES_DIR, exist_ok=True)
 
 # ========================
 # 工具函数
@@ -114,6 +116,74 @@ def save_favorites(favorites):
     """保存收藏路线"""
     with open(FAVORITES_FILE, 'w', encoding='utf-8') as f:
         json.dump(favorites, f, ensure_ascii=False, indent=2)
+
+def cache_favorite_map_image(trip_id, map_url):
+    """收藏时下载静态地图到本地，后续收藏列表直接使用本地图片。"""
+    if not trip_id or not map_url:
+        return None, None
+    try:
+        parsed = urllib.parse.urlparse(map_url)
+        if parsed.scheme not in ("http", "https"):
+            return None, None
+        filename = f"fav_{trip_id}.png"
+        image_path = os.path.join(FAVORITE_IMAGES_DIR, filename)
+        resp = requests.get(map_url, timeout=10, stream=True)
+        content_type = resp.headers.get("Content-Type", "")
+        if resp.status_code != 200 or "image" not in content_type:
+            return None, None
+        tmp_path = image_path + ".tmp"
+        total = 0
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > 5 * 1024 * 1024:
+                    f.close()
+                    os.remove(tmp_path)
+                    return None, None
+                f.write(chunk)
+        os.replace(tmp_path, image_path)
+        return filename, f"/api/map/favorite_images/{filename}"
+    except Exception as e:
+        print(f"❌ 收藏静态图保存失败: {e}")
+        return None, None
+
+def delete_favorite_map_image(fav):
+    """删除收藏时同步删除本地静态图。"""
+    filenames = []
+    image_file = fav.get("map_image_file") if isinstance(fav, dict) else None
+    if image_file:
+        filenames.append(image_file)
+    fav_id = fav.get("id") if isinstance(fav, dict) else None
+    if fav_id:
+        filenames.append(f"fav_{fav_id}.png")
+    for filename in dict.fromkeys(filenames):
+        safe_name = os.path.basename(filename)
+        if safe_name != filename:
+            continue
+        path = os.path.join(FAVORITE_IMAGES_DIR, safe_name)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            print(f"❌ 收藏静态图删除失败: {e}")
+
+def attach_existing_favorite_images(favorites):
+    """只关联已存在的本地图片，不在读取收藏时联网生成图片。"""
+    changed = False
+    for fav in favorites.get("favorites", []):
+        fav_id = fav.get("id")
+        if not fav_id or fav.get("map_image_url"):
+            continue
+        filename = f"fav_{fav_id}.png"
+        if os.path.exists(os.path.join(FAVORITE_IMAGES_DIR, filename)):
+            fav["map_image_file"] = filename
+            fav["map_image_url"] = f"/api/map/favorite_images/{filename}"
+            changed = True
+    if changed:
+        save_favorites(favorites)
+    return favorites
 
 def get_cached_geocode(keyword):
     """从数据库读取地点缓存"""
@@ -1492,6 +1562,7 @@ def clear_history():
 def get_favorites():
     """获取收藏记录"""
     favorites = load_favorites()
+    favorites = attach_existing_favorite_images(favorites)
     return jsonify(favorites)
 
 @bp.route('/favorites', methods=['POST'])
@@ -1518,7 +1589,8 @@ def toggle_favorite():
             
     if found_idx >= 0:
         # 已存在，则删除（取消收藏）
-        favorites["favorites"].pop(found_idx)
+        removed_fav = favorites["favorites"].pop(found_idx)
+        delete_favorite_map_image(removed_fav)
         save_favorites(favorites)
         return jsonify({"status": "ok", "action": "removed", "id": trip_id})
     else:
@@ -1526,6 +1598,10 @@ def toggle_favorite():
         new_fav = trip_data.copy()
         new_fav["id"] = trip_id
         new_fav["favorite_at"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        image_file, image_url = cache_favorite_map_image(trip_id, new_fav.get("map_url"))
+        if image_file and image_url:
+            new_fav["map_image_file"] = image_file
+            new_fav["map_image_url"] = image_url
         favorites["favorites"].insert(0, new_fav)
         save_favorites(favorites)
         return jsonify({"status": "ok", "action": "added", "id": trip_id})
@@ -1534,14 +1610,22 @@ def toggle_favorite():
 def delete_favorite(fav_id):
     """直接删除指定收藏"""
     favorites = load_favorites()
+    removed_favs = [f for f in favorites["favorites"] if f.get("id") == fav_id]
     new_favs = [f for f in favorites["favorites"] if f.get("id") != fav_id]
     
     if len(new_favs) == len(favorites["favorites"]):
         return jsonify({"error": "未找到该收藏"}), 404
-        
+
+    for fav in removed_favs:
+        delete_favorite_map_image(fav)
     favorites["favorites"] = new_favs
     save_favorites(favorites)
     return jsonify({"status": "ok"})
+
+@bp.route('/favorite_images/<path:filename>', methods=['GET'])
+def favorite_image(filename):
+    """返回收藏时缓存的本地静态路线图"""
+    return send_from_directory(FAVORITE_IMAGES_DIR, filename)
 
 @bp.route('/map', methods=['POST'])
 def get_map():

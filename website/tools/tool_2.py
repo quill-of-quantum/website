@@ -3,7 +3,7 @@ import time
 from flask import Blueprint, request, jsonify, render_template
 
 bp = Blueprint("tool_2", __name__)
-CLIPBOARD_FILE = "/home/bbdwz/projects/website/uploads/clipboard.txt"
+CLIPBOARD_FILE = "/home/bbdwz/projects/website/tools/clipboard.txt"
 os.makedirs(os.path.dirname(CLIPBOARD_FILE), exist_ok=True)
 
 # 内存中的状态缓存

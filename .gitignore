@@ -30,3 +30,4 @@ website/map/history.json
 website/yolov8n.pt
 *.json
 website/map/cache/srtm/*.hgt
+website/树莓派连接局域网代理方法.txt

@@ -566,8 +566,8 @@
     }
 
     .history-list {
-      max-height: 600px;
-      overflow-y: auto;
+      max-height: none;
+      overflow: visible;
     }
 
     .history-item {
@@ -1675,6 +1675,7 @@ async function loadFavorites() {
         }
         routeHtml += `<div><strong>🏁 终点: ${fav.dest_detail.name || ''}</strong> <span style="color: #666;">${fav.dest_detail.address || ''}</span></div></div>`;
       }
+      const mapImageUrl = fav.map_image_url || '';
 
       return `
         <div class="history-item">
@@ -1689,7 +1690,7 @@ async function loadFavorites() {
 
           <div class="history-item-details" style="display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start;">
             <div class="history-map-thumb" style="width: 200px; height: 140px; border-radius: 8px; overflow: hidden; background: #f7fafc; border: 1px solid #e2e8f0; cursor: pointer;" onclick="importHistoryTrip('${fav.origin_address}', '${fav.destination_address}', ${JSON.stringify(fav.waypoint_addresses || []).replace(/"/g, '&quot;')})">
-              ${fav.map_url ? `<img src="${fav.map_url}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #a0aec0;">无地图</div>'}
+              ${mapImageUrl ? `<img src="${mapImageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #a0aec0;">无地图</div>'}
             </div>
             
             <div class="history-item-stats" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
