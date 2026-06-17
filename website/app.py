@@ -22,6 +22,11 @@ app = Flask(__name__)
 app.secret_key = "replace_this_with_a_strong_random_key"  # 请替换为随机长字符串
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 允许最大 500MB 上传
 
+# 👇 新增：引入并开启全局 GZIP 压缩
+from flask_compress import Compress
+compress = Compress()
+compress.init_app(app)
+
 # 访问日志配置
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
 os.makedirs(os.path.dirname(VISITER_LOG_PATH), exist_ok=True)

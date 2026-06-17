@@ -1054,6 +1054,59 @@
 
 
     }
+
+    /* 👇 新增：性能日志面板样式 */
+    .perf-logger-container {
+      margin-top: 40px;
+      margin-bottom: 20px;
+      max-width: 1400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    
+    .perf-logger {
+      background: #1a202c;
+      border-radius: 12px;
+      overflow: hidden;
+      display: none;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+      margin-top: 15px;
+      border: 1px solid #2d3748;
+    }
+    
+    .logger-header {
+      background: #2d3748;
+      padding: 12px 20px;
+      color: #e2e8f0;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .logger-body {
+      padding: 16px 20px;
+      color: #a0aec0;
+      font-family: "Fira Code", Consolas, Monaco, monospace;
+      font-size: 0.9em;
+      line-height: 1.8;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .log-row {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px dashed #4a5568;
+      padding: 6px 0;
+    }
+    
+    .log-row:last-child { border-bottom: none; }
+    .log-row.main-item { color: #e2e8f0; font-weight: bold; }
+    .log-row.sub-item { padding-left: 24px; color: #718096; }
+    .log-row.total-item { color: #48bb78; font-weight: bold; font-size: 1.1em; border-top: 2px solid #4a5568; margin-top: 8px; padding-top: 12px; }
+    .log-time { color: #f6ad55; 
+    }
   </style>
 </head>
 <body>
@@ -1356,7 +1409,25 @@
       </div>
     </div>
   </div>
-</div>
+
+  <div class="perf-logger-container">
+    <div style="text-align: center;">
+      <button class="btn btn-secondary btn-small" onclick="toggleLogger()" id="loggerBtn" style="background: white; border-color: #cbd5e0; color: #4a5568; margin-bottom: 20px;">
+        ⏱️ 显示性能诊断日志
+      </button>
+    </div>
+    
+    <div class="perf-logger" id="perfLogger">
+      <div class="logger-header">
+        <span>📋 性能追踪与传输分析</span>
+        <span style="cursor:pointer; color: #a0aec0;" onclick="toggleLogger()" onmouseover="this.style.color='white'" onmouseout="this.style.color='#a0aec0'">✕</span>
+      </div>
+      <div class="logger-body" id="loggerBody">
+        <div style="text-align:center; padding: 20px;">暂无日志数据，请先计算一次路线。</div>
+      </div>
+    </div>
+  </div>
+  </div>
 
 <script src="/static/js/auth.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -1366,6 +1437,33 @@
 let waypoints = [];
 let currentRoute = null;
 let roadTypeChart = null;
+
+// 👇 新增：全局性能日志变量与控制函数
+let perfLogs = [];
+
+function toggleLogger() {
+  const logger = document.getElementById('perfLogger');
+  logger.style.display = logger.style.display === 'block' ? 'none' : 'block';
+  if(logger.style.display === 'block') {
+    logger.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function renderPerfLogs() {
+  const body = document.getElementById('loggerBody');
+  if (perfLogs.length === 0) return;
+  body.innerHTML = perfLogs.map(log => {
+    // 如果指定了单位就用指定单位，否则默认用 ms，保留1位小数
+    const displayValue = log.unit ? `${log.time} ${log.unit}` : `${Number(log.time).toFixed(1)} ms`;
+    return `
+      <div class="log-row ${log.type}-item">
+        <span>${log.label}</span>
+        <span class="log-time">${displayValue}</span>
+      </div>
+    `;
+  }).join('');
+}
+// 新增结束
 
 // 登录相关变量
 let isLoggedIn = false;
@@ -1969,7 +2067,7 @@ function updateWaypointName(index, newName) {
   }
 }
 
-// 计算路线
+// 计算路线 (带性能诊断版)
 async function calculateRoute() {
   const originInput = document.getElementById('origin');
   const destInput = document.getElementById('destination');
@@ -1982,71 +2080,103 @@ async function calculateRoute() {
   }
 
   try {
-    // 保存原始地址
     const originAddress = origin;
     const destinationAddress = destination;
     const waypointAddresses = [...waypoints];
-    const totalSteps = 2 + waypoints.length + 1;
-    let currentStep = 0;
+    const totalSteps = 4; // 简化为4个大步骤展示，体验更好
+    
+    perfLogs = []; 
+    const t_global_start = performance.now(); // 全局开始计时
 
-    // 优先检查是否有缓存的精确坐标
+    // --- 步骤 1：并发解析地址 ---
+    showMessage(`⏳ [1/${totalSteps}] 正在并行解析所有地址坐标...`, 'loading');
+    const t_geo_start = performance.now();
+    
     const getGeocodeTask = async (val, inputEl, label) => {
-      currentStep++;
-      showMessage(`⏳ [${currentStep}/${totalSteps}] 正在解析${label}...`, 'loading');
       if (inputEl && inputEl.dataset.coords && inputEl.value === val) {
         return { status: "ok", coords: inputEl.dataset.coords, name: val };
       }
       return await geocodeAddress(val);
     };
 
-    // 先地理编码
-    const originInfo = await getGeocodeTask(origin, originInput, '起点');
-    const destInfo = await getGeocodeTask(destination, destInput, '终点');
+    // 并发请求所有地址，拒绝串行等待
+    const tasks = [
+      getGeocodeTask(origin, originInput, '起点'),
+      getGeocodeTask(destination, destInput, '终点'),
+      ...waypoints.map((wp, i) => getGeocodeTask(wp, null, `途径点 ${i + 1}`))
+    ];
+    
+    const resolvedInfos = await Promise.all(tasks);
+    const originInfo = resolvedInfos[0];
+    const destInfo = resolvedInfos[1];
+    const waypointInfos = resolvedInfos.slice(2).filter(info => info !== null);
+
+    perfLogs.push({ label: `📍 [前端] 并行解析地址 (${tasks.length}个)`, time: performance.now() - t_geo_start, type: 'main' });
 
     if (!originInfo || !destInfo) {
       showMessage('❌ 地址解析失败，请检查地址是否正确', 'error');
       return;
     }
 
-    // 地理编码途径点
-    let waypointInfos = [];
-    if (waypoints.length > 0) {
-      for (let i = 0; i < waypoints.length; i++) {
-        currentStep++;
-        const wp = waypoints[i];
-        showMessage(`⏳ [${currentStep}/${totalSteps}] 正在解析途径点 ${i + 1}...`, 'loading');
-        const info = await geocodeAddress(wp);
-        if (info) {
-          waypointInfos.push(info);
-        }
-      }
-    }
-
+    // --- 步骤 2：发送至服务器 ---
+    showMessage(`⏳ [2/${totalSteps}] 正在打包数据并发送至服务器...`, 'loading');
     const currentConfig = getCurrentConfig();
-    currentStep++;
-    showMessage(`⏳ [${currentStep}/${totalSteps}] 正在获取最优路线规划...`, 'loading');
+    const t_fetch_start = performance.now(); 
 
-    // 调用路线规划 API
     const res = await fetch('/api/map/route', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        origin: originInfo,
-        destination: destInfo,
-        waypoints: waypointInfos,
-        origin_address: originAddress,
-        destination_address: destinationAddress,
-        waypoint_addresses: waypointAddresses,
-        config: currentConfig
+        origin: originInfo, destination: destInfo, waypoints: waypointInfos,
+        origin_address: originAddress, destination_address: destinationAddress,
+        waypoint_addresses: waypointAddresses, config: currentConfig
       })
     });
 
+    // --- 步骤 3：下载数据 ---
+    showMessage(`⏳ [3/${totalSteps}] 正在下载并解析路线数据 (如卡顿说明网络/隧道拥堵)...`, 'loading');
+    
+    // 👇 新增：克隆响应流，计算真实的纯文本体积
+    const resClone = res.clone();
+    const rawText = await resClone.text();
+    const payloadBytes = new Blob([rawText]).size;
+    const payloadMB = (payloadBytes / (1024 * 1024)).toFixed(2); // 转换为 MB
+
     const data = await res.json();
+    const t_fetch_end = performance.now(); 
+    
+    // 💡 核心诊断逻辑分离
+    const network_and_backend_ms = t_fetch_end - t_fetch_start;
 
     if (data.status === 'ok') {
+      const backend_ms = (data.timing?.backend_total || 0) * 1000;
+      const net_transmission_ms = Math.max(0, network_and_backend_ms - backend_ms);
+      
+      perfLogs.push({ label: `🌐 公网双向传输及等待耗时`, time: net_transmission_ms, type: 'main' });
+      // 👇 新增：记录体积
+      perfLogs.push({ label: `📦 后端返回的数据总体积`, time: payloadMB, unit: 'MB', type: 'main' });
+      perfLogs.push({ label: `⚙️ 服务器后端代码执行总耗时`, time: backend_ms, type: 'main' });
+
+      if (data.timing) {
+        perfLogs.push({ label: `├─ 百度路线API规划耗时`, time: data.timing.route_api * 1000, type: 'sub' });
+        perfLogs.push({ label: `├─ 路线切分及成本计算`, time: data.timing.cost_calc * 1000, type: 'sub' });
+        perfLogs.push({ label: `├─ SRTM高程拉取(卡顿元凶之一)`, time: data.timing.srtm_calc * 1000, type: 'sub' });
+        perfLogs.push({ label: `└─ Folium地图组装及HTML生成`, time: data.timing.folium_render * 1000, type: 'sub' });
+      }
+
+      // --- 步骤 4：浏览器渲染 ---
+      showMessage(`⏳ [4/${totalSteps}] 正在浏览器中渲染交互地图...`, 'loading');
+      const t_render_start = performance.now();
+
       currentRoute = data;
       displayResults(data);
-      showMessage('✅ 路线规划成功', 'success');
+
+      perfLogs.push({ label: `💻 前端浏览器DOM渲染耗时`, time: performance.now() - t_render_start, type: 'main' });
+      
+      perfLogs.push({ label: `🚀 路线规划完整闭环总用时`, time: performance.now() - t_global_start, type: 'total' });
+      
+      renderPerfLogs();
+      showMessage('✅ 路线规划成功 (可点击下方按钮查看耗时详情)', 'success');
     } else {
       showMessage('❌ ' + (data.error || '路线规划失败'), 'error');
     }

@@ -1332,6 +1332,8 @@ def get_topo():
 @bp.route('/route', methods=['POST'])
 def route():
     """计算路线"""
+    t_backend_start = time.time() # 🟢 1. 记录后端开始总时间
+    
     data = request.get_json() or {}
     origin_obj = data.get("origin")
     dest_obj = data.get("destination")
@@ -1364,15 +1366,20 @@ def route():
     if not wp_coords:
         wp_coords = None
 
+    t_route_api_start = time.time() # 🟢 2. 记录请求百度API时间
     route_data = calculate_route(origin_coords, dest_coords, wp_coords)
+    t_route_api = time.time() - t_route_api_start
     
     if route_data:
+        t_cost_start = time.time() # 🟢 3. 记录成本计算时间
         config = data.get("config") or load_config()
         distance_km, duration_min, toll, oil_cost, other_cost, total_cost, breakdown, electric_cost, electric_total_cost = calculate_route_cost(route_data, config)
+        t_cost = time.time() - t_cost_start
         
         # -----------------------------
         # 高程插值与查询
         # -----------------------------
+        t_srtm_start = time.time() # 🟢 4. 记录SRTM高程拉取与插值时间
         elevation_data_list = []
         total_climb = 0.0
         max_ele = 0.0
@@ -1404,7 +1411,6 @@ def route():
                 sampled_points = interpolate_line(points_wgs84, interval=100) # 采样间距100m
                 
                 # 初始化SRTM
-                # SRTM 默认会缓存到 ~/.cache/srtm，我们查验并清理这个目录
                 cache_dir = os.path.expanduser('~/.cache/srtm')
                 os.makedirs(cache_dir, exist_ok=True)
                 cache_size_bytes = check_and_clean_srtm_cache(cache_dir, limit_gb=10)
@@ -1414,21 +1420,18 @@ def route():
                 last_ele = None
                 distance_acc = 0.0
                 elevations = []
-                
-                # 新增：用于记录上一个有效的高程数据
                 last_valid_ele = None 
                 
                 for i, (wgs_lon, wgs_lat) in enumerate(sampled_points):
                     ele = elevation_data.get_elevation(wgs_lat, wgs_lon)
                     
-                    # 🚀 核心修复：处理雷达数据盲区 (None)
                     if ele is None:
                         if last_valid_ele is not None:
-                            ele = last_valid_ele  # 沿用上一个有效点的海拔
+                            ele = last_valid_ele  
                         else:
-                            ele = 0  # 如果极端情况下连起点都没有数据，才用 0 兜底
+                            ele = 0  
                     else:
-                        last_valid_ele = ele  # 更新最新有效海拔
+                        last_valid_ele = ele  
                         
                     elevations.append(ele)
                     
@@ -1437,7 +1440,6 @@ def route():
                         dist = haversine_distance(prev_lon, prev_lat, wgs_lon, wgs_lat)
                         distance_acc += dist
                     
-                    # 额外转换一份 GCJ02 提供给 Folium 从 WGS84 投影到底图
                     gcj_lat, gcj_lon = wgs84_to_gcj02(wgs_lon, wgs_lat)
                     
                     elevation_data_list.append({
@@ -1460,15 +1462,18 @@ def route():
         except Exception as e:
             print(f"⚠️ 高程计算失败: {e}")
 
+        t_srtm = time.time() - t_srtm_start
+
         # 生成地图URL
         map_url = generate_static_map(origin_coords, dest_coords, wp_coords)
         
-        # 生成folium交互式地图（传入waypoints和waypoint_addresses, 并带高程数据用于上色）
+        t_folium_start = time.time() # 🟢 5. 记录Folium地图渲染时间
         try:
             map_html = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs, waypoint_addresses, elevation_data_list=elevation_data_list)
         except Exception as e:
             print(f"❌ 生成folium地图失败: {e}")
             map_html = None
+        t_folium = time.time() - t_folium_start
         
         # 提取steps数据用于前端绘图
         steps = route_data.get("steps", [])
@@ -1482,11 +1487,13 @@ def route():
         # 分析路段类型
         road_type_analysis = analyze_route_types(route_data)
         
-        # 只取部分 elevation nodes 返回前端（抽稀到最多300个点绘图，否则前端太卡）
+        # 只取部分 elevation nodes 返回前端
         chart_elevation_list = []
         if elevation_data_list:
             step_size = max(1, len(elevation_data_list) // 3000)
             chart_elevation_list = elevation_data_list[::step_size]
+        
+        t_backend_total = time.time() - t_backend_start # 🟢 6. 计算后端总耗时
         
         result = {
             "status": "ok",
@@ -1512,6 +1519,14 @@ def route():
                 "max_ele_m": round(max_ele, 1),
                 "min_ele_m": round(min_ele, 1),
                 "cache_size_mb": round(cache_size_bytes / (1024 * 1024), 2)
+            },
+            # 👇 将各阶段耗时精准传给前端
+            "timing": {
+                "backend_total": round(t_backend_total, 3),
+                "route_api": round(t_route_api, 3),
+                "cost_calc": round(t_cost, 3),
+                "srtm_calc": round(t_srtm, 3),
+                "folium_render": round(t_folium, 3)
             }
         }
         
