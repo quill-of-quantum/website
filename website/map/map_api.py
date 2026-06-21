@@ -1025,6 +1025,53 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         var colormapContainer = null;
         var topoLayer = null; // 存放前端渲染的地形图层
         var grid_sz = 500;    // 👈 你可以在这里方便地调整请求的矩阵尺寸
+
+        function pushTopoPerfLog(label, time, type, unit) {{
+            var log = {{
+                label: label,
+                time: time,
+                type: type || 'main',
+                unit: unit
+            }};
+            if (window.parent && typeof window.parent.addPerfLog === 'function') {{
+                window.parent.addPerfLog(log);
+            }} else if (typeof perfLogs !== 'undefined' && typeof renderPerfLogs === 'function') {{
+                perfLogs.push(log);
+                renderPerfLogs();
+            }}
+        }}
+
+        function estimateTopoMetrics(bounds, gridSize) {{
+            var latSpan = Math.abs(bounds.max_lat - bounds.min_lat);
+            var lngSpan = Math.abs(bounds.max_lng - bounds.min_lng);
+            var midLatRad = ((bounds.max_lat + bounds.min_lat) / 2) * Math.PI / 180;
+            var heightKm = latSpan * 111.32;
+            var widthKm = lngSpan * 111.32 * Math.cos(midLatRad);
+            var areaKm2 = Math.max(0, widthKm * heightKm);
+            var cellWidthM = gridSize > 1 ? (widthKm * 1000) / (gridSize - 1) : 0;
+            var cellHeightM = gridSize > 1 ? (heightKm * 1000) / (gridSize - 1) : 0;
+            return {{
+                widthKm: widthKm,
+                heightKm: heightKm,
+                areaKm2: areaKm2,
+                cellWidthM: cellWidthM,
+                cellHeightM: cellHeightM,
+                sampleCount: gridSize * gridSize
+            }};
+        }}
+
+        function setTopoNotice(message) {{
+            if (!topoBtn) return;
+            var notice = document.getElementById('topoNotice');
+            if (!notice) {{
+                notice = document.createElement('span');
+                notice.id = 'topoNotice';
+                notice.style.cssText = 'align-self:center; max-width:220px; padding:6px 8px; background:rgba(255,255,255,0.95); color:#b7791f; border:1px solid #f6e05e; border-radius:5px; font-size:12px; line-height:1.35; box-shadow:0 2px 8px rgba(0,0,0,0.12);';
+                topoBtn.parentNode.insertBefore(notice, topoBtn.nextSibling);
+            }}
+            notice.textContent = message || '';
+            notice.style.display = message ? 'inline-block' : 'none';
+        }}
         
         // 找图例并自动缩放移动
         var allSvgs = document.querySelectorAll('svg');
@@ -1090,15 +1137,33 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                     if (!topoLayer) {{
                         var bounds = {topo_bounds_json};
                         if (!bounds) return;
+                        var topoMetrics = estimateTopoMetrics(bounds, grid_sz);
+                        if (topoMetrics.areaKm2 > 250000) {{
+                            setTopoNotice('区域面积较大，地形图可能加载较慢或失败，请稍候。');
+                        }} else {{
+                            setTopoNotice('');
+                        }}
                         
                         topoBtn.innerHTML = '⏳ 加载中...';
                         topoBtn.style.background = '#d69e2e';
+                        var topoFetchStart = performance.now();
                         
                         fetch('/api/map/topo', {{
                             method: 'POST',
                             headers: {{'Content-Type': 'application/json'}},
                             body: JSON.stringify({{bounds: bounds, grid_size: grid_sz}})
-                        }}).then(r => r.json()).then(data => {{
+                        }}).then(r => r.text()).then(rawText => {{
+                            var topoFetchMs = performance.now() - topoFetchStart;
+                            var topoPayloadMB = (new Blob([rawText]).size / (1024 * 1024)).toFixed(2);
+                            var data = JSON.parse(rawText);
+                            if (data.status !== 'ok') {{
+                                throw new Error(data.error || '区域地形加载失败');
+                            }}
+                            pushTopoPerfLog('🌍 区域地形请求总耗时', topoFetchMs, 'main');
+                            pushTopoPerfLog('📦 区域地形响应体积', topoPayloadMB, 'main', 'MB');
+                            pushTopoPerfLog('🧩 区域地形采样矩阵', grid_sz + ' x ' + grid_sz + '（' + topoMetrics.sampleCount.toLocaleString() + '点）', 'main', '');
+                            pushTopoPerfLog('🗺️ 区域地形覆盖范围', topoMetrics.widthKm.toFixed(1) + ' x ' + topoMetrics.heightKm.toFixed(1) + ' km（约 ' + topoMetrics.areaKm2.toFixed(0) + ' km²）', 'main', '');
+                            pushTopoPerfLog('📐 区域地形单格分辨率', topoMetrics.cellWidthM.toFixed(0) + ' x ' + topoMetrics.cellHeightM.toFixed(0) + ' m/格', 'main', '');
                             // 前端创建不可见 Canvas 进行极速像素渲染
                             var canvas = document.createElement('canvas');
                             canvas.width = grid_sz;
@@ -1150,6 +1215,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                             
                             topoBtn.innerHTML = '🌍 区域地形';
                             topoBtn.dataset.active = 'true';
+                            setTopoNotice('');
                         }}).catch(err => {{
                             console.error(err);
                             topoBtn.innerHTML = '❌ 加载失败';

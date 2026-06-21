@@ -1453,8 +1453,9 @@ function renderPerfLogs() {
   const body = document.getElementById('loggerBody');
   if (perfLogs.length === 0) return;
   body.innerHTML = perfLogs.map(log => {
-    // 如果指定了单位就用指定单位，否则默认用 ms，保留1位小数
-    const displayValue = log.unit ? `${log.time} ${log.unit}` : `${Number(log.time).toFixed(1)} ms`;
+    const displayValue = typeof log.time === 'number'
+      ? (log.unit ? `${log.time} ${log.unit}` : `${Number(log.time).toFixed(1)} ms`)
+      : `${log.time}${log.unit ? ' ' + log.unit : ''}`;
     return `
       <div class="log-row ${log.type}-item">
         <span>${log.label}</span>
@@ -1463,21 +1464,108 @@ function renderPerfLogs() {
     `;
   }).join('');
 }
+
+window.addPerfLog = function(log) {
+  perfLogs.push(log);
+  renderPerfLogs();
+};
 // 新增结束
 
 // 登录相关变量
 let isLoggedIn = false;
 let currentUser = null;
 
+function resetRouteResults() {
+  currentRoute = null;
+
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('noResults').style.display = 'block';
+  document.getElementById('analysisSection').style.display = 'none';
+
+  const idsToReset = [
+    'result_distance', 'result_duration', 'result_toll', 'result_other',
+    'result_oil_total', 'result_total', 'result_electric_cost',
+    'result_electric_total', 'cost_difference_value', 'total_climb_val',
+    'max_ele_val', 'cache_size_val'
+  ];
+  idsToReset.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '--';
+  });
+
+  document.getElementById('addressDetails').innerHTML = '';
+  document.getElementById('cost_comparison_text').innerHTML = '';
+  document.getElementById('routeProgressBar').innerHTML = '';
+  document.getElementById('routeLegend').innerHTML = '';
+  document.getElementById('stepsList').innerHTML = '';
+
+  const foliumMap = document.getElementById('foliumMapContainer');
+  foliumMap.innerHTML = '';
+  foliumMap.style.display = 'block';
+
+  const routeMap = document.getElementById('routeMap');
+  routeMap.removeAttribute('src');
+  routeMap.style.display = 'none';
+  document.getElementById('mapLoading').style.display = 'none';
+  document.getElementById('elevationSection').style.display = 'none';
+
+  if (roadTypeChart) {
+    roadTypeChart.destroy();
+    roadTypeChart = null;
+  }
+  if (window.elevationChartInstance) {
+    window.elevationChartInstance.destroy();
+    window.elevationChartInstance = null;
+  }
+
+  const favoriteIcon = document.getElementById('favoriteIcon');
+  const favoriteText = document.getElementById('favoriteText');
+  const favoriteBtn = document.getElementById('favoriteBtn');
+  if (favoriteIcon) favoriteIcon.textContent = '🤍';
+  if (favoriteText) favoriteText.textContent = '收藏';
+  if (favoriteBtn) {
+    favoriteBtn.style.color = '#718096';
+    favoriteBtn.style.borderColor = '#e2e8f0';
+  }
+
+  perfLogs = [];
+  const loggerBody = document.getElementById('loggerBody');
+  if (loggerBody) {
+    loggerBody.innerHTML = '<div style="text-align:center; padding: 20px;">暂无日志数据，请先计算一次路线。</div>';
+  }
+}
+
 // 保存表单数据到 localStorage
+function getPersistableRouteResult(route) {
+  if (!route) return null;
+  const result = { ...route };
+  delete result.map_html;
+  return result;
+}
+
 function saveFormData() {
   const formData = {
     origin: document.getElementById('origin').value,
     destination: document.getElementById('destination').value,
     waypoints: waypoints,
-    routeResult: currentRoute
+    routeResult: getPersistableRouteResult(currentRoute)
   };
-  localStorage.setItem('routePlannerData', JSON.stringify(formData));
+  try {
+    localStorage.setItem('routePlannerData', JSON.stringify(formData));
+  } catch (e) {
+    console.warn('保存路线结果到本地缓存失败，改为只保存输入项:', e);
+    const fallbackData = {
+      origin: formData.origin,
+      destination: formData.destination,
+      waypoints: formData.waypoints,
+      routeResult: null
+    };
+    try {
+      localStorage.setItem('routePlannerData', JSON.stringify(fallbackData));
+    } catch (fallbackError) {
+      console.warn('保存路线输入项到本地缓存失败:', fallbackError);
+    }
+  }
 }
 
 // 获取并填充当前位置
@@ -1594,13 +1682,9 @@ function clearFormData() {
   document.getElementById('origin').value = '';
   document.getElementById('destination').value = '';
   waypoints = [];
-  currentRoute = null;
   renderWaypoints();
+  resetRouteResults();
   localStorage.removeItem('routePlannerData');
-  
-  // 清空结果显示
-  document.getElementById('results').style.display = 'none';
-  document.getElementById('noResults').style.display = 'block';
   
   showMessage('✅ 输入已清空', 'success');
 }
@@ -2078,6 +2162,9 @@ async function calculateRoute() {
     showMessage('请输入出发地和目的地', 'error');
     return;
   }
+
+  resetRouteResults();
+  saveFormData();
 
   try {
     const originAddress = origin;
@@ -2805,6 +2892,7 @@ function importHistoryTrip(origin, destination, waypointAddresses) {
   document.getElementById('destination').value = destination;
   waypoints = waypointAddresses || [];
   renderWaypoints();
+  resetRouteResults();
   saveFormData();
   
   // 切换到路线规划标签页
