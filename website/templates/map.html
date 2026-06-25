@@ -1536,35 +1536,89 @@ function resetRouteResults() {
 }
 
 // 保存表单数据到 localStorage
-function getPersistableRouteResult(route) {
-  if (!route) return null;
-  const result = { ...route };
-  delete result.map_html;
-  return result;
+const ROUTE_DB_NAME = 'routePlannerCache';
+const ROUTE_DB_VERSION = 1;
+const ROUTE_STORE_NAME = 'routeResults';
+const LAST_ROUTE_KEY = 'lastRoute';
+
+function openRouteCacheDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('IndexedDB is not supported'));
+      return;
+    }
+    const request = indexedDB.open(ROUTE_DB_NAME, ROUTE_DB_VERSION);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(ROUTE_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveRouteResultToCache(route) {
+  if (!route) return;
+  try {
+    const db = await openRouteCacheDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ROUTE_STORE_NAME, 'readwrite');
+      tx.objectStore(ROUTE_STORE_NAME).put(route, LAST_ROUTE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('保存完整路线到 IndexedDB 失败:', e);
+  }
+}
+
+async function loadRouteResultFromCache() {
+  try {
+    const db = await openRouteCacheDb();
+    const route = await new Promise((resolve, reject) => {
+      const tx = db.transaction(ROUTE_STORE_NAME, 'readonly');
+      const request = tx.objectStore(ROUTE_STORE_NAME).get(LAST_ROUTE_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return route;
+  } catch (e) {
+    console.warn('读取完整路线缓存失败:', e);
+    return null;
+  }
+}
+
+async function clearRouteResultCache() {
+  try {
+    const db = await openRouteCacheDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ROUTE_STORE_NAME, 'readwrite');
+      tx.objectStore(ROUTE_STORE_NAME).delete(LAST_ROUTE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('清除完整路线缓存失败:', e);
+  }
 }
 
 function saveFormData() {
   const formData = {
     origin: document.getElementById('origin').value,
     destination: document.getElementById('destination').value,
-    waypoints: waypoints,
-    routeResult: getPersistableRouteResult(currentRoute)
+    waypoints: waypoints
   };
   try {
     localStorage.setItem('routePlannerData', JSON.stringify(formData));
   } catch (e) {
-    console.warn('保存路线结果到本地缓存失败，改为只保存输入项:', e);
-    const fallbackData = {
-      origin: formData.origin,
-      destination: formData.destination,
-      waypoints: formData.waypoints,
-      routeResult: null
-    };
-    try {
-      localStorage.setItem('routePlannerData', JSON.stringify(fallbackData));
-    } catch (fallbackError) {
-      console.warn('保存路线输入项到本地缓存失败:', fallbackError);
-    }
+    console.warn('保存路线输入项到 localStorage 失败:', e);
+  }
+  if (currentRoute) {
+    saveRouteResultToCache(currentRoute);
+  } else {
+    clearRouteResultCache();
   }
 }
 
@@ -1654,7 +1708,7 @@ function getCurrentConfig() {
 }
 
 // 从 localStorage 加载表单数据
-function loadFormData() {
+async function loadFormData() {
   const saved = localStorage.getItem('routePlannerData');
   if (saved) {
     try {
@@ -1663,15 +1717,15 @@ function loadFormData() {
       document.getElementById('destination').value = formData.destination || '';
       waypoints = formData.waypoints || [];
       renderWaypoints();
-      
-      // 恢复路线结果
-      if (formData.routeResult) {
-        currentRoute = formData.routeResult;
-        displayResults(formData.routeResult);
-      }
     } catch (e) {
       console.error('加载表单数据失败', e);
     }
+  }
+
+  const cachedRoute = await loadRouteResultFromCache();
+  if (cachedRoute) {
+    currentRoute = cachedRoute;
+    displayResults(cachedRoute);
   }
 }
 
@@ -1685,6 +1739,7 @@ function clearFormData() {
   renderWaypoints();
   resetRouteResults();
   localStorage.removeItem('routePlannerData');
+  clearRouteResultCache();
   
   showMessage('✅ 输入已清空', 'success');
 }
