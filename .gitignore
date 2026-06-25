@@ -30,5 +30,16 @@ website/map/history.json
 website/yolov8n.pt
 *.json
 website/map/cache/srtm/*.hgt
+website/map/favorite_images/
+website/map/**/*.png
+website/map/**/*.jpg
+website/map/**/*.jpeg
+website/map/**/*.webp
+website/map/**/*.gif
 website/树莓派连接局域网代理方法.txt
 website/tools/clipboard.txt
+website/shortcut.log
+
+# situation runtime / private data
+website/situation/*_log.txt
+website/situation/site.txt

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>状态记录</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .info-tile {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+    }
+    .info-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 4px;
+    }
+    .info-value {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .muted-line {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .records {
+      margin-top: 1rem;
+    }
+    .auth-card {
+      max-width: 420px;
+    }
+    .auth-form {
+      display: grid;
+      gap: 12px;
+    }
+    .auth-form input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    .error-line {
+      color: #b91c1c;
+      font-size: 0.95rem;
+    }
+    .record-item {
+      display: grid;
+      grid-template-columns: minmax(140px, 0.9fr) minmax(180px, 1fr) minmax(160px, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .record-item:last-child {
+      border-bottom: 0;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: var(--r-sm);
+      background: #ecfdf5;
+      color: #047857;
+      font-weight: 600;
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+    .badge-known {
+      background: #ecfdf5;
+      color: #047857;
+    }
+    .badge-unknown {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .record-time {
+      display: grid;
+      gap: 3px;
+    }
+    @media (max-width: 640px) {
+      .record-item {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="page-header">
+        <h1>状态记录</h1>
+      </div>
+
+      {% if not unlocked %}
+      <div class="card auth-card">
+        <h2 class="card-title">访问密码</h2>
+        <form class="auth-form" method="post" action="/situation">
+          <input type="password" name="password" placeholder="输入密码" autocomplete="current-password" autofocus>
+          {% if error %}
+          <div class="error-line">{{ error }}</div>
+          {% endif %}
+          <button class="btn btn-primary" type="submit">进入</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="toolbar">
+        <a class="btn btn-ghost" href="/">🏠 返回首页</a>
+        <button class="btn btn-primary" onclick="loadSituation()">刷新</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">最近记录</h2>
+        <div id="records" class="records">加载中...</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if unlocked %}
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[ch]);
+    }
+
+    function parseShortcutTime(value) {
+      const text = String(value || '').trim();
+      const match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
+      if (!match) return null;
+
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      const offsetHours = Number(match[4]);
+      const offsetMinutes = Number(match[5] || 0);
+      const hour = Number(match[6]);
+      const minute = Number(match[7]);
+      const second = Number(match[8] || 0);
+      const offsetMs = (offsetHours * 60 + Math.sign(offsetHours || 1) * offsetMinutes) * 60 * 1000;
+      return new Date(Date.UTC(year, month, day, hour, minute, second) - offsetMs);
+    }
+
+    function formatLocalTime(rawTime) {
+      const date = parseShortcutTime(rawTime);
+      if (!date || Number.isNaN(date.getTime())) return rawTime || '-';
+      const parts = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false
+      }).formatToParts(date).reduce((acc, part) => {
+        acc[part.type] = part.value;
+        return acc;
+      }, {});
+      return `${parts.year}年${parts.month}月${parts.day}日 北京时间 ${parts.hour}时${parts.minute}分${parts.second}秒`;
+    }
+
+    function formatRelativeTime(rawTime) {
+      const date = parseShortcutTime(rawTime);
+      if (!date || Number.isNaN(date.getTime())) return '';
+
+      const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+      const absSeconds = Math.abs(diffSeconds);
+      const units = [
+        ['year', 31536000],
+        ['month', 2592000],
+        ['day', 86400],
+        ['hour', 3600],
+        ['minute', 60],
+        ['second', 1]
+      ];
+      const [unit, seconds] = units.find(([, unitSeconds]) => absSeconds >= unitSeconds) || ['second', 1];
+      const value = Math.round(diffSeconds / seconds);
+      return new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' }).format(value, unit);
+    }
+
+    function formatStatus(value) {
+      return String(value || '-').replace(/\bwifi\b/ig, 'Wi-Fi');
+    }
+
+    function normalizeWifiName(value) {
+      return String(value || '').trim();
+    }
+
+    function isKnownWifi(value, knownWifi) {
+      return knownWifi.has(normalizeWifiName(value));
+    }
+
+    function renderEvent(event, knownWifi) {
+      const localTime = formatLocalTime(event.time);
+      const relativeTime = formatRelativeTime(event.time);
+      const site = event.site || '-';
+      const badgeClass = isKnownWifi(event.value, knownWifi) ? 'badge-known' : 'badge-unknown';
+      return `
+        <div class="record-item">
+          <div><span class="badge ${badgeClass}">${escapeHtml(formatStatus(event.value))}</span></div>
+          <div class="record-time">
+            <div class="info-value">${escapeHtml(localTime)}</div>
+            <div class="muted-line">${escapeHtml(relativeTime)}</div>
+          </div>
+          <div>
+            <div class="info-label">位置</div>
+            <div class="info-value">${escapeHtml(site)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadSituation() {
+      const records = document.getElementById('records');
+
+      try {
+        const [listRes, settingsRes] = await Promise.all([
+          fetch('/api/situation/list?limit=100'),
+          fetch('/api/situation/settings')
+        ]);
+        const listPayload = await listRes.json();
+        const settingsPayload = await settingsRes.json();
+        const knownWifi = new Set((settingsPayload.wifi || []).map(normalizeWifiName));
+
+        const events = listPayload.events || [];
+        if (!events.length) {
+          records.innerHTML = '<div class="muted-line">暂无记录</div>';
+          return;
+        }
+
+        records.innerHTML = events.map(event => renderEvent(event, knownWifi)).join('');
+      } catch (err) {
+        records.textContent = `加载失败：${err.message}`;
+      }
+    }
+
+    loadSituation();
+  </script>
+  {% endif %}
+  <script src="/static/js/net_metrics.js"></script>
+</body>
+</html>

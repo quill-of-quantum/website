@@ -70,6 +70,10 @@ app.register_blueprint(vision_bp)
 
 from tools.tool_2 import bp as clipboard_bp
 app.register_blueprint(clipboard_bp)
+
+from situation.situation_api import bp as situation_bp
+from situation.situation_api import record_situation_event
+app.register_blueprint(situation_bp)
 # ===============================
 # 基础配置
 # ===============================
@@ -428,6 +432,18 @@ def shortcut_run():
 
         t, v = lines[-2], lines[-1]
         return jsonify({"status": "ok", "time": t, "value": v})
+
+    # ===== 动作3：记录状态 =====
+    elif action == "situation":
+        event, error = record_situation_event(data)
+        if error:
+            message, status_code = error
+            return jsonify({"status": "error", "error": message}), status_code
+        return jsonify({
+            "status": "ok",
+            "event": event,
+            "reply": f"✅ 已记录状态：{event['value']} @ {event['time']}"
+        })
 
     # ===== 其他未知动作 =====
     else:
