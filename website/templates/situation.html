@@ -51,8 +51,8 @@
     }
     .record-item {
       display: grid;
-      grid-template-columns: minmax(140px, 0.9fr) minmax(180px, 1fr) minmax(160px, 1fr);
-      gap: 12px;
+      grid-template-columns: max-content max-content max-content max-content minmax(180px, 1fr) minmax(160px, 1.2fr);
+      gap: 10px 14px;
       align-items: center;
       padding: 14px 0;
       border-bottom: 1px solid var(--border);
@@ -76,12 +76,49 @@
       color: #047857;
     }
     .badge-unknown {
-      background: #eff6ff;
-      color: #1d4ed8;
+      background: #f3f4f6;
+      color: #4b5563;
     }
     .record-time {
       display: grid;
       gap: 3px;
+    }
+    .event-pill {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      padding: 4px 8px;
+      border-radius: var(--r-sm);
+      background: #f3f4f6;
+      color: #374151;
+      font-size: 0.9rem;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .event-connected {
+      background: #ecfdf5;
+      color: #047857;
+    }
+    .event-default {
+      background: #f3f4f6;
+      color: #4b5563;
+    }
+    .mini-metric {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      border-radius: var(--r-sm);
+      background: #f9fafb;
+      color: #374151;
+      border: 1px solid var(--border);
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .charge-icon {
+      color: #047857;
+      font-weight: 700;
     }
     @media (max-width: 640px) {
       .record-item {
@@ -201,14 +238,51 @@
       return knownWifi.has(normalizeWifiName(value));
     }
 
+    function normalizeEventType(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function formatEventType(value) {
+      return normalizeEventType(value) === 'connected' ? '到家' : (value || '-');
+    }
+
+    function formatPower(value) {
+      const normalized = String(value ?? '').trim().toLowerCase();
+      return normalized === 'true';
+    }
+
     function renderEvent(event, knownWifi) {
       const localTime = formatLocalTime(event.time);
       const relativeTime = formatRelativeTime(event.time);
       const site = event.site || '-';
-      const badgeClass = isKnownWifi(event.value, knownWifi) ? 'badge-known' : 'badge-unknown';
+      const net = event.net || event.value || '-';
+      const eventType = event.event || '-';
+      const battery = event.battery || '-';
+      const power = formatPower(event.power);
+      const step = event.step || '-';
+      const badgeClass = isKnownWifi(net, knownWifi) ? 'badge-known' : 'badge-unknown';
+      const eventClass = normalizeEventType(event.event) === 'connected' ? 'event-connected' : 'event-default';
       return `
         <div class="record-item">
-          <div><span class="badge ${badgeClass}">${escapeHtml(formatStatus(event.value))}</span></div>
+          <div>
+            <div class="info-label">类别</div>
+            <div><span class="event-pill ${eventClass}">${escapeHtml(formatEventType(eventType))}</span></div>
+          </div>
+          <div>
+            <div class="info-label">网络</div>
+            <div><span class="badge ${badgeClass}">${escapeHtml(formatStatus(net))}</span></div>
+          </div>
+          <div>
+            <div class="info-label">电量</div>
+            <div class="mini-metric">
+              <span>${escapeHtml(battery)}</span>
+              ${power ? '<span class="charge-icon" title="正在充电">⚡</span>' : ''}
+            </div>
+          </div>
+          <div>
+            <div class="info-label">步数</div>
+            <div class="mini-metric">${escapeHtml(step)}</div>
+          </div>
           <div class="record-time">
             <div class="info-value">${escapeHtml(localTime)}</div>
             <div class="muted-line">${escapeHtml(relativeTime)}</div>

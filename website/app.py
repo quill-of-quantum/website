@@ -442,7 +442,7 @@ def shortcut_run():
         return jsonify({
             "status": "ok",
             "event": event,
-            "reply": f"✅ 已记录状态：{event['value']} @ {event['time']}"
+            "reply": f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
         })
 
     # ===== 其他未知动作 =====

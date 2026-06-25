@@ -16,25 +16,46 @@ def _one_line(value):
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _first_present(payload, names):
+    for name in names:
+        if name in payload:
+            return payload.get(name)
+    return ""
+
+
+def _bool_text(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return _one_line(value)
+
+
 def record_situation_event(payload):
     raw_time = _one_line(payload.get("time"))
-    value = _one_line(payload.get("value"))
+    event_type = _one_line(_first_present(payload, ["event", "status", "statue"]))
+    net = _one_line(_first_present(payload, ["net", "value"]))
     site = _one_line(payload.get("site"))
-
-    if not raw_time:
-        return None, ("缺少 time", 400)
-    if not value:
-        return None, ("缺少 value", 400)
+    battery = _one_line(payload.get("battery"))
+    power = _bool_text(payload.get("power"))
+    step = _one_line(payload.get("step"))
+    event_id = _one_line(payload.get("id"))
 
     event = {
         "time": raw_time,
-        "value": value,
-        "site": site
+        "event": event_type,
+        "net": net,
+        "site": site,
+        "battery": battery,
+        "power": power,
+        "step": step,
+        "id": event_id
     }
 
     os.makedirs(BASE_DIR, exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"{event['time']}\t{event['value']}\t{event['site']}\n")
+        f.write(
+            f"{event['time']}\t{event['event']}\t{event['net']}\t{event['site']}"
+            f"\t{event['battery']}\t{event['power']}\t{event['step']}\t{event['id']}\n"
+        )
         f.flush()
         os.fsync(f.fileno())
 
@@ -54,11 +75,38 @@ def load_situation_events(limit=100):
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
-            events.append({
-                "time": parts[0],
-                "value": parts[1],
-                "site": parts[2] if len(parts) > 2 else ""
-            })
+            if len(parts) >= 4:
+                if len(parts) == 7:
+                    battery = parts[4]
+                    power = ""
+                    step = parts[5]
+                    event_id = parts[6]
+                else:
+                    battery = parts[4] if len(parts) > 4 else ""
+                    power = parts[5] if len(parts) > 5 else ""
+                    step = parts[6] if len(parts) > 6 else ""
+                    event_id = parts[7] if len(parts) > 7 else ""
+                events.append({
+                    "time": parts[0],
+                    "event": parts[1],
+                    "net": parts[2],
+                    "site": parts[3],
+                    "battery": battery,
+                    "power": power,
+                    "step": step,
+                    "id": event_id
+                })
+            else:
+                events.append({
+                    "time": parts[0],
+                    "event": "",
+                    "net": parts[1],
+                    "site": parts[2] if len(parts) > 2 else "",
+                    "battery": "",
+                    "power": "",
+                    "step": "",
+                    "id": ""
+                })
 
     if limit and limit > 0:
         return events[-limit:]
@@ -135,7 +183,7 @@ def api_record_situation():
     return jsonify({
         "status": "ok",
         "event": event,
-        "reply": f"✅ 已记录状态：{event['value']} @ {event['time']}"
+        "reply": f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
     })
 
 
