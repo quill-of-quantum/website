@@ -27,6 +27,54 @@
     }
     .records {
       margin-top: 1rem;
+      display: table;
+      width: auto;
+      max-width: 100%;
+      border-collapse: collapse;
+    }
+    .event-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .event-note-text {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .event-note .map-link {
+      margin-left: auto;
+    }
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .card-title-row .card-title {
+      margin-bottom: 0;
+    }
+    .record-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .range-label {
+      color: var(--muted);
+      font-size: 0.9rem;
+      white-space: nowrap;
     }
     .auth-card {
       max-width: 420px;
@@ -50,15 +98,29 @@
       font-size: 0.95rem;
     }
     .record-item {
-      display: grid;
-      grid-template-columns: max-content max-content max-content max-content minmax(180px, 1fr) minmax(160px, 1.2fr);
-      gap: 10px 14px;
-      align-items: center;
-      padding: 14px 0;
-      border-bottom: 1px solid var(--border);
+      display: table-row;
     }
     .record-item:last-child {
       border-bottom: 0;
+    }
+    .record-cell {
+      display: table-cell;
+      vertical-align: middle;
+      padding: 14px 14px 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .record-item:last-child .record-cell {
+      border-bottom: 0;
+    }
+    .record-cell-grow {
+      max-width: 360px;
+    }
+    .record-time-cell {
+      white-space: nowrap;
+      min-width: max-content;
+    }
+    .record-site-value {
+      overflow-wrap: anywhere;
     }
     .badge {
       display: inline-flex;
@@ -121,8 +183,18 @@
       font-weight: 700;
     }
     @media (max-width: 640px) {
+      .records {
+        display: block;
+      }
       .record-item {
-        grid-template-columns: 1fr;
+        display: block;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .record-cell {
+        display: block;
+        padding: 6px 0;
+        border-bottom: 0;
       }
     }
   </style>
@@ -148,11 +220,24 @@
       {% else %}
       <div class="toolbar">
         <a class="btn btn-ghost" href="/">🏠 返回首页</a>
-        <button class="btn btn-primary" onclick="loadSituation()">刷新</button>
       </div>
 
       <div class="card">
-        <h2 class="card-title">最近记录</h2>
+        <div class="card-title-row">
+          <h2 class="card-title">最近记录</h2>
+          <div class="record-actions">
+            <span id="rangeLabel" class="range-label">最近 7 天</span>
+            <button class="btn btn-primary" type="button" onclick="loadSituation()">刷新</button>
+            <button id="loadMoreBtn" class="btn btn-ghost" type="button" onclick="loadMoreRecords()">加载更多</button>
+          </div>
+        </div>
+        <div class="event-note">
+          <div class="event-note-text">
+            <span class="event-pill event-connected">连网</span>
+            <span>连上 Wi-Fi 自动报告</span>
+          </div>
+          <a class="btn btn-ghost map-link" href="/situation/map">地图</a>
+        </div>
         <div id="records" class="records">加载中...</div>
       </div>
       {% endif %}
@@ -161,6 +246,8 @@
 
   {% if unlocked %}
   <script>
+    let recordDays = 7;
+
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;',
@@ -188,9 +275,11 @@
       return new Date(Date.UTC(year, month, day, hour, minute, second) - offsetMs);
     }
 
-    function formatLocalTime(rawTime) {
+    function formatLocalTimeParts(rawTime) {
       const date = parseShortcutTime(rawTime);
-      if (!date || Number.isNaN(date.getTime())) return rawTime || '-';
+      if (!date || Number.isNaN(date.getTime())) {
+        return { date: rawTime || '-', time: '' };
+      }
       const parts = new Intl.DateTimeFormat('zh-CN', {
         timeZone: 'Asia/Shanghai',
         year: 'numeric',
@@ -204,7 +293,10 @@
         acc[part.type] = part.value;
         return acc;
       }, {});
-      return `${parts.year}年${parts.month}月${parts.day}日 北京时间 ${parts.hour}时${parts.minute}分${parts.second}秒`;
+      return {
+        date: `${parts.year}年${parts.month}月${parts.day}日`,
+        time: `${parts.hour}时${parts.minute}分${parts.second}秒 北京时间`
+      };
     }
 
     function formatRelativeTime(rawTime) {
@@ -243,7 +335,7 @@
     }
 
     function formatEventType(value) {
-      return normalizeEventType(value) === 'connected' ? '到家' : (value || '-');
+      return normalizeEventType(value) === 'connected' ? '连网' : (value || '-');
     }
 
     function formatPower(value) {
@@ -252,7 +344,7 @@
     }
 
     function renderEvent(event, knownWifi) {
-      const localTime = formatLocalTime(event.time);
+      const localTime = formatLocalTimeParts(event.time);
       const relativeTime = formatRelativeTime(event.time);
       const site = event.site || '-';
       const net = event.net || event.value || '-';
@@ -264,32 +356,33 @@
       const eventClass = normalizeEventType(event.event) === 'connected' ? 'event-connected' : 'event-default';
       return `
         <div class="record-item">
-          <div>
+          <div class="record-cell">
             <div class="info-label">类别</div>
             <div><span class="event-pill ${eventClass}">${escapeHtml(formatEventType(eventType))}</span></div>
           </div>
-          <div>
+          <div class="record-cell">
             <div class="info-label">网络</div>
             <div><span class="badge ${badgeClass}">${escapeHtml(formatStatus(net))}</span></div>
           </div>
-          <div>
+          <div class="record-cell">
             <div class="info-label">电量</div>
             <div class="mini-metric">
               <span>${escapeHtml(battery)}</span>
               ${power ? '<span class="charge-icon" title="正在充电">⚡</span>' : ''}
             </div>
           </div>
-          <div>
-            <div class="info-label">步数</div>
-            <div class="mini-metric">${escapeHtml(step)}</div>
-          </div>
-          <div class="record-time">
-            <div class="info-value">${escapeHtml(localTime)}</div>
+          <div class="record-cell record-time-cell">
+            <div class="info-value">${escapeHtml(localTime.date)}</div>
+            <div class="info-value">${escapeHtml(localTime.time)}</div>
             <div class="muted-line">${escapeHtml(relativeTime)}</div>
           </div>
-          <div>
+          <div class="record-cell record-cell-grow">
             <div class="info-label">位置</div>
-            <div class="info-value">${escapeHtml(site)}</div>
+            <div class="info-value record-site-value">${escapeHtml(site)}</div>
+          </div>
+          <div class="record-cell">
+            <div class="info-label">步数</div>
+            <div class="mini-metric">${escapeHtml(step)}</div>
           </div>
         </div>
       `;
@@ -297,10 +390,14 @@
 
     async function loadSituation() {
       const records = document.getElementById('records');
+      const rangeLabel = document.getElementById('rangeLabel');
+      const loadMoreBtn = document.getElementById('loadMoreBtn');
+      rangeLabel.textContent = `最近 ${recordDays} 天`;
+      loadMoreBtn.disabled = true;
 
       try {
         const [listRes, settingsRes] = await Promise.all([
-          fetch('/api/situation/list?limit=100'),
+          fetch(`/api/situation/list?days=${recordDays}&limit=500`),
           fetch('/api/situation/settings')
         ]);
         const listPayload = await listRes.json();
@@ -316,7 +413,14 @@
         records.innerHTML = events.map(event => renderEvent(event, knownWifi)).join('');
       } catch (err) {
         records.textContent = `加载失败：${err.message}`;
+      } finally {
+        loadMoreBtn.disabled = false;
       }
+    }
+
+    function loadMoreRecords() {
+      recordDays *= 2;
+      loadSituation();
     }
 
     loadSituation();

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>状态地图</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html,
+    body {
+      height: 100%;
+    }
+    body {
+      margin: 0;
+    }
+    .map-page {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .map-toolbar {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .field {
+      display: grid;
+      gap: 4px;
+    }
+    .field label {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .field input {
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    .map-status {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-left: auto;
+    }
+    #map {
+      min-height: 0;
+      width: 100%;
+    }
+    @media (max-width: 640px) {
+      .map-toolbar {
+        align-items: stretch;
+      }
+      .field,
+      .field input,
+      .map-toolbar .btn {
+        width: 100%;
+      }
+      .map-status {
+        margin-left: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="map-page">
+    <div class="map-toolbar">
+      <a class="btn btn-ghost" href="/situation">返回记录</a>
+      <div class="field">
+        <label for="startTime">开始时间</label>
+        <input id="startTime" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="endTime">结束时间</label>
+        <input id="endTime" type="datetime-local">
+      </div>
+      <button class="btn btn-primary" type="button" onclick="loadTrack()">加载</button>
+      <div id="mapStatus" class="map-status">加载中...</div>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([39.9042, 116.4074], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    let routeLayer = L.layerGroup().addTo(map);
+    let markerLayer = L.layerGroup().addTo(map);
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[ch]);
+    }
+
+    function setStatus(text) {
+      document.getElementById('mapStatus').textContent = text;
+    }
+
+    function popupText(point) {
+      return `
+        <div>
+          <strong>${escapeHtml(point.time || '-')}</strong><br>
+          ${escapeHtml(point.event || '-')}${point.net ? ` / ${escapeHtml(point.net)}` : ''}<br>
+          电量：${escapeHtml(point.battery || '-')}　步数：${escapeHtml(point.step || '-')}
+        </div>
+      `;
+    }
+
+    function gradientColor(index, total) {
+      if (total <= 1) return '#047857';
+      const ratio = index / (total - 1);
+      const start = [37, 99, 235];
+      const end = [4, 120, 87];
+      const rgb = start.map((value, channel) => Math.round(value + (end[channel] - value) * ratio));
+      return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    }
+
+    async function loadTrack() {
+      const startInput = document.getElementById('startTime');
+      const endInput = document.getElementById('endTime');
+      const params = new URLSearchParams();
+      if (startInput.value) params.set('start', startInput.value);
+      if (endInput.value) params.set('end', endInput.value);
+
+      setStatus('加载中...');
+      const res = await fetch(`/api/situation/track?${params.toString()}`);
+      const payload = await res.json();
+      if (payload.status !== 'ok') {
+        setStatus(payload.error || '加载失败');
+        return;
+      }
+
+      startInput.value = payload.start || '';
+      endInput.value = payload.end || '';
+
+      routeLayer.clearLayers();
+      markerLayer.clearLayers();
+
+      const points = payload.points || [];
+      if (!points.length) {
+        setStatus('当前范围没有位置点');
+        return;
+      }
+
+      const latlngs = points.map(point => [point.lat, point.lng]);
+      if (latlngs.length === 1) {
+        L.circleMarker(latlngs[0], {
+          radius: 7,
+          color: '#047857',
+          fillColor: '#10b981',
+          fillOpacity: 0.95,
+          weight: 2
+        }).bindPopup(popupText(points[0])).addTo(markerLayer);
+        map.setView(latlngs[0], 15);
+        setStatus('1 个位置点');
+        return;
+      }
+
+      for (let index = 0; index < latlngs.length - 1; index += 1) {
+        L.polyline([latlngs[index], latlngs[index + 1]], {
+          color: gradientColor(index, latlngs.length - 2),
+          weight: 5,
+          opacity: 0.9
+        }).addTo(routeLayer);
+      }
+
+      points.forEach((point, index) => {
+        const marker = L.circleMarker([point.lat, point.lng], {
+          radius: index === 0 || index === points.length - 1 ? 6 : 4,
+          color: index === points.length - 1 ? '#047857' : '#2563eb',
+          fillColor: index === points.length - 1 ? '#10b981' : '#60a5fa',
+          fillOpacity: 0.9,
+          weight: 2
+        }).bindPopup(popupText(point));
+        markerLayer.addLayer(marker);
+      });
+
+      map.fitBounds(L.latLngBounds(latlngs), { padding: [24, 24] });
+      setStatus(`${points.length} 个位置点`);
+    }
+
+    loadTrack().catch(err => setStatus(`加载失败：${err.message}`));
+  </script>
+</body>
+</html>
