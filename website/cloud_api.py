@@ -46,6 +46,95 @@ def _resolve_stored_name(name, meta):
         return matches[0]
     return None
 
+def _save_uploaded_file(file, meta):
+    original_filename = file.filename or ""
+    if not original_filename:
+        return None, {"error": "文件名为空"}
+    if not _is_allowed_extension(original_filename):
+        return None, {"error": f"不支持的文件类型: {original_filename}"}
+
+    stored_name = _make_storage_name(original_filename)
+    save_path = os.path.join(UPLOAD_FOLDER, stored_name)
+    file.save(save_path)
+
+    if is_image_file(stored_name):
+        generate_thumbnail(save_path, stored_name)
+
+    meta[stored_name] = {
+        "original_name": original_filename,
+        "uploaded_at": time.time()
+    }
+
+    print(f"[UPLOAD] 文件已保存: {save_path}")
+    return {
+        "filename": stored_name,
+        "stored_name": stored_name,
+        "original_name": original_filename,
+        "size": os.path.getsize(save_path)
+    }, None
+
+def _save_uploaded_bytes(data, original_filename, meta):
+    original_filename = (original_filename or "").strip()
+    if not original_filename:
+        return None, {"error": "文件名为空，请在 URL 里加 ?filename=文件名"}
+    if not data:
+        return None, {"error": "请求体为空"}
+    if not _is_allowed_extension(original_filename):
+        return None, {"error": f"不支持的文件类型: {original_filename}"}
+
+    stored_name = _make_storage_name(original_filename)
+    save_path = os.path.join(UPLOAD_FOLDER, stored_name)
+    with open(save_path, "wb") as f:
+        f.write(data)
+
+    if is_image_file(stored_name):
+        generate_thumbnail(save_path, stored_name)
+
+    meta[stored_name] = {
+        "original_name": original_filename,
+        "uploaded_at": time.time()
+    }
+
+    print(f"[UPLOAD] 原始请求体文件已保存: {save_path}")
+    return {
+        "filename": stored_name,
+        "stored_name": stored_name,
+        "original_name": original_filename,
+        "size": os.path.getsize(save_path)
+    }, None
+
+def _clean_file_type(file_type):
+    file_type = (file_type or "").strip().lower().lstrip(".")
+    if "/" in file_type:
+        file_type = file_type.split("/", 1)[1]
+    if "." in file_type:
+        file_type = file_type.rsplit(".", 1)[1]
+    file_type = "".join(ch for ch in file_type if ch.isalnum())
+    return file_type or "bin"
+
+def _raw_upload_filename():
+    original_filename = (
+        request.args.get("filename")
+        or request.args.get("name")
+        or request.headers.get("filename")
+        or request.headers.get("X-Filename")
+        or ""
+    ).strip()
+    file_type = (
+        request.args.get("type")
+        or request.headers.get("type")
+        or request.headers.get("X-File-Type")
+        or request.headers.get("Content-Type")
+        or ""
+    )
+    file_type = _clean_file_type(file_type)
+
+    if not original_filename:
+        original_filename = f"shortcut_upload_{time.strftime('%Y%m%d_%H%M%S')}"
+    if original_filename and not os.path.splitext(original_filename)[1] and file_type:
+        original_filename = f"{original_filename}.{file_type}"
+    return original_filename
+
 # 判断是否为图片文件
 def is_image_file(filename):
     return filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'))
@@ -96,39 +185,43 @@ def cleanup_orphan_thumbnails():
 # 上传文件（仅保存）
 @bp.route("/api/cloud/upload", methods=["POST"])
 def upload_file():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "未接收到文件"}), 400
+    files = request.files.getlist("file")
+    if not files:
+        files = [file for _, file in request.files.items()]
+    files = [file for file in files if file and file.filename]
 
-    original_filename = file.filename or ""
-    if not original_filename:
-        return jsonify({"error": "文件名为空"}), 400
-    if not _is_allowed_extension(original_filename):
-        return jsonify({"error": "不支持的文件类型"}), 400
-
-    stored_name = _make_storage_name(original_filename)
-    save_path = os.path.join(UPLOAD_FOLDER, stored_name)
-    file.save(save_path)
-
-    # 如果是图片文件，生成缩略图
-    if is_image_file(stored_name):
-        generate_thumbnail(save_path, stored_name)
+    if not files:
+        raw_data = request.get_data()
+        original_filename = _raw_upload_filename()
+        meta = _load_meta()
+        saved, error = _save_uploaded_bytes(raw_data, original_filename, meta)
+        if error:
+            return jsonify({"ok": False, **error}), 400
+        _save_meta(meta)
+        return jsonify({
+            "ok": True,
+            "message": f"✅ 文件已上传：{saved['original_name']}",
+            "count": 1,
+            "files": [saved],
+            "errors": [],
+            "filename": saved["filename"],
+            "original_name": saved["original_name"]
+        })
 
     meta = _load_meta()
-    meta[stored_name] = {
-        "original_name": original_filename,
-        "uploaded_at": time.time()
-    }
+    saved, error = _save_uploaded_file(files[0], meta)
+    if error:
+        return jsonify({"ok": False, **error}), 400
     _save_meta(meta)
-
-    message = f"✅ 文件已上传：{original_filename}"
-    print(f"[UPLOAD] 文件已保存: {save_path}")
 
     return jsonify({
         "ok": True,
-        "message": message,
-        "filename": stored_name,
-        "original_name": original_filename
+        "message": f"✅ 文件已上传：{saved['original_name']}",
+        "count": 1,
+        "files": [saved],
+        "errors": [],
+        "filename": saved["filename"],
+        "original_name": saved["original_name"]
     })
 
 
