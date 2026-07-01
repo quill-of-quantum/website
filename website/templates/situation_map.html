@@ -90,9 +90,9 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map').setView([39.9042, 116.4074], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://wprd01.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&style=7', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap'
+      attribution: '高德地图'
     }).addTo(map);
 
     let routeLayer = L.layerGroup().addTo(map);
