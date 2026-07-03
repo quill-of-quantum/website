@@ -322,7 +322,7 @@ def _get_page_password():
 
 
 def _unauthorized_api():
-    return jsonify({"status": "error", "error": "未授权"}), 401
+    return jsonify({"success": False, "status": "error", "error": "未授权"}), 401
 
 
 @bp.route("/situation", methods=["GET", "POST"])
@@ -355,11 +355,16 @@ def api_record_situation():
     event, error = record_situation_event(payload)
     if error:
         message, status_code = error
-        return jsonify({"status": "error", "error": message}), status_code
+        return jsonify({
+            "success": False,
+            "error": message,
+            "code": "SITUATION_RECORD_FAILED"
+        }), status_code
+    message = f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
     return jsonify({
-        "status": "ok",
-        "event": event,
-        "reply": f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
+        "success": True,
+        "message": message,
+        "data": event
     })
 
 
@@ -369,7 +374,7 @@ def api_latest_situation():
         return _unauthorized_api()
     events = load_situation_events(limit=1)
     latest = events[-1] if events else None
-    return jsonify({"status": "ok", "latest": latest})
+    return jsonify({"success": True, "status": "ok", "latest": latest})
 
 
 @bp.route("/api/situation/settings")
@@ -378,6 +383,7 @@ def api_situation_settings():
         return _unauthorized_api()
     config = _load_site_config()
     return jsonify({
+        "success": True,
         "status": "ok",
         "wifi": config.get("wifi") or []
     })
@@ -395,6 +401,7 @@ def api_situation_track():
 
     points = load_track_points(start_time, end_time)
     return jsonify({
+        "success": True,
         "status": "ok",
         "start": _format_client_time(start_time),
         "end": _format_client_time(end_time),
@@ -417,4 +424,4 @@ def api_list_situations():
         days = 7
     days = max(1, min(days, 3650))
     events = load_recent_situation_events(days=days, limit=limit)
-    return jsonify({"status": "ok", "events": events})
+    return jsonify({"success": True, "status": "ok", "events": events})

@@ -396,7 +396,11 @@ def shortcut_run():
         t = data.get("time")
         v = data.get("value")
         if not (t and v):
-            return jsonify({"error": "缺少时间或数值"}), 400
+            return jsonify({
+                "success": False,
+                "error": "缺少时间或数值",
+                "code": "MISSING_TIME_OR_VALUE"
+            }), 400
 
         txt_path = "/home/bbdwz/projects/website/weather/number.txt"
         os.makedirs(os.path.dirname(txt_path), exist_ok=True)
@@ -418,36 +422,68 @@ def shortcut_run():
         except Exception as e:
             msg = f"⚠️ 已记录读数 {v} 于 {t}，但分析脚本执行失败：{e}"
 
-        return jsonify({"status": "ok", "reply": msg})
+        return jsonify({
+            "success": True,
+            "message": msg,
+            "data": {
+                "action": action,
+                "time": t,
+                "value": v
+            }
+        })
 
     # ===== 动作2：获取最新读数 =====
     elif action == "get_latest":
         txt_path = "/home/bbdwz/projects/website/weather/number.txt"
         if not os.path.exists(txt_path):
-            return jsonify({"error": "暂无数据"}), 404
+            return jsonify({
+                "success": False,
+                "error": "暂无数据",
+                "code": "NO_DATA"
+            }), 404
 
         lines = [line.strip() for line in open(txt_path, encoding="utf-8") if line.strip()]
         if len(lines) < 2:
-            return jsonify({"error": "数据不足"}), 400
+            return jsonify({
+                "success": False,
+                "error": "数据不足",
+                "code": "INSUFFICIENT_DATA"
+            }), 400
 
         t, v = lines[-2], lines[-1]
-        return jsonify({"status": "ok", "time": t, "value": v})
+        return jsonify({
+            "success": True,
+            "message": "已获取最新读数",
+            "data": {
+                "time": t,
+                "value": v
+            }
+        })
 
     # ===== 动作3：记录状态 =====
     elif action == "situation":
         event, error = record_situation_event(data)
         if error:
             message, status_code = error
-            return jsonify({"status": "error", "error": message}), status_code
+            return jsonify({
+                "success": False,
+                "error": message,
+                "code": "SITUATION_RECORD_FAILED"
+            }), status_code
+        message = f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
         return jsonify({
-            "status": "ok",
-            "event": event,
-            "reply": f"✅ 已记录状态：{event['event']} / {event['net']} @ {event['time']}"
+            "success": True,
+            "message": message,
+            "data": event
         })
 
     # ===== 其他未知动作 =====
     else:
-        return jsonify({"error": f"未知动作: {action}"}), 400
+        return jsonify({
+            "success": False,
+            "error": f"未知动作: {action}",
+            "code": "UNKNOWN_ACTION"
+        }), 400
 
 # ===============================
 # Add a new API endpoint to check login status
@@ -472,15 +508,15 @@ def api_login():
         session["logged_in"] = True
         session["user"] = username
         session["login_time"] = int(time.time())
-        return jsonify({"status": "success", "user": username})
+        return jsonify({"success": True, "status": "success", "user": username})
     else:
-        return jsonify({"status": "error", "message": "用户名或密码错误"}), 401
+        return jsonify({"success": False, "status": "error", "message": "用户名或密码错误"}), 401
 
 @app.route("/api/auth/logout", methods=["POST"])
 def api_logout():
     """API退出接口"""
     session.clear()
-    return jsonify({"status": "success"})
+    return jsonify({"success": True, "status": "success"})
 
 @app.route("/static/<path:filename>")
 def static_files(filename):

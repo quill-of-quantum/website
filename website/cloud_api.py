@@ -196,32 +196,34 @@ def upload_file():
         meta = _load_meta()
         saved, error = _save_uploaded_bytes(raw_data, original_filename, meta)
         if error:
-            return jsonify({"ok": False, **error}), 400
+            return jsonify({
+                "success": False,
+                "error": error.get("error", "上传失败"),
+                "code": "UPLOAD_FAILED"
+            }), 400
         _save_meta(meta)
+        message = f"✅ 文件已上传：{saved['original_name']}"
         return jsonify({
-            "ok": True,
-            "message": f"✅ 文件已上传：{saved['original_name']}",
-            "count": 1,
-            "files": [saved],
-            "errors": [],
-            "filename": saved["filename"],
-            "original_name": saved["original_name"]
+            "success": True,
+            "message": message,
+            "data": saved
         })
 
     meta = _load_meta()
     saved, error = _save_uploaded_file(files[0], meta)
     if error:
-        return jsonify({"ok": False, **error}), 400
+        return jsonify({
+            "success": False,
+            "error": error.get("error", "上传失败"),
+            "code": "UPLOAD_FAILED"
+        }), 400
     _save_meta(meta)
 
+    message = f"✅ 文件已上传：{saved['original_name']}"
     return jsonify({
-        "ok": True,
-        "message": f"✅ 文件已上传：{saved['original_name']}",
-        "count": 1,
-        "files": [saved],
-        "errors": [],
-        "filename": saved["filename"],
-        "original_name": saved["original_name"]
+        "success": True,
+        "message": message,
+        "data": saved
     })
 
 
@@ -290,13 +292,13 @@ def delete_file(name):
     """删除文件 - 需要登录"""
     # 检查登录状态
     if not session.get("logged_in"):
-        return jsonify({"error": "需要登录后才能删除文件", "require_login": True}), 403
+        return jsonify({"success": False, "error": "需要登录后才能删除文件", "require_login": True}), 403
     
     try:
         meta = _load_meta()
         stored_name = _resolve_stored_name(name, meta)
         if not stored_name:
-            return jsonify({"message": "未找到文件"}), 404
+            return jsonify({"success": False, "message": "未找到文件"}), 404
         os.remove(os.path.join(UPLOAD_FOLDER, stored_name))
         if is_image_file(stored_name):
             thumb_path = os.path.join(THUMBNAIL_FOLDER, f"thumb_{stored_name}")
@@ -309,9 +311,9 @@ def delete_file(name):
         msg = f"🗑️ 已删除 {name}"
         if removed:
             msg += f"，并清理多余缩略图 {len(removed)} 个"
-        return jsonify({"message": msg, "removed_thumbnails": removed})
+        return jsonify({"success": True, "message": msg, "removed_thumbnails": removed})
     except Exception as e:
-        return jsonify({"message": f"删除失败: {e}"}), 500
+        return jsonify({"success": False, "message": f"删除失败: {e}"}), 500
 
 
 # 文件下载
@@ -320,7 +322,7 @@ def download_file(filename):
     meta = _load_meta()
     stored_name = _resolve_stored_name(filename, meta)
     if not stored_name:
-        return jsonify({"error": "未找到文件"}), 404
+        return jsonify({"success": False, "error": "未找到文件"}), 404
     info = meta.get(stored_name, {})
     download_name = info.get("original_name") or stored_name
     return send_from_directory(UPLOAD_FOLDER, stored_name, as_attachment=True, download_name=download_name)
@@ -332,7 +334,7 @@ def serve_upload(filename):
     meta = _load_meta()
     stored_name = _resolve_stored_name(filename, meta)
     if not stored_name:
-        return jsonify({"error": "未找到文件"}), 404
+        return jsonify({"success": False, "error": "未找到文件"}), 404
     return send_from_directory(UPLOAD_FOLDER, stored_name)
 
 # 缩略图访问
@@ -343,12 +345,12 @@ def serve_thumbnail(filename):
         original = filename[len("thumb_"):]
         stored_name = _resolve_stored_name(original, meta)
         if not stored_name:
-            return jsonify({"error": "未找到文件"}), 404
+            return jsonify({"success": False, "error": "未找到文件"}), 404
         thumb_name = f"thumb_{stored_name}"
     else:
         stored_name = _resolve_stored_name(filename, meta)
         if not stored_name:
-            return jsonify({"error": "未找到文件"}), 404
+            return jsonify({"success": False, "error": "未找到文件"}), 404
         thumb_name = f"thumb_{stored_name}"
     return send_from_directory(THUMBNAIL_FOLDER, thumb_name)
 
@@ -357,10 +359,11 @@ def serve_thumbnail(filename):
 def clean_thumbnails():
     """清理多余缩略图 - 需要登录"""
     if not session.get("logged_in"):
-        return jsonify({"error": "需要登录后才能清理缩略图", "require_login": True}), 403
+        return jsonify({"success": False, "error": "需要登录后才能清理缩略图", "require_login": True}), 403
 
     removed = cleanup_orphan_thumbnails()
     return jsonify({
+        "success": True,
         "message": f"✅ 已清理多余缩略图 {len(removed)} 个",
         "removed_thumbnails": removed
     })

@@ -107,6 +107,57 @@ Nginx 反代：
 
 ## API 端点（总览）
 
+### 外部调用 API 返回规范
+
+用于手机快捷指令、外部设备、脚本直接调用的接口统一返回：
+
+成功：
+
+```json
+{
+  "success": true,
+  "message": "可选的人类可读提示",
+  "data": {}
+}
+```
+
+失败：
+
+```json
+{
+  "success": false,
+  "error": "错误原因",
+  "code": "OPTIONAL_ERROR_CODE"
+}
+```
+
+快捷指令只需要判断：
+
+```txt
+success 是 true
+```
+
+当前按此规范返回的外部接口：
+
+- `POST /api/shortcut/run`
+- `POST /api/cloud/upload`
+- `POST /api/situation`
+
+示例：`POST /api/cloud/upload`
+
+```json
+{
+  "success": true,
+  "message": "✅ 文件已上传：IMG_6933.jpeg",
+  "data": {
+    "filename": "uuid.jpeg",
+    "stored_name": "uuid.jpeg",
+    "original_name": "IMG_6933.jpeg",
+    "size": 2399329
+  }
+}
+```
+
 ### 认证与管理
 - `GET /api/auth/status`：查询登录状态
 - `POST /api/auth/login`：登录（用户名/密码）
