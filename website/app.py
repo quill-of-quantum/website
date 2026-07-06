@@ -74,6 +74,9 @@ app.register_blueprint(clipboard_bp)
 from situation.situation_api import bp as situation_bp
 from situation.situation_api import record_situation_event
 app.register_blueprint(situation_bp)
+
+from garden.garden_api import bp as garden_bp
+app.register_blueprint(garden_bp)
 # ===============================
 # 基础配置
 # ===============================

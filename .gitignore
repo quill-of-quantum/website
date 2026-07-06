@@ -43,3 +43,4 @@ website/shortcut.log
 # situation runtime / private data
 website/situation/*_log.txt
 website/situation/site.txt
+website/garden/events.jsonl

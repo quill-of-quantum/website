@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>菜地规划</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .garden-shell {
+      display: grid;
+      gap: 16px;
+    }
+    .garden-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .garden-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .garden-card:hover {
+      border-color: #6ba66b;
+      box-shadow: 0 8px 18px rgba(80, 120, 80, 0.1);
+    }
+    .garden-name {
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+    .garden-meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .garden-card-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+      justify-content: flex-end;
+    }
+    .btn-danger {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #fecaca;
+    }
+    .btn-danger:hover {
+      background: #fecaca;
+    }
+    .create-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .mode-panel {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .mode-line {
+      padding: 5px 8px;
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      border: 1px solid transparent;
+      width: fit-content;
+    }
+    .mode-line.active {
+      color: #047857;
+      background: #ecfdf5;
+      border-color: #bbf7d0;
+      font-weight: 600;
+    }
+    .mode-line.edit-active {
+      color: #9a4b12;
+      background: #fff3d6;
+      border-color: #f0b35a;
+    }
+    .toolbar-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+    }
+    .field select,
+    .field input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 11px 12px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    .garden-board {
+      border: 2px dashed #b9cdb2;
+      border-radius: var(--r);
+      background: linear-gradient(135deg, #eef7ec 0%, #f8fbf5 100%);
+      padding: 16px;
+      min-height: 540px;
+      position: relative;
+    }
+    .garden-board.edit-mode {
+      border-color: #e28b36;
+      background: linear-gradient(135deg, #fff3d6 0%, #fff8e8 100%);
+    }
+    .field-grid {
+      min-height: 62vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .north-marker {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid #9dbc91;
+      background: rgba(255, 255, 255, 0.88);
+      color: #2f5f36;
+      font-weight: 800;
+      line-height: 1;
+      box-shadow: 0 6px 14px rgba(45, 71, 45, 0.12);
+      pointer-events: none;
+    }
+    .north-marker::before {
+      content: "";
+      position: absolute;
+      top: 5px;
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-bottom: 10px solid #2f5f36;
+    }
+    .north-marker span {
+      margin-top: 10px;
+      font-size: 0.82rem;
+    }
+    .side {
+      display: grid;
+      gap: 12px;
+      min-height: 0;
+    }
+    .row-box {
+      min-height: 0;
+      display: grid;
+    }
+    .row-content {
+      display: grid;
+      gap: 8px;
+      min-height: 0;
+    }
+    .sub-plot {
+      min-height: 48px;
+      border-radius: var(--r-sm);
+      background: #e8f4e3;
+      border: 1px solid #b8d3ae;
+      display: grid;
+      grid-template-columns: 1fr;
+      position: relative;
+      overflow: visible;
+    }
+    .plot-emoji {
+      position: absolute;
+      top: 5px;
+      left: 7px;
+      z-index: 1;
+      pointer-events: none;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .plot-input {
+      width: 100%;
+      height: 100%;
+      min-height: 36px;
+      border: 0;
+      border-radius: var(--r-sm);
+      background: transparent;
+      text-align: center;
+      font-size: 15px;
+      padding: 8px 8px 8px 26px;
+    }
+    .plot-input:focus {
+      background: #fff;
+      box-shadow: inset 0 0 0 2px rgba(107, 166, 107, 0.4);
+      outline: 0;
+    }
+    .plot-compare {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      padding: 6px;
+      align-items: stretch;
+      min-height: 0;
+    }
+    .plot-current,
+    .plot-previous,
+    .plot-older {
+      border-radius: var(--r-sm);
+      padding: 6px;
+      display: grid;
+      align-content: center;
+      text-align: center;
+      min-width: 0;
+      min-height: 0;
+      overflow: visible;
+    }
+    .plot-current {
+      background: #e8f4e3;
+      border: 1px solid #b8d3ae;
+    }
+    .plot-previous {
+      background: #4b5563;
+      color: #fff;
+      border: 1px solid #374151;
+    }
+    .plot-previous .compare-label {
+      color: #e5e7eb;
+    }
+    .plot-older {
+      background: #f3f4f6;
+      color: #4b5563;
+      border: 1px dashed #d1d5db;
+    }
+    .compare-label {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+      line-height: 1.1;
+    }
+    .compare-value {
+      font-weight: 600;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .edit-mode .sub-plot {
+      cursor: pointer;
+      background: #fff0cc;
+      border-color: #e28b36;
+      outline: 2px dashed rgba(226, 139, 54, 0.38);
+    }
+    .edit-mode .plot-input {
+      pointer-events: none;
+    }
+    .suggestions,
+    .split-menu {
+      position: fixed;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      box-shadow: 0 14px 30px rgba(42, 65, 42, 0.15);
+      overflow: hidden;
+      z-index: 20;
+      min-width: 160px;
+      display: none;
+    }
+    .suggestion-item,
+    .split-item {
+      padding: 11px 13px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .suggestion-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .suggestion-item:last-child,
+    .split-item:last-child {
+      border-bottom: 0;
+    }
+    .suggestion-item:hover,
+    .split-item:hover {
+      background: #ecfdf5;
+    }
+    .status-line {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .btn-editing {
+      background: #e28b36;
+      color: #fff;
+      border-color: #e28b36;
+    }
+    .hidden {
+      display: none !important;
+    }
+    @media (max-width: 760px) {
+      .create-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .create-grid .field:first-child,
+      .create-grid .btn {
+        grid-column: 1 / -1;
+      }
+      .field-grid {
+        gap: 10px;
+      }
+      .garden-board {
+        min-height: 560px;
+        padding: 12px;
+      }
+      .card-title-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .mode-panel {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .plot-compare {
+        gap: 4px;
+        padding: 4px;
+      }
+      .plot-current,
+      .plot-previous,
+      .plot-older {
+        padding: 5px;
+      }
+      .compare-label {
+        font-size: 0.68rem;
+      }
+      .compare-value {
+        font-size: 0.86rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="container garden-shell">
+      <div class="page-header">
+        <h1 id="pageTitle">菜地规划</h1>
+      </div>
+
+      <section class="card" id="selectorView">
+        <div class="card-title-row">
+          <h2 class="card-title">选择菜地</h2>
+        </div>
+        <div class="garden-list" id="gardenList"></div>
+      </section>
+
+      <section class="card" id="createView">
+        <div class="card-title-row">
+          <h2 class="card-title">新建菜地</h2>
+        </div>
+        <div class="create-grid">
+          <div class="field">
+            <label for="gardenName">名称</label>
+            <input id="gardenName" value="新菜地" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="newLeftRows">左侧行数</label>
+            <select id="newLeftRows"></select>
+          </div>
+          <div class="field">
+            <label for="newRightRows">右侧行数</label>
+            <select id="newRightRows"></select>
+          </div>
+          <button class="btn btn-primary" id="createGardenBtn" type="button">创建</button>
+        </div>
+        <div class="status-line" id="selectorStatus">加载中...</div>
+      </section>
+
+      <section class="card hidden" id="editorView">
+        <div class="card-title-row">
+          <h2 class="card-title" id="editorTitle">菜地</h2>
+          <div class="mode-panel">
+            <div class="mode-line active" id="inputModeLine">输入模式：点击地块直接输入菜名</div>
+            <div class="mode-line" id="editModeLine">修改模式：点击地块选择拆分方式</div>
+          </div>
+        </div>
+
+        <div class="toolbar-grid">
+          <div class="status-line" id="statusLine">加载中...</div>
+          <div class="toolbar-actions">
+            <a class="btn btn-ghost" href="/garden">返回菜地列表</a>
+            <button class="btn btn-primary" id="editBtn" type="button">修改地块</button>
+            <button class="btn btn-ghost" id="compareBtn" type="button">查看上一轮</button>
+            <button class="btn btn-ghost" id="compareTwoBtn" type="button">查看前两轮</button>
+          </div>
+        </div>
+
+        <div class="garden-board" id="gardenBoard">
+          <div class="north-marker" aria-label="上方为北"><span>北</span></div>
+          <div class="field-grid">
+            <div class="side" id="leftSide"></div>
+            <div class="side" id="rightSide"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="suggestions" id="suggestions"></div>
+  <div class="split-menu" id="splitMenu">
+    <div class="split-item" data-count="1">恢复成一份</div>
+    <div class="split-item" data-count="2">拆分成两份</div>
+    <div class="split-item" data-count="3">拆分成三份</div>
+  </div>
+
+  <script>
+    const selectorView = document.getElementById('selectorView');
+    const createView = document.getElementById('createView');
+    const editorView = document.getElementById('editorView');
+    const pageTitle = document.getElementById('pageTitle');
+    const gardenList = document.getElementById('gardenList');
+    const selectorStatus = document.getElementById('selectorStatus');
+    const gardenName = document.getElementById('gardenName');
+    const newLeftRows = document.getElementById('newLeftRows');
+    const newRightRows = document.getElementById('newRightRows');
+    const createGardenBtn = document.getElementById('createGardenBtn');
+    const editorTitle = document.getElementById('editorTitle');
+    const leftSide = document.getElementById('leftSide');
+    const rightSide = document.getElementById('rightSide');
+    const gardenBoard = document.getElementById('gardenBoard');
+    const editBtn = document.getElementById('editBtn');
+    const compareBtn = document.getElementById('compareBtn');
+    const compareTwoBtn = document.getElementById('compareTwoBtn');
+    const inputModeLine = document.getElementById('inputModeLine');
+    const editModeLine = document.getElementById('editModeLine');
+    const suggestions = document.getElementById('suggestions');
+    const splitMenu = document.getElementById('splitMenu');
+    const statusLine = document.getElementById('statusLine');
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const gardenId = pathParts[0] === 'garden' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
+
+    let state = null;
+    let plantEmojiMap = {};
+    let editMode = false;
+    let compareDepth = 0;
+    let activeInput = null;
+    let activePlot = null;
+    let activeSearchToken = 0;
+
+    function setStatus(text) {
+      statusLine.textContent = text;
+    }
+
+    function setSelectorStatus(text) {
+      selectorStatus.textContent = text;
+    }
+
+    function fillRowOptions(select, selected = 8) {
+      select.innerHTML = '';
+      for (let i = 1; i <= 30; i += 1) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `${i} 行`;
+        if (i === selected) option.selected = true;
+        select.appendChild(option);
+      }
+    }
+
+    function rowId(side, index) {
+      return `${side}-${index}`;
+    }
+
+    function getPlots(layout, id) {
+      return (layout.beds && layout.beds[id] && layout.beds[id].length) ? layout.beds[id] : [{ name: '' }];
+    }
+
+    function indexPlants(plants) {
+      plantEmojiMap = {};
+      (plants || []).forEach(plant => {
+        const emoji = plant.emoji || '🌱';
+        [plant.name, ...(plant.aliases || [])].forEach(name => {
+          const key = String(name || '').trim().toLowerCase();
+          if (key) plantEmojiMap[key] = emoji;
+        });
+      });
+    }
+
+    function emojiForName(name) {
+      const key = String(name || '').trim().toLowerCase();
+      return key ? (plantEmojiMap[key] || '') : '';
+    }
+
+    function formatPlantName(name) {
+      const clean = String(name || '').trim();
+      if (!clean) return '';
+      const emoji = emojiForName(clean);
+      return emoji ? `${emoji} ${clean}` : clean;
+    }
+
+    function normalizePlot(plot) {
+      return {
+        name: plot?.name || '',
+        history: Array.isArray(plot?.history) ? plot.history : [],
+        recent_history: Array.isArray(plot?.recent_history) ? plot.recent_history : [],
+        layout_previous: plot?.layout_previous || null
+      };
+    }
+
+    function getLayoutPreviousNames(plot) {
+      const sources = plot?.layout_previous?.sources;
+      if (!Array.isArray(sources)) return [];
+      return sources
+        .map(source => (source?.name || '').trim())
+        .filter(Boolean);
+    }
+
+    function getHistoryNames(plot, index) {
+      const history = Array.isArray(plot?.history) ? plot.history : [];
+      if (Array.isArray(history[index]?.names) && history[index].names.length) return history[index].names;
+      if (history[index]?.name) return [history[index].name];
+      return index === 0 ? getLayoutPreviousNames(plot) : [];
+    }
+
+    function formatNames(names) {
+      return names.length ? names.map(formatPlantName).join(' / ') : '';
+    }
+
+    function hideFloating() {
+      suggestions.style.display = 'none';
+      splitMenu.style.display = 'none';
+      activePlot = null;
+    }
+
+    async function sendChange(type, payload) {
+      const res = await fetch(`/api/garden/change/${encodeURIComponent(gardenId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_version: state.version,
+          type,
+          payload
+        })
+      });
+      const result = await res.json();
+      if (!result.success) {
+        if (result.code === 'VERSION_CONFLICT') {
+          setStatus('版本已变化，正在重新加载...');
+          await loadState();
+          return false;
+        }
+        setStatus(result.error || '保存失败');
+        return false;
+      }
+      state.version = result.data.version;
+      setStatus(`已保存，版本 ${state.version}`);
+      return result;
+    }
+
+    function createInput(value, id, index) {
+      const input = document.createElement('input');
+      input.className = 'plot-input';
+      input.placeholder = '输入菜名';
+      input.value = value || '';
+      input.autocomplete = 'off';
+      input.addEventListener('input', () => showSuggestions(input));
+      input.addEventListener('focus', () => showSuggestions(input));
+      input.addEventListener('change', async () => {
+        const name = input.value.trim();
+        const result = await sendChange('set_plot', { row_id: id, plot_index: index, name });
+        if (result?.success) {
+          state.layout.beds[id][index] = normalizePlot(result.data.changed.plot);
+        }
+      });
+      return input;
+    }
+
+    function createPlot(plotData, id, index) {
+      const plot = document.createElement('div');
+      plot.className = 'sub-plot';
+      plot.dataset.rowId = id;
+      plot.dataset.plotIndex = index;
+
+      if (compareDepth) {
+        const previousNames = getHistoryNames(plotData, 0);
+        const olderNames = compareDepth >= 2 ? getHistoryNames(plotData, 1) : [];
+        plot.innerHTML = `
+          <div class="plot-compare">
+            <div class="plot-current">
+              <div class="compare-label">现在</div>
+              <div class="compare-value">${escapeHtml(formatPlantName(plotData.name) || '-')}</div>
+            </div>
+            <div class="plot-previous">
+              <div class="compare-label">上次</div>
+              <div class="compare-value">${escapeHtml(formatNames(previousNames) || '-')}</div>
+            </div>
+            ${compareDepth >= 2 ? `
+              <div class="plot-older">
+                <div class="compare-label">上上次</div>
+                <div class="compare-value">${escapeHtml(formatNames(olderNames) || '-')}</div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      } else {
+        const emoji = emojiForName(plotData.name);
+        if (emoji) {
+          const marker = document.createElement('span');
+          marker.className = 'plot-emoji';
+          marker.textContent = emoji;
+          plot.appendChild(marker);
+        }
+        plot.appendChild(createInput(plotData.name || '', id, index));
+      }
+
+      plot.addEventListener('click', event => {
+        if (!editMode || compareDepth) return;
+        event.preventDefault();
+        event.stopPropagation();
+        activePlot = plot;
+        showSplitMenu(plot);
+      });
+      return plot;
+    }
+
+    function createRow(side, index) {
+      const id = rowId(side, index);
+      const box = document.createElement('div');
+      box.className = 'row-box';
+      const content = document.createElement('div');
+      content.className = 'row-content';
+      const plots = getPlots(state.layout, id);
+      state.layout.beds[id] = plots.map(normalizePlot);
+      content.style.gridTemplateColumns = `repeat(${plots.length}, minmax(0, 1fr))`;
+      state.layout.beds[id].forEach((plot, plotIndex) => content.appendChild(createPlot(plot, id, plotIndex)));
+      box.appendChild(content);
+      return box;
+    }
+
+    function renderSide(container, side, count) {
+      container.innerHTML = '';
+      container.style.gridTemplateRows = `repeat(${count}, minmax(56px, 1fr))`;
+      for (let index = 0; index < count; index += 1) {
+        container.appendChild(createRow(side, index));
+      }
+    }
+
+    function renderGarden() {
+      pageTitle.textContent = state.name || '菜地规划';
+      editorTitle.textContent = `${state.name || '菜地'} 菜地`;
+      renderSide(leftSide, 'left', Number(state.layout.left_rows));
+      renderSide(rightSide, 'right', Number(state.layout.right_rows));
+      gardenBoard.classList.toggle('edit-mode', editMode);
+      compareBtn.textContent = compareDepth === 1 ? '退出上一轮' : '查看上一轮';
+      compareTwoBtn.textContent = compareDepth === 2 ? '退出前两轮' : '查看前两轮';
+      hideFloating();
+    }
+
+    function showSplitMenu(plot) {
+      const rect = plot.getBoundingClientRect();
+      splitMenu.style.left = `${rect.left}px`;
+      splitMenu.style.top = `${rect.bottom + 6}px`;
+      splitMenu.style.display = 'block';
+      suggestions.style.display = 'none';
+    }
+
+    async function showSuggestions(input) {
+      if (editMode || compareDepth) return;
+      activeInput = input;
+      const value = input.value.trim();
+      if (!value) {
+        suggestions.style.display = 'none';
+        return;
+      }
+      const token = ++activeSearchToken;
+      const res = await fetch(`/api/garden/plants/search?q=${encodeURIComponent(value)}`);
+      const payload = await res.json();
+      if (token !== activeSearchToken || !payload.success) return;
+      const matched = payload.data.items || [];
+      if (!matched.length) {
+        suggestions.style.display = 'none';
+        return;
+      }
+      suggestions.innerHTML = matched.map(item => `
+        <div class="suggestion-item" data-name="${escapeHtml(item.name)}">
+          <span>${escapeHtml(item.emoji || '🌱')}</span>
+          <span>${escapeHtml(item.name)}</span>
+        </div>
+      `).join('');
+      const rect = input.getBoundingClientRect();
+      suggestions.style.left = `${rect.left}px`;
+      suggestions.style.top = `${rect.bottom + 6}px`;
+      suggestions.style.width = `${rect.width}px`;
+      suggestions.style.display = 'block';
+      suggestions.querySelectorAll('.suggestion-item').forEach(item => {
+        item.addEventListener('mousedown', event => {
+          event.preventDefault();
+          activeInput.value = item.dataset.name || item.textContent.trim();
+          activeInput.dispatchEvent(new Event('change'));
+          suggestions.style.display = 'none';
+        });
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[ch]);
+    }
+
+    async function loadGardenList() {
+      const res = await fetch('/api/garden/list');
+      const payload = await res.json();
+      if (!payload.success) {
+        setSelectorStatus(payload.error || '加载失败');
+        return;
+      }
+      const gardens = payload.data.gardens || [];
+      if (!gardens.length) {
+        gardenList.innerHTML = '<div class="garden-meta">还没有菜地，先新建一个。</div>';
+      } else {
+        gardenList.innerHTML = gardens.map(garden => `
+          <div class="garden-card" data-open-garden="${escapeHtml(garden.id)}">
+            <span class="garden-name">${escapeHtml(garden.name)}</span>
+            <span class="garden-meta">左 ${garden.left_rows} 行，右 ${garden.right_rows} 行</span>
+            <div class="garden-card-actions">
+              <button class="btn btn-danger" type="button" data-delete-garden="${escapeHtml(garden.id)}" data-garden-name="${escapeHtml(garden.name)}">删除</button>
+            </div>
+          </div>
+        `).join('');
+        gardenList.querySelectorAll('[data-open-garden]').forEach(card => {
+          card.addEventListener('click', () => {
+            window.location.href = `/garden/${encodeURIComponent(card.dataset.openGarden)}`;
+          });
+        });
+        gardenList.querySelectorAll('[data-delete-garden]').forEach(button => {
+          button.addEventListener('click', event => {
+            event.stopPropagation();
+            deleteGarden(button.dataset.deleteGarden, button.dataset.gardenName);
+          });
+        });
+      }
+      setSelectorStatus(`共 ${gardens.length} 个菜地`);
+    }
+
+    async function deleteGarden(id, name) {
+      const password = prompt(`请输入删除密码：${name}`);
+      if (password === null) return;
+      const res = await fetch(`/api/garden/delete/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const payload = await res.json();
+      if (!payload.success) {
+        setSelectorStatus(payload.error || '删除失败');
+        return;
+      }
+      setSelectorStatus('已删除菜地');
+      await loadGardenList();
+    }
+
+    async function createGarden() {
+      const res = await fetch('/api/garden/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: gardenName.value.trim() || '新菜地',
+          left_rows: Number(newLeftRows.value),
+          right_rows: Number(newRightRows.value)
+        })
+      });
+      const payload = await res.json();
+      if (!payload.success) {
+        setSelectorStatus(payload.error || '创建失败');
+        return;
+      }
+      window.location.href = `/garden/${encodeURIComponent(payload.data.garden.id)}`;
+    }
+
+    async function loadState() {
+      const res = await fetch(`/api/garden/state/${encodeURIComponent(gardenId)}`);
+      const payload = await res.json();
+      if (!payload.success) {
+        setStatus(payload.error || '加载失败');
+        return;
+      }
+      state = payload.data.state;
+      indexPlants(payload.data.plants || []);
+      setStatus(`已加载，版本 ${state.version}`);
+      renderGarden();
+    }
+
+    splitMenu.querySelectorAll('.split-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        if (!activePlot) return;
+        const rowId = activePlot.dataset.rowId;
+        const count = Number(item.dataset.count);
+        const result = await sendChange('split_row', { row_id: rowId, count });
+        if (result?.success) {
+          state.layout.beds[rowId] = (result.data.changed.plots || []).map(normalizePlot);
+          renderGarden();
+        }
+      });
+    });
+
+    editBtn.addEventListener('click', () => {
+      editMode = !editMode;
+      compareDepth = 0;
+      editBtn.classList.toggle('btn-primary', !editMode);
+      editBtn.classList.toggle('btn-editing', editMode);
+      editBtn.textContent = editMode ? '完成修改' : '修改地块';
+      inputModeLine.classList.toggle('active', !editMode);
+      editModeLine.classList.toggle('active', editMode);
+      editModeLine.classList.toggle('edit-active', editMode);
+      hideFloating();
+      renderGarden();
+    });
+
+    compareBtn.addEventListener('click', () => {
+      compareDepth = compareDepth === 1 ? 0 : 1;
+      editMode = false;
+      editBtn.classList.add('btn-primary');
+      editBtn.classList.remove('btn-editing');
+      editBtn.textContent = '修改地块';
+      inputModeLine.classList.add('active');
+      editModeLine.classList.remove('active');
+      editModeLine.classList.remove('edit-active');
+      renderGarden();
+    });
+
+    compareTwoBtn.addEventListener('click', () => {
+      compareDepth = compareDepth === 2 ? 0 : 2;
+      editMode = false;
+      editBtn.classList.add('btn-primary');
+      editBtn.classList.remove('btn-editing');
+      editBtn.textContent = '修改地块';
+      inputModeLine.classList.add('active');
+      editModeLine.classList.remove('active');
+      editModeLine.classList.remove('edit-active');
+      renderGarden();
+    });
+
+    createGardenBtn.addEventListener('click', createGarden);
+    document.addEventListener('click', event => {
+      if (!event.target.closest('.suggestions') && !event.target.closest('.split-menu') && !event.target.closest('.sub-plot')) {
+        hideFloating();
+      }
+    });
+    window.addEventListener('resize', hideFloating);
+
+    fillRowOptions(newLeftRows);
+    fillRowOptions(newRightRows);
+    if (gardenId) {
+      selectorView.classList.add('hidden');
+      createView.classList.add('hidden');
+      editorView.classList.remove('hidden');
+      loadState();
+    } else {
+      loadGardenList();
+    }
+  </script>
+</body>
+</html>
