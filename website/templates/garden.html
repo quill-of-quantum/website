@@ -24,6 +24,7 @@
       background: var(--surface);
       color: var(--text);
       cursor: pointer;
+      touch-action: manipulation;
     }
     .garden-card:hover {
       border-color: #6ba66b;
@@ -72,6 +73,10 @@
       background: var(--surface);
       border: 1px solid transparent;
       width: fit-content;
+      cursor: pointer;
+      color: inherit;
+      font: inherit;
+      touch-action: manipulation;
     }
     .mode-line.active {
       color: #047857;
@@ -83,6 +88,11 @@
       color: #9a4b12;
       background: #fff3d6;
       border-color: #f0b35a;
+    }
+    .mode-line.delete-active {
+      color: #991b1b;
+      background: #fee2e2;
+      border-color: #fca5a5;
     }
     .toolbar-grid {
       display: flex;
@@ -124,6 +134,10 @@
     .garden-board.edit-mode {
       border-color: #e28b36;
       background: linear-gradient(135deg, #fff3d6 0%, #fff8e8 100%);
+    }
+    .garden-board.delete-mode {
+      border-color: #dc2626;
+      background: linear-gradient(135deg, #fee2e2 0%, #fff1f2 100%);
     }
     .field-grid {
       min-height: 62vh;
@@ -186,6 +200,7 @@
       grid-template-columns: 1fr;
       position: relative;
       overflow: visible;
+      touch-action: manipulation;
     }
     .plot-emoji {
       position: absolute;
@@ -198,14 +213,17 @@
     }
     .plot-input {
       width: 100%;
-      height: 100%;
       min-height: 36px;
       border: 0;
       border-radius: var(--r-sm);
       background: transparent;
       text-align: center;
       font-size: 15px;
+      line-height: 1.25;
       padding: 8px 8px 8px 26px;
+      resize: none;
+      overflow: hidden;
+      font-family: inherit;
     }
     .plot-input:focus {
       background: #fff;
@@ -267,11 +285,19 @@
       border-color: #e28b36;
       outline: 2px dashed rgba(226, 139, 54, 0.38);
     }
-    .edit-mode .plot-input {
+    .delete-mode .sub-plot {
+      cursor: pointer;
+      background: #fee2e2;
+      border-color: #dc2626;
+      outline: 2px dashed rgba(220, 38, 38, 0.35);
+    }
+    .edit-mode .plot-input,
+    .delete-mode .plot-input {
       pointer-events: none;
     }
     .suggestions,
-    .split-menu {
+    .split-menu,
+    .history-menu {
       position: fixed;
       background: var(--surface);
       border: 1px solid var(--border);
@@ -283,11 +309,13 @@
       display: none;
     }
     .suggestion-item,
-    .split-item {
+    .split-item,
+    .history-item {
       padding: 11px 13px;
       font-size: 14px;
       cursor: pointer;
       border-bottom: 1px solid var(--border);
+      touch-action: manipulation;
     }
     .suggestion-item {
       display: flex;
@@ -295,12 +323,29 @@
       gap: 8px;
     }
     .suggestion-item:last-child,
-    .split-item:last-child {
+    .split-item:last-child,
+    .history-item:last-child {
       border-bottom: 0;
     }
     .suggestion-item:hover,
-    .split-item:hover {
+    .split-item:hover,
+    .history-item:hover {
       background: #ecfdf5;
+    }
+    .history-menu {
+      max-width: min(320px, calc(100vw - 24px));
+    }
+    .history-title {
+      padding: 10px 13px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      border-bottom: 1px solid var(--border);
+      background: #f9fafb;
+    }
+    .history-item.confirming {
+      background: #fee2e2;
+      color: #991b1b;
+      font-weight: 700;
     }
     .status-line {
       color: var(--muted);
@@ -395,8 +440,9 @@
         <div class="card-title-row">
           <h2 class="card-title" id="editorTitle">菜地</h2>
           <div class="mode-panel">
-            <div class="mode-line active" id="inputModeLine">输入模式：点击地块直接输入菜名</div>
-            <div class="mode-line" id="editModeLine">修改模式：点击地块选择拆分方式</div>
+            <button class="mode-line active" id="inputModeLine" type="button">输入模式</button>
+            <button class="mode-line" id="editModeLine" type="button">修改地块</button>
+            <button class="mode-line" id="deleteModeLine" type="button">删除模式</button>
           </div>
         </div>
 
@@ -404,7 +450,6 @@
           <div class="status-line" id="statusLine">加载中...</div>
           <div class="toolbar-actions">
             <a class="btn btn-ghost" href="/garden">返回菜地列表</a>
-            <button class="btn btn-primary" id="editBtn" type="button">修改地块</button>
             <button class="btn btn-ghost" id="compareBtn" type="button">查看上一轮</button>
             <button class="btn btn-ghost" id="compareTwoBtn" type="button">查看前两轮</button>
           </div>
@@ -427,6 +472,7 @@
     <div class="split-item" data-count="2">拆分成两份</div>
     <div class="split-item" data-count="3">拆分成三份</div>
   </div>
+  <div class="history-menu" id="historyMenu"></div>
 
   <script>
     const selectorView = document.getElementById('selectorView');
@@ -443,23 +489,26 @@
     const leftSide = document.getElementById('leftSide');
     const rightSide = document.getElementById('rightSide');
     const gardenBoard = document.getElementById('gardenBoard');
-    const editBtn = document.getElementById('editBtn');
     const compareBtn = document.getElementById('compareBtn');
     const compareTwoBtn = document.getElementById('compareTwoBtn');
     const inputModeLine = document.getElementById('inputModeLine');
     const editModeLine = document.getElementById('editModeLine');
+    const deleteModeLine = document.getElementById('deleteModeLine');
     const suggestions = document.getElementById('suggestions');
     const splitMenu = document.getElementById('splitMenu');
+    const historyMenu = document.getElementById('historyMenu');
     const statusLine = document.getElementById('statusLine');
     const pathParts = window.location.pathname.split('/').filter(Boolean);
     const gardenId = pathParts[0] === 'garden' && pathParts[1] ? decodeURIComponent(pathParts[1]) : null;
 
     let state = null;
     let plantEmojiMap = {};
-    let editMode = false;
+    let activeMode = 'input';
     let compareDepth = 0;
     let activeInput = null;
     let activePlot = null;
+    let activeHistoryTarget = null;
+    let pendingHistoryDelete = null;
     let activeSearchToken = 0;
 
     function setStatus(text) {
@@ -543,7 +592,35 @@
     function hideFloating() {
       suggestions.style.display = 'none';
       splitMenu.style.display = 'none';
+      historyMenu.style.display = 'none';
       activePlot = null;
+      activeHistoryTarget = null;
+      pendingHistoryDelete = null;
+    }
+
+    function setMode(mode) {
+      const wasCompareMode = compareDepth > 0;
+      activeMode = mode;
+      compareDepth = 0;
+      updateModeUi();
+      updateCompareButtons();
+      hideFloating();
+      if (wasCompareMode) renderGarden();
+    }
+
+    function updateModeUi() {
+      inputModeLine.classList.toggle('active', activeMode === 'input');
+      editModeLine.classList.toggle('active', activeMode === 'edit');
+      editModeLine.classList.toggle('edit-active', activeMode === 'edit');
+      deleteModeLine.classList.toggle('active', activeMode === 'delete');
+      deleteModeLine.classList.toggle('delete-active', activeMode === 'delete');
+      gardenBoard.classList.toggle('edit-mode', activeMode === 'edit');
+      gardenBoard.classList.toggle('delete-mode', activeMode === 'delete');
+    }
+
+    function updateCompareButtons() {
+      compareBtn.textContent = compareDepth === 1 ? '退出上一轮' : '查看上一轮';
+      compareTwoBtn.textContent = compareDepth === 2 ? '退出前两轮' : '查看前两轮';
     }
 
     async function sendChange(type, payload) {
@@ -572,21 +649,40 @@
     }
 
     function createInput(value, id, index) {
-      const input = document.createElement('input');
+      const input = document.createElement('textarea');
       input.className = 'plot-input';
       input.placeholder = '输入菜名';
       input.value = value || '';
       input.autocomplete = 'off';
-      input.addEventListener('input', () => showSuggestions(input));
+      input.rows = 1;
+      input.addEventListener('input', () => {
+        resizePlotInput(input);
+        showSuggestions(input);
+      });
       input.addEventListener('focus', () => showSuggestions(input));
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          input.blur();
+        }
+      });
       input.addEventListener('change', async () => {
-        const name = input.value.trim();
+        const name = input.value.replace(/\s+/g, ' ').trim();
+        input.value = name;
+        resizePlotInput(input);
         const result = await sendChange('set_plot', { row_id: id, plot_index: index, name });
         if (result?.success) {
           state.layout.beds[id][index] = normalizePlot(result.data.changed.plot);
+          renderGarden();
         }
       });
+      requestAnimationFrame(() => resizePlotInput(input));
       return input;
+    }
+
+    function resizePlotInput(input) {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
     }
 
     function createPlot(plotData, id, index) {
@@ -628,7 +724,14 @@
       }
 
       plot.addEventListener('click', event => {
-        if (!editMode || compareDepth) return;
+        if (compareDepth) return;
+        if (activeMode === 'delete') {
+          event.preventDefault();
+          event.stopPropagation();
+          showHistoryMenu(plot, plotData, id, index);
+          return;
+        }
+        if (activeMode !== 'edit') return;
         event.preventDefault();
         event.stopPropagation();
         activePlot = plot;
@@ -664,9 +767,8 @@
       editorTitle.textContent = `${state.name || '菜地'} 菜地`;
       renderSide(leftSide, 'left', Number(state.layout.left_rows));
       renderSide(rightSide, 'right', Number(state.layout.right_rows));
-      gardenBoard.classList.toggle('edit-mode', editMode);
-      compareBtn.textContent = compareDepth === 1 ? '退出上一轮' : '查看上一轮';
-      compareTwoBtn.textContent = compareDepth === 2 ? '退出前两轮' : '查看前两轮';
+      updateModeUi();
+      updateCompareButtons();
       hideFloating();
     }
 
@@ -678,8 +780,93 @@
       suggestions.style.display = 'none';
     }
 
+    function historyLabel(item) {
+      const names = Array.isArray(item?.names) && item.names.length ? item.names : (item?.name ? [item.name] : []);
+      return formatNames(names) || '-';
+    }
+
+    function plotTimelineRecords(plotData) {
+      const history = Array.isArray(plotData.history) ? plotData.history : [];
+      const records = [
+        ...history.slice().reverse().map((item, reverseIndex) => ({
+          ...item,
+          kind: 'history',
+          historyIndex: history.length - 1 - reverseIndex
+        })),
+        {
+          name: plotData.name || '',
+          names: plotData.name ? [plotData.name] : [],
+          change_type: 'current',
+          kind: 'current'
+        }
+      ];
+      return records.filter(item => historyLabel(item) !== '-');
+    }
+
+    function showHistoryMenu(plot, plotData, rowId, plotIndex) {
+      const records = plotTimelineRecords(plotData);
+      activeHistoryTarget = { rowId, plotIndex };
+      pendingHistoryDelete = null;
+      const rect = plot.getBoundingClientRect();
+      historyMenu.style.left = `${rect.left}px`;
+      historyMenu.style.top = `${rect.bottom + 6}px`;
+      historyMenu.style.display = 'block';
+      suggestions.style.display = 'none';
+      splitMenu.style.display = 'none';
+
+      if (!records.length) {
+        historyMenu.innerHTML = '<div class="history-title">这个地块没有可删除记录</div>';
+        return;
+      }
+
+      historyMenu.innerHTML = `
+        <div class="history-title">选择要删除的记录，序号越大越新</div>
+        ${records.map((item, recordIndex) => {
+          const serial = recordIndex + 1;
+          const isCurrent = item.kind === 'current';
+          const label = `${serial}. ${historyLabel(item)}${isCurrent ? '（当前）' : ''}`;
+          return `
+          <div class="history-item" data-record-index="${recordIndex}" data-history-index="${item.historyIndex ?? ''}" data-current="${isCurrent ? '1' : '0'}" data-label="${escapeHtml(label)}">
+            ${escapeHtml(label)}
+          </div>
+        `;
+        }).join('')}
+      `;
+      historyMenu.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', () => deleteHistoryWithConfirm(item));
+      });
+    }
+
+    async function deleteHistoryWithConfirm(item) {
+      const recordIndex = Number(item.dataset.recordIndex);
+      const key = `${activeHistoryTarget.rowId}:${activeHistoryTarget.plotIndex}:${recordIndex}`;
+      if (pendingHistoryDelete !== key) {
+        pendingHistoryDelete = key;
+        historyMenu.querySelectorAll('.history-item').forEach(node => {
+          node.classList.remove('confirming');
+          node.textContent = node.dataset.label || node.textContent;
+        });
+        item.classList.add('confirming');
+        item.textContent = `再次点击确认删除：${item.dataset.label || item.textContent}`;
+        return;
+      }
+
+      const result = await sendChange('delete_history', {
+        row_id: activeHistoryTarget.rowId,
+        plot_index: activeHistoryTarget.plotIndex,
+        record_index: recordIndex,
+        history_index: item.dataset.historyIndex === '' ? null : Number(item.dataset.historyIndex),
+        current: item.dataset.current === '1'
+      });
+      if (result?.success) {
+        state.layout.beds[activeHistoryTarget.rowId][activeHistoryTarget.plotIndex] = normalizePlot(result.data.changed.plot);
+        setStatus('已删除历史记录');
+        renderGarden();
+      }
+    }
+
     async function showSuggestions(input) {
-      if (editMode || compareDepth) return;
+      if (activeMode !== 'input' || compareDepth) return;
       activeInput = input;
       const value = input.value.trim();
       if (!value) {
@@ -822,46 +1009,29 @@
       });
     });
 
-    editBtn.addEventListener('click', () => {
-      editMode = !editMode;
-      compareDepth = 0;
-      editBtn.classList.toggle('btn-primary', !editMode);
-      editBtn.classList.toggle('btn-editing', editMode);
-      editBtn.textContent = editMode ? '完成修改' : '修改地块';
-      inputModeLine.classList.toggle('active', !editMode);
-      editModeLine.classList.toggle('active', editMode);
-      editModeLine.classList.toggle('edit-active', editMode);
-      hideFloating();
-      renderGarden();
-    });
+    inputModeLine.addEventListener('click', () => setMode('input'));
+    editModeLine.addEventListener('click', () => setMode('edit'));
+    deleteModeLine.addEventListener('click', () => setMode('delete'));
 
     compareBtn.addEventListener('click', () => {
       compareDepth = compareDepth === 1 ? 0 : 1;
-      editMode = false;
-      editBtn.classList.add('btn-primary');
-      editBtn.classList.remove('btn-editing');
-      editBtn.textContent = '修改地块';
-      inputModeLine.classList.add('active');
-      editModeLine.classList.remove('active');
-      editModeLine.classList.remove('edit-active');
+      activeMode = 'input';
+      updateModeUi();
+      hideFloating();
       renderGarden();
     });
 
     compareTwoBtn.addEventListener('click', () => {
       compareDepth = compareDepth === 2 ? 0 : 2;
-      editMode = false;
-      editBtn.classList.add('btn-primary');
-      editBtn.classList.remove('btn-editing');
-      editBtn.textContent = '修改地块';
-      inputModeLine.classList.add('active');
-      editModeLine.classList.remove('active');
-      editModeLine.classList.remove('edit-active');
+      activeMode = 'input';
+      updateModeUi();
+      hideFloating();
       renderGarden();
     });
 
     createGardenBtn.addEventListener('click', createGarden);
     document.addEventListener('click', event => {
-      if (!event.target.closest('.suggestions') && !event.target.closest('.split-menu') && !event.target.closest('.sub-plot')) {
+      if (!event.target.closest('.suggestions') && !event.target.closest('.split-menu') && !event.target.closest('.history-menu') && !event.target.closest('.sub-plot')) {
         hideFloating();
       }
     });

@@ -281,6 +281,60 @@ def _apply_change(state, change):
         plots[plot_index] = plot
         return {"row_id": row_id, "plot_index": plot_index, "plot": plot}
 
+    if change_type == "delete_history":
+        row_id = str(payload.get("row_id") or "")
+        plot_index = int(payload.get("plot_index", 0))
+        delete_current = bool(payload.get("current"))
+        history_index_value = payload.get("history_index")
+        record_index = int(payload.get("record_index", -1))
+        if not row_id:
+            raise ValueError("缺少 row_id")
+        if plot_index < 0:
+            raise ValueError("plot_index 不能小于 0")
+        plots = _ensure_row(layout, row_id)
+        if plot_index >= len(plots):
+            raise ValueError("地块不存在")
+        plot = _normalize_plot(plots[plot_index])
+        history = plot.get("history", [])
+
+        if delete_current:
+            deleted = {
+                "name": plot.get("name", ""),
+                "names": _plot_source_names(plot),
+                "changed_at": plot.get("updated_at"),
+                "change_type": "current"
+            }
+            if history:
+                promoted = history.pop(0)
+                plot["name"] = str(promoted.get("name", ""))
+            else:
+                plot["name"] = ""
+        else:
+            if history_index_value is not None:
+                history_index = int(history_index_value)
+            else:
+                if record_index < 0:
+                    raise ValueError("record_index 不能小于 0")
+                record_count = len(history) + 1
+                if record_index >= record_count:
+                    raise ValueError("记录不存在")
+                history_index = len(history) - 1 - record_index
+            if history_index < 0 or history_index >= len(history):
+                raise ValueError("历史记录不存在")
+            deleted = history.pop(history_index)
+
+        plot["history"] = history
+        plot["recent_history"] = history[:2]
+        plots[plot_index] = plot
+        return {
+            "row_id": row_id,
+            "plot_index": plot_index,
+            "record_index": record_index,
+            "current": delete_current,
+            "deleted": deleted,
+            "plot": plot
+        }
+
     raise ValueError(f"不支持的变更类型: {change_type}")
 
 
