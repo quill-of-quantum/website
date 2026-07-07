@@ -77,6 +77,9 @@ app.register_blueprint(situation_bp)
 
 from garden.garden_api import bp as garden_bp
 app.register_blueprint(garden_bp)
+
+from email_api import bp as email_bp
+app.register_blueprint(email_bp)
 # ===============================
 # 基础配置
 # ===============================
