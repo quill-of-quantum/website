@@ -6,11 +6,11 @@
 
 ## 功能概览
 
-- 首页 / 工具区 / 追踪面板 / 路线规划 / 3D 预览（Flask）
+- 首页 / 云盘 / 剪贴板 / 视觉工具 / 追踪面板 / 路线规划 / 3D 预览（Flask）
 - 实时对战大厅 `/game/`（Socket.IO 房间管理 + boardgame.io 国际象棋嵌入）
 - 字母棋识别与推荐 `/letter`（OCR + GADDAG）
 - 后台追踪调度器（tracker_scheduler）
-- 系统监控与天气图表输出
+- 系统监控、天气/能耗图表、花园记录、状态记录、极光信息
 
 ---
 
@@ -32,12 +32,18 @@ Nginx 反代：
 ## 页面与路由（UI）
 
 - `/`：主页（`templates/index.html`）
-- `/tools`：工具页（上传/文件浏览/缩略图）（`templates/tools.html`）
+- `/cloud`：云盘页（上传/文件浏览/缩略图）（`templates/cloud.html`）
+- `/clipboard`：网页剪贴板（`templates/tool_2.html`）
 - `/tracker`：物流追踪面板（`templates/tracker.html`）
 - `/map`：路线规划页面（`templates/map.html`）
+- `/route_creator`：路线创作页面（`templates/route_creator.html`）
 - `/viewer`：3D 模型预览（`templates/viewer.html`）
+- `/vision`：智能视觉检测页（`templates/tool_1.html`）
 - `/game/` 与 `/game/<room_id>`：实时对战大厅与房间（`templates/game.html`）
 - `/letter`：字母棋识别与推荐（`templates/letter.html`）
+- `/garden` 与 `/garden/<garden_id>`：菜地记录页面（`templates/garden.html`）
+- `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
+- `/aurora/`：极光信息页面（`templates/aurora.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
 
 备注：`templates/login.html` 存在，但登录通过 `/api/auth/login` 进行。
@@ -48,9 +54,39 @@ Nginx 反代：
 
 ```
 /home/bbdwz/projects/website/
-├── app.py                        # Flask 主入口（注册蓝图、路由、管理区）
+├── app.py                        # Flask 主入口（初始化与注册模块）
+├── modules/                      # 后端功能模块
+│   ├── index/api.py              # 首页与首页数据接口
+│   ├── admin/api.py              # 管理后台
+│   ├── auth/api.py               # 登录状态与登录/退出
+│   ├── cloud/                    # 云盘上传/下载/缩略图
+│   ├── tracker/                  # 物流追踪 API、抓取逻辑与调度器
+│   ├── map/api.py                # 路线规划 API
+│   ├── garden/api.py             # 菜地记录 API
+│   ├── situation/api.py          # 状态记录 API
+│   ├── sensor/api.py             # SGP30 传感器 API
+│   ├── tools/                    # vision / clipboard 工具
+│   ├── game/api.py               # Socket.IO 房间/座位/悔棋逻辑
+│   ├── letter_league/api.py      # 字母棋识别/推荐
+│   ├── aurora/api.py             # 极光信息
+│   ├── weather/analyze.py        # 天气/能耗分析脚本
+│   └── mail/api.py               # 邮件转发 API
+├── data/                         # SQLite / JSON / 日志状态数据
+│   ├── tracker/
+│   ├── map/
+│   ├── garden/
+│   ├── situation/
+│   ├── sensor/
+│   ├── weather/
+│   ├── tools/
+│   └── aurora/
+├── storage/                      # 上传文件与生成产物
+│   ├── cloud/
+│   ├── vision/
+│   ├── map/
+│   ├── weather/
+│   └── route_creator/
 ├── game/
-│   ├── game_api.py               # Socket.IO 房间/座位/悔棋逻辑
 │   └── boardgame/
 │       ├── app/                  # boardgame.io 源码 + 构建
 │       │   ├── server.js         # boardgame.io 服务端
@@ -61,21 +97,8 @@ Nginx 反代：
 ├── static/
 │   ├── bgio/                     # boardgame.io 构建产物
 │   └── js/socket.io.min.js       # Socket.IO 客户端本地备份
-├── tracker_api.py                # 物流追踪 API
-├── tracker_scheduler.py          # 追踪调度服务（定时任务）
-├── tracker_browser.py            # Playwright 抓取/解析逻辑
-├── tools_api.py                  # 工具区文件上传/下载/缩略图
-├── map/                          # 路线规划模块（Baidu Map API）
-│   ├── map_api.py
-│   ├── config.json
-│   └── history.json
-├── letter_league/                # 字母棋识别/推荐
-│   ├── letter_api.py
-│   └── twl06_ENABLE.txt           # 词库
-├── weather/                      # 天气/能耗分析与图表输出
-├── uploads/                      # 工具区上传目录
-├── thumbnails/                   # 工具区缩略图目录
-└── tracker.db                    # SQLite 追踪数据库
+├── letter_league/                # 字母棋词库与示例图片
+└── tests/                        # 迁移后的测试/验证脚本
 ```
 
 ---
@@ -168,20 +191,27 @@ success 是 true
 ### 系统与快捷动作
 - `GET /api/system`：系统状态（CPU/内存/温度/WiFi/运行时间 + 历史）
 - `POST /api/shortcut/run`：快捷动作
-  - `append_reading`：写入暖气读数，触发 `weather/analyze_weather.py`
+  - `append_reading`：写入暖气读数，触发 `modules/weather/analyze.py`
   - `get_latest`：获取最新读数
 
 ### 天气/能耗图表
-- `GET /weather/<filename>`：天气/能耗图文件（含 SVG）
-- `GET /weather_chart/<filename>`：同目录图表文件
+- `GET /weather/<filename>`：天气/能耗 CSV 或 SVG 文件
+- `GET /weather_chart/<filename>`：兼容旧图表 URL
 
-### 工具区文件
-- `POST /api/tools/upload`：上传文件
-- `GET /api/tools/files`：列出文件 + 磁盘用量
-- `POST /api/tools/delete/<name>`：删除文件（需登录）
-- `GET /api/tools/download/<filename>`：下载文件
+### 云盘文件
+- `POST /api/cloud/upload`：上传文件
+- `GET /api/cloud/files`：列出文件 + 磁盘用量
+- `POST /api/cloud/delete/<name>`：删除文件（需登录）
+- `GET /api/cloud/download/<filename>`：下载文件
+- `POST /api/cloud/clean_thumbnails`：清理孤立缩略图（需登录）
 - `GET /uploads/<filename>`：直链访问上传文件
 - `GET /thumbnails/<filename>`：直链访问缩略图
+
+### 工具
+- `GET /clipboard`：剪贴板页面
+- `GET /api/clipboard` / `POST /api/clipboard`：读取/更新剪贴板
+- `POST /api/vision/upload`：上传视觉检测图片
+- `POST /api/vision/analyze`：运行视觉检测
 
 ### 物流追踪
 - `GET /api/tracker/list`：任务列表
@@ -196,11 +226,48 @@ success 是 true
 
 ### 路线规划（Baidu Map）
 - `GET /api/map/config` / `POST /api/map/config`：获取/保存配置
+- `GET /api/map/reverse_geocode`：逆地理编码
 - `POST /api/map/geocode`：地理编码
+- `POST /api/map/topo`：地形/海拔数据
 - `POST /api/map/route`：路线规划 + 成本计算 + 交互式地图
 - `GET /api/map/history`：历史记录
 - `DELETE /api/map/history`：清空历史（需登录）
+- `GET /api/map/favorites` / `POST /api/map/favorites`：收藏路线
+- `DELETE /api/map/favorites/<fav_id>`：删除收藏
+- `GET /api/map/favorite_images/<filename>`：收藏路线图片
 - `POST /api/map/map`：生成路线地图 HTML
+
+### 路线创作
+- `GET /api/route_creator/list`：路线草稿列表
+- `POST /api/route_creator/save`：保存路线草稿
+- `GET /api/route_creator/get/<route_id>`：获取路线草稿
+- `POST /api/route_creator/match`：匹配手绘路线
+- `GET /api/route_creator/progress`：匹配进度
+- `GET /api/route_creator/result`：匹配结果
+
+### 花园与状态记录
+- `GET /api/garden/list`：菜地列表
+- `POST /api/garden/create`：创建菜地
+- `POST /api/garden/delete/<garden_id>`：删除菜地
+- `GET /api/garden/state` / `GET /api/garden/state/<garden_id>`：读取菜地状态
+- `POST /api/garden/change/<garden_id>`：记录菜地变更
+- `GET /api/garden/plants/search`：搜索植物
+- `POST /api/situation`：记录状态
+- `GET /api/situation/latest`：最新状态
+- `GET /api/situation/settings`：状态设置
+- `GET /api/situation/track`：状态轨迹
+- `GET /api/situation/list`：状态记录列表
+
+### 传感器、极光与邮件
+- `GET /api/sensor/latest`：最新 SGP30 数据
+- `GET /api/sensor/log`：SGP30 历史日志
+- `GET /aurora/api/status`：极光/Kp 实时状态
+- `GET /aurora/api/forecast`：Kp 趋势
+- `GET /aurora/api/location_estimate`：位置估算
+- `GET /aurora/api/ovation`：OVATION 极光数据
+- `GET /aurora/api/social`：社交/外部信息
+- `GET /aurora/api/location` / `POST /aurora/api/location`：读取/保存观测位置
+- `POST /api/mail/send`：转发邮件发送请求
 
 ### 字母棋识别
 - `GET /letter`：字母棋识别页面
@@ -222,9 +289,12 @@ success 是 true
 - Flask 密钥：`app.py` 中 `app.secret_key`
 - 管理区限制：`ADMIN_PREFIX = /1`，仅局域网 IP（`192.168.178.0/24`）
 - 米家登录：`AUTH_PATH = ~/.config/mijia-api/mijia-api-auth.json`
-- 路线规划：`map/map_api.py` 内置 Baidu Map AK/SK
-- 追踪数据库：`/home/bbdwz/projects/website/tracker.db`
-- 追踪数据文件：`/home/bbdwz/projects/website/tracker_data_<id>.json`
+- 路线规划：`modules/map/api.py` 内置 Baidu Map AK/SK
+- 追踪数据库：`/home/bbdwz/projects/website/data/tracker/tracker.db`
+- 追踪数据文件：`/home/bbdwz/projects/website/data/tracker/tracker_data_<id>.json`
+- 追踪调度器：`tracker_scheduler.service` 直接启动 `modules/tracker/scheduler.py`
+- 天气分析脚本：`modules/weather/analyze.py`
+- Git 忽略规则：`/home/bbdwz/projects/.gitignore` 统一管理 website、gallery、email-service 等项目的运行数据忽略规则
 
 ---
 
@@ -253,14 +323,25 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 
 ## 数据与文件输出
 
-- `tracker.db`：追踪任务 SQLite
-- `tracker_data_<id>.json`：每个追踪任务的独立结果
-- `tracker_result.html`、`tracker_last.json`：抓取/解析临时与最后结果
-- `weather/*.csv`、`weather/*.svg`：能耗数据与图表
-- `map/history.json`：路线历史
-- `map/config.json`：路线配置（油价/能耗）
-- `uploads/`：工具区上传文件
-- `thumbnails/`：工具区缩略图
+- `data/tracker/tracker.db`：追踪任务 SQLite
+- `data/tracker/tracker_data_<id>.json`：每个追踪任务的独立结果
+- `data/tracker/tracker_result.html`、`data/tracker/tracker_last.json`：抓取/解析临时与最后结果
+- `data/weather/*.csv`、`data/weather/number.txt`：能耗原始数据与 CSV 数据
+- `storage/weather/*.svg`：能耗图表输出
+- `data/map/history.json`：路线历史
+- `data/map/config.json`：路线配置（油价/能耗）
+- `data/map/favorites.json`、`data/map/favorite_images/`：路线收藏与图片
+- `data/map/geocode_cache.db`、`data/map/cache/`：地理编码与地形缓存
+- `data/garden/*.json`、`data/garden/events.jsonl`：菜地状态与事件
+- `data/situation/situation_log.txt`、`data/situation/site.txt`：状态记录数据
+- `data/sensor/sgp30.log`：SGP30 传感器日志
+- `data/aurora/selected_location.json`：极光观测位置
+- `data/tools/clipboard.txt`：网页剪贴板内容
+- `storage/cloud/uploads/`：云盘上传文件
+- `storage/cloud/thumbnails/`：云盘缩略图
+- `storage/vision/uploads/`：视觉工具临时上传文件
+- `storage/map/output/`：路线规划生成产物
+- `storage/route_creator/`：路线创作匹配产物
 
 ---
 

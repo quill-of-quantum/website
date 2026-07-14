@@ -1,46 +1,69 @@
-# Python cache
+# Python/cache
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# logs
+# Logs
 *.log
+logs/
+*/logs/
 
-# databases
+# Local env / secrets
+.env
+.env.*
+*.pem
+*.key
+application-local.yml
+
+# Databases
 *.db
+*.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
 
-# runtime / generated data
-website/tracker.db
-website/tracker_last.json
+# Node/build artifacts
+node_modules/
+dist/
+build/
+target/
 
-# weather outputs
-website/weather/*.csv
-website/weather/*.svg
-website/weather/*.txt
+# IDE
+.idea/
+.vscode/
+*.iml
 
-# uploads directory
+# Website runtime data
+website/data/
+website/storage/
+website/cache/
+website/output/
 website/uploads/
 website/thumbnails/
-
-# local backup / private dirs
-website_new/
-gallery/photos/
-gallery/featured.db
-website/map/history.json
-website/yolov8n.pt
-*.json
-website/map/cache/srtm/*.hgt
-website/map/favorite_images/
-website/map/**/*.png
-website/map/**/*.jpg
-website/map/**/*.jpeg
-website/map/**/*.webp
-website/map/**/*.gif
-website/树莓派连接局域网代理方法.txt
-website/tools/clipboard.txt
 website/shortcut.log
+website/yolov8n.pt
+website/树莓派连接局域网代理方法.txt
 
-# situation runtime / private data
-website/situation/*_log.txt
-website/situation/site.txt
-website/garden/events.jsonl
+# Website legacy/generated media and map terrain/cache files
+website/**/*.jpg
+website/**/*.jpeg
+website/**/*.png
+website/**/*.gif
+website/**/*.webp
+website/**/*.bmp
+website/**/*.svg
+website/**/*.mp4
+website/**/*.mov
+website/**/*.zip
+website/**/*.pt
+website/**/*.hgt
+
+# Gallery runtime data
+gallery/__pycache__/
+gallery/featured.db
+gallery/photos/
+
+# Local backup/private dirs
+website_new/
