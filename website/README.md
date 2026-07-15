@@ -45,6 +45,7 @@ Nginx 反代：
 - `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
 - `/aurora/`：极光信息页面（`templates/aurora.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
+- `/1/token`：App Token 管理（`templates/token.html`）
 
 备注：`templates/login.html` 存在，但登录通过 `/api/auth/login` 进行。
 
@@ -66,6 +67,7 @@ Nginx 反代：
 │   ├── situation/api.py          # 状态记录 API
 │   ├── sensor/api.py             # SGP30 传感器 API
 │   ├── tools/                    # vision / clipboard 工具
+│   │   └── models/               # 视觉模型文件（如 yolov8n.pt）
 │   ├── game/api.py               # Socket.IO 房间/座位/悔棋逻辑
 │   ├── letter_league/api.py      # 字母棋识别/推荐
 │   ├── aurora/api.py             # 极光信息
@@ -79,13 +81,14 @@ Nginx 反代：
 │   ├── sensor/
 │   ├── weather/
 │   ├── tools/
-│   └── aurora/
-├── storage/                      # 上传文件与生成产物
-│   ├── cloud/
-│   ├── vision/
-│   ├── map/
-│   ├── weather/
+│   ├── aurora/
+│   ├── admin/
+│   ├── geoip/
 │   └── route_creator/
+├── storage/                      # 上传文件、用户文件与缩略图
+│   ├── cloud/
+│   └── vision/
+├── logs/                         # 项目内运行日志
 ├── game/
 │   └── boardgame/
 │       ├── app/                  # boardgame.io 源码 + 构建
@@ -98,7 +101,9 @@ Nginx 反代：
 │   ├── bgio/                     # boardgame.io 构建产物
 │   └── js/socket.io.min.js       # Socket.IO 客户端本地备份
 ├── letter_league/                # 字母棋词库与示例图片
-└── tests/                        # 迁移后的测试/验证脚本
+├── tests/                        # 迁移后的测试/验证脚本
+├── website_env_backup.yml        # Conda 环境备份
+└── 树莓派连接局域网代理方法.txt      # 本机运维笔记
 ```
 
 ---
@@ -288,8 +293,10 @@ success 是 true
 
 - Flask 密钥：`app.py` 中 `app.secret_key`
 - 管理区限制：`ADMIN_PREFIX = /1`，仅局域网 IP（`192.168.178.0/24`）
+- GeoIP 城市库：`data/geoip/GeoLite2-City.mmdb`
 - 米家登录：`AUTH_PATH = ~/.config/mijia-api/mijia-api-auth.json`
 - 路线规划：`modules/map/api.py` 内置 Baidu Map AK/SK
+- 视觉检测模型：`modules/tools/models/yolov8n.pt`
 - 追踪数据库：`/home/bbdwz/projects/website/data/tracker/tracker.db`
 - 追踪数据文件：`/home/bbdwz/projects/website/data/tracker/tracker_data_<id>.json`
 - 追踪调度器：`tracker_scheduler.service` 直接启动 `modules/tracker/scheduler.py`
@@ -327,7 +334,7 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - `data/tracker/tracker_data_<id>.json`：每个追踪任务的独立结果
 - `data/tracker/tracker_result.html`、`data/tracker/tracker_last.json`：抓取/解析临时与最后结果
 - `data/weather/*.csv`、`data/weather/number.txt`：能耗原始数据与 CSV 数据
-- `storage/weather/*.svg`：能耗图表输出
+- `data/weather/*.svg`：能耗图表输出
 - `data/map/history.json`：路线历史
 - `data/map/config.json`：路线配置（油价/能耗）
 - `data/map/favorites.json`、`data/map/favorite_images/`：路线收藏与图片
@@ -336,12 +343,14 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - `data/situation/situation_log.txt`、`data/situation/site.txt`：状态记录数据
 - `data/sensor/sgp30.log`：SGP30 传感器日志
 - `data/aurora/selected_location.json`：极光观测位置
+- `data/admin/app_tokens.json`：App API Token 哈希与元数据
+- `data/geoip/GeoLite2-City.mmdb`：管理区访问统计的 IP 地理位置库
 - `data/tools/clipboard.txt`：网页剪贴板内容
 - `storage/cloud/uploads/`：云盘上传文件
 - `storage/cloud/thumbnails/`：云盘缩略图
 - `storage/vision/uploads/`：视觉工具临时上传文件
-- `storage/map/output/`：路线规划生成产物
-- `storage/route_creator/`：路线创作匹配产物
+- `data/map/output/`：路线规划测试/生成产物
+- `data/route_creator/`：路线创作草稿、OSM 数据与匹配相关数据
 
 ---
 
@@ -351,7 +360,7 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - Nginx 站点：`/var/log/nginx/website_error.log`, `/var/log/nginx/website_access.log`
 - Tracker 调度器：`/var/log/tracker.log`
 - 管理员命令日志：`/home/bbdwz/admin_commands.log`
-- 快捷动作日志：`/home/bbdwz/projects/website/shortcut.log`
+- 快捷动作日志：`/home/bbdwz/projects/website/logs/shortcut.log`
 - systemd 日志（查看）
   - `journalctl -u website.service -n 200 --no-pager`
   - `journalctl -u boardgame.service -n 200 --no-pager`

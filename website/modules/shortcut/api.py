@@ -15,7 +15,8 @@ def shortcut_run():
     data = request.get_json(force=True)
     action = data.get("action")
 
-    log_path = "/home/bbdwz/projects/website/shortcut.log"
+    log_path = "/home/bbdwz/projects/website/logs/shortcut.log"
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 收到: {data}\n")
 

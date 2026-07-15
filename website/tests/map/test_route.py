@@ -57,7 +57,7 @@ if response:
     result = response.json()
     
     # 创建输出目录
-    output_dir = "/home/bbdwz/projects/website/storage/map/output"
+    output_dir = "/home/bbdwz/projects/website/data/map/output"
     os.makedirs(output_dir, exist_ok=True)
     
     # 保存JSON到文件

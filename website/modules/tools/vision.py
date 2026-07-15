@@ -8,11 +8,12 @@ from ultralytics import YOLO
 
 bp = Blueprint("tool_1", __name__)
 UPLOAD_FOLDER = "/home/bbdwz/projects/website/storage/vision/uploads"
+MODEL_PATH = "/home/bbdwz/projects/website/modules/tools/models/yolov8n.pt"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # 初始化 YOLOv8 Nano 模型
-# 注意：在树莓派首次运行时会下载 yolov8n.pt
-model = YOLO('yolov8n.pt')
+# 注意：模型文件保存在视觉工具模块目录内
+model = YOLO(MODEL_PATH)
 
 # 内存缓存结构: { "image_id": { "path": str, "yolo_run": bool, "yolo_boxes": list } }
 IMAGE_CACHE = {}

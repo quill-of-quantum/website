@@ -12,7 +12,14 @@ tracker_scheduler.py
 import time
 import sqlite3
 import asyncio
+import os
+import sys
 from datetime import datetime
+
+PROJECT_ROOT = "/home/bbdwz/projects/website"
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from modules.tracker.browser import fetch_tracking, parse_tracking_result, compare_with_last
 
 TRACKER_DATA_DIR = "/home/bbdwz/projects/website/data/tracker"

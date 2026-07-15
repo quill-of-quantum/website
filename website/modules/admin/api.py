@@ -14,14 +14,21 @@ from collections import deque
 import geoip2.database
 import geoip2.errors
 
+from modules.admin.token_store import create_token, delete_token, enable_token, list_tokens, revoke_token
+from modules.auth.api import verify_user_password
+
 bp = Blueprint("admin", __name__)
 
 ADMIN_PREFIX = "/1"
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
-GEOIP_DB_PATH = "/home/bbdwz/projects/website/GeoLite2-City.mmdb"
+GEOIP_DB_PATH = "/home/bbdwz/projects/website/data/geoip/GeoLite2-City.mmdb"
 NAS_STATE_PATH = "/home/bbdwz/projects/website/nas_state.json"
 NAS_MANAGED_CONF_PATH = "/etc/samba/smb.conf.d/website-nas.conf"
 NAS_SMB_CONF_PATH = "/etc/samba/smb.conf"
+MANAGED_SERVICE_UNITS = {
+    "gallery": "gallery.service",
+    "tracker": "tracker_scheduler.service",
+}
 
 def _get_lan_networks():
     nets = []
@@ -788,6 +795,38 @@ def _get_service_status(service_name):
     except Exception:
         return "unknown"
 
+
+def _get_service_enabled_state(service_name):
+    systemctl_path = shutil.which("systemctl", path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+    if not systemctl_path:
+        return "no-systemctl"
+    try:
+        result = subprocess.run(
+            [systemctl_path, "show", "-p", "UnitFileState", service_name],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode != 0:
+            return "unknown"
+        for line in result.stdout.splitlines():
+            if line.startswith("UnitFileState="):
+                return line.split("=", 1)[1].strip() or "unknown"
+        return "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _get_managed_service_state():
+    return {
+        key: {
+            "unit": unit,
+            "status": _get_service_status(unit),
+            "enabled": _get_service_enabled_state(unit),
+        }
+        for key, unit in MANAGED_SERVICE_UNITS.items()
+    }
+
 def _get_wifi_interfaces():
     interfaces = []
     try:
@@ -897,6 +936,7 @@ def _get_status_payload():
     payload = {
         "timestamp": int(time.time()),
         "services": service_status,
+        "managed_services": _get_managed_service_state(),
         "network": {
             "wifi": _get_wifi_info(),
             "local_ip": _get_local_ip()
@@ -971,6 +1011,76 @@ def _json_ok(data=None):
 @login_required
 def admin_nas():
     return render_template("nas.html", user=session.get("user"))
+
+
+@bp.route(ADMIN_PREFIX + "/token")
+@login_required
+def admin_token():
+    return render_template("token.html", user=session.get("user"))
+
+
+@bp.route(ADMIN_PREFIX + "/api/tokens")
+@login_required
+def token_list():
+    return jsonify({"ok": True, "tokens": list_tokens()})
+
+
+@bp.route(ADMIN_PREFIX + "/api/tokens/create", methods=["POST"])
+@login_required
+def token_create():
+    data = request.get_json(silent=True) or {}
+    token, record = create_token(
+        data.get("label"),
+        session.get("user") or "admin",
+        data.get("scopes") or ["situation:read"],
+    )
+    return jsonify({"ok": True, "token": token, "record": record})
+
+
+@bp.route(ADMIN_PREFIX + "/api/tokens/revoke", methods=["POST"])
+@login_required
+def token_revoke():
+    data = request.get_json(silent=True) or {}
+    if not revoke_token(data.get("id")):
+        return jsonify({"ok": False, "error": "token not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route(ADMIN_PREFIX + "/api/tokens/enable", methods=["POST"])
+@login_required
+def token_enable():
+    data = request.get_json(silent=True) or {}
+    if not enable_token(data.get("id")):
+        return jsonify({"ok": False, "error": "token not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route(ADMIN_PREFIX + "/api/tokens/delete", methods=["POST"])
+@login_required
+def token_delete():
+    data = request.get_json(silent=True) or {}
+    if not delete_token(data.get("id")):
+        return jsonify({"ok": False, "error": "token not found"}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/app/login", methods=["POST"])
+def app_login():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username")
+    password = data.get("password")
+    if not verify_user_password(username, password):
+        return jsonify({"success": False, "status": "error", "error": "用户名或密码错误"}), 401
+
+    label = data.get("device_name") or data.get("label") or "Android App"
+    token, record = create_token(label, username, ["situation:read"])
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "token": token,
+        "token_type": "Bearer",
+        "record": record,
+    })
 
 @bp.route(ADMIN_PREFIX + "/api/nas/status")
 @login_required
@@ -1275,6 +1385,31 @@ def admin_command():
 @login_required
 def admin_status():
     return jsonify(_get_status_payload())
+
+
+@bp.route(ADMIN_PREFIX + "/api/services/toggle", methods=["POST"])
+@login_required
+def admin_service_toggle():
+    data = request.get_json(silent=True) or {}
+    service_key = str(data.get("service") or "").strip()
+    action = str(data.get("action") or "").strip()
+    unit = MANAGED_SERVICE_UNITS.get(service_key)
+    if not unit:
+        return _json_error("invalid-service")
+    if action not in ("enable", "disable"):
+        return _json_error("invalid-action")
+
+    cmd = ["systemctl", "enable", "--now", unit] if action == "enable" else ["systemctl", "disable", "--now", unit]
+    ok, out, err = _run_root_cmd(cmd)
+    if not ok:
+        return _json_error("systemctl-failed", detail=err or out)
+
+    return _json_ok({
+        "service": service_key,
+        "unit": unit,
+        "status": _get_service_status(unit),
+        "enabled": _get_service_enabled_state(unit),
+    })
 
 @bp.route(ADMIN_PREFIX + "/api/status/stream")
 @login_required

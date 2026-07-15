@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token 管理</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .badge-ok { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+    .badge-warn { background:#fef3c7; color:#92400e; border-color:#fde68a; }
+    .badge-bad { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+    .mini { font-size:12px; color:#6b7280; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .token-box { word-break: break-all; padding: 12px; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 8px; }
+    .json-cell { max-width: 260px; }
+    .json-preview { white-space: pre-wrap; word-break: break-word; max-height: 160px; overflow: auto; margin: 0; padding: 8px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <div class="page-header">
+        <h1>Token 管理</h1>
+        <p>安卓 App · API 访问令牌</p>
+      </div>
+
+      <div class="toolbar" style="justify-content:space-between;">
+        <div class="toolbar">
+          <a class="btn" href="/1/">返回管理面板</a>
+          <button class="btn" onclick="loadTokens()">刷新</button>
+        </div>
+        <button class="btn" onclick="authManager.doLogout()">退出登录</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">创建 Token</h2>
+        <div class="grid-2">
+          <input id="token_label" class="input" placeholder="设备名，如 Pixel 8 / 小米手机">
+          <button class="btn btn-primary" onclick="createToken()">创建只读 Token</button>
+        </div>
+        <div class="mini" style="margin-top:8px;">当前只发放 <span class="mono">situation:read</span> 权限，用于安卓读取 situation 数据。</div>
+        <div id="new_token_wrap" style="display:none; margin-top:12px;">
+          <div class="section-title">新 Token（只显示一次）</div>
+          <div id="new_token" class="token-box mono"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">已有 Token</h2>
+        <div id="token_list" class="muted">加载中...</div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">安卓登录接口</h2>
+        <div class="mini">首次登录用账号密码换 token，后续请求使用 Authorization 头。</div>
+        <pre class="mono" style="white-space:pre-wrap; background:#f8fafc; padding:12px; border-radius:8px;">POST /api/app/login
+Content-Type: application/json
+
+{"username":"admin","password":"******","device_name":"Pixel 8"}
+
+GET /api/situation/latest
+Authorization: Bearer wst_xxx</pre>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">状态提示</h2>
+        <div id="status_note" class="muted">等待操作...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script>
+    function note(msg, isError=false) {
+      const el = document.getElementById('status_note');
+      el.textContent = msg;
+      el.style.color = isError ? '#991b1b' : '#6b7280';
+    }
+
+    function apiFetch(url, method='GET', data=null) {
+      const options = { method, headers: { 'Content-Type': 'application/json' } };
+      if (data) options.body = JSON.stringify(data);
+      return fetch(url, options).then(r => r.json()).then(data => {
+        if (data && data.require_login) {
+          window.location.href = '/';
+          return Promise.reject(new Error('login required'));
+        }
+        return data;
+      });
+    }
+
+    function esc(value) {
+      return String(value || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+
+    function jsonPreview(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      let text = '';
+      try {
+        text = JSON.stringify(value, null, 2);
+      } catch (e) {
+        text = String(value);
+      }
+      return `<pre class="json-preview mono">${esc(text)}</pre>`;
+    }
+
+    function renderTokens(tokens) {
+      const rows = (tokens || []).map(token => {
+        const disabled = !!token.revoked_at;
+        const status = disabled
+          ? '<span class="badge badge-bad">已禁用</span>'
+          : '<span class="badge badge-ok">可用</span>';
+        const scopes = (token.scopes || []).map(scope => `<span class="badge">${esc(scope)}</span>`).join(' ');
+        const toggleBtn = disabled
+          ? `<button class="btn" onclick="enableToken('${token.id}')">启用</button>`
+          : `<button class="btn" onclick="disableToken('${token.id}')">禁用</button>`;
+        const actions = `${toggleBtn} <button class="btn btn-danger" onclick="deleteToken('${token.id}')">删除</button>`;
+        return `<tr>
+          <td>${status}</td>
+          <td>${esc(token.label)}</td>
+          <td class="mono">${esc(token.token_prefix)}...</td>
+          <td>${scopes}</td>
+          <td>${esc(token.owner)}</td>
+          <td class="mono">${esc(token.created_at)}</td>
+          <td class="mono">${esc(token.last_used_at || '-')}</td>
+          <td class="json-cell">${jsonPreview(token.last_request_json)}</td>
+          <td class="json-cell">${jsonPreview(token.last_response_json)}</td>
+          <td class="mono">${esc(token.revoked_at || '-')}</td>
+          <td>${actions}</td>
+        </tr>`;
+      }).join('');
+      return `<table class="table">
+        <thead><tr><th>状态</th><th>设备</th><th>前缀</th><th>权限</th><th>创建者</th><th>创建时间</th><th>最后使用</th><th>最后收到 JSON</th><th>最后返回 JSON</th><th>禁用时间</th><th>操作</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="11">暂无 Token</td></tr>'}</tbody>
+      </table>`;
+    }
+
+    function loadTokens() {
+      apiFetch('/1/api/tokens').then(data => {
+        if (!data.ok) throw new Error(data.error || 'load failed');
+        document.getElementById('token_list').innerHTML = renderTokens(data.tokens || []);
+        note('Token 列表已更新');
+      }).catch(err => note('加载失败: ' + err.message, true));
+    }
+
+    function createToken() {
+      const label = document.getElementById('token_label').value.trim();
+      apiFetch('/1/api/tokens/create', 'POST', { label, scopes: ['situation:read'] }).then(data => {
+        if (!data.ok) throw new Error(data.error || 'failed');
+        document.getElementById('new_token').textContent = data.token;
+        document.getElementById('new_token_wrap').style.display = 'block';
+        document.getElementById('token_label').value = '';
+        note('Token 已创建，请现在保存到安卓 App');
+        loadTokens();
+      }).catch(err => note('创建失败: ' + err.message, true));
+    }
+
+    function disableToken(id) {
+      if (!confirm('确定禁用这个 Token 吗？禁用后 App 将无法继续使用它。')) return;
+      apiFetch('/1/api/tokens/revoke', 'POST', { id }).then(data => {
+        if (!data.ok) throw new Error(data.error || 'failed');
+        note('Token 已禁用');
+        loadTokens();
+      }).catch(err => note('禁用失败: ' + err.message, true));
+    }
+
+    function enableToken(id) {
+      if (!confirm('确定重新启用这个 Token 吗？启用后 App 可继续使用它。')) return;
+      apiFetch('/1/api/tokens/enable', 'POST', { id }).then(data => {
+        if (!data.ok) throw new Error(data.error || 'failed');
+        note('Token 已启用');
+        loadTokens();
+      }).catch(err => note('启用失败: ' + err.message, true));
+    }
+
+    function deleteToken(id) {
+      if (!confirm('确定彻底删除这个 Token 记录吗？')) return;
+      apiFetch('/1/api/tokens/delete', 'POST', { id }).then(data => {
+        if (!data.ok) throw new Error(data.error || 'failed');
+        note('Token 已删除');
+        loadTokens();
+      }).catch(err => note('删除失败: ' + err.message, true));
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      authManager.createLoginStatusWidget();
+      authManager.checkLoginStatus();
+      loadTokens();
+    });
+  </script>
+</body>
+</html>

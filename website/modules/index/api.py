@@ -11,7 +11,7 @@ from flask import Response, jsonify, render_template, send_from_directory
 
 
 WEATHER_DATA_DIR = "/home/bbdwz/projects/website/data/weather"
-WEATHER_OUTPUT_DIR = "/home/bbdwz/projects/website/storage/weather"
+WEATHER_OUTPUT_DIR = "/home/bbdwz/projects/website/data/weather"
 EXCHANGE_RATE_CACHE_TTL = 600
 EXCHANGE_RATE_CACHE = {
     "ts": 0,

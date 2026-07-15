@@ -3,7 +3,9 @@ import re
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
+
+from modules.admin.token_store import record_token_exchange, verify_authorization_header
 
 
 bp = Blueprint("situation", __name__)
@@ -325,6 +327,31 @@ def _unauthorized_api():
     return jsonify({"success": False, "status": "error", "error": "未授权"}), 401
 
 
+def _situation_read_authorized():
+    if _page_unlocked():
+        g.situation_token_record = None
+        return True
+    token_record = verify_authorization_header(request.headers.get("Authorization"), required_scope="situation:read")
+    g.situation_token_record = token_record
+    return token_record is not None
+
+
+def _request_snapshot():
+    return {
+        "method": request.method,
+        "path": request.path,
+        "args": request.args.to_dict(flat=True),
+        "json": request.get_json(silent=True),
+    }
+
+
+def _token_json_response(payload, status_code=200):
+    token_record = getattr(g, "situation_token_record", None)
+    if token_record:
+        record_token_exchange(token_record.get("id"), _request_snapshot(), payload)
+    return jsonify(payload), status_code
+
+
 @bp.route("/situation", methods=["GET", "POST"])
 def situation_page():
     error = ""
@@ -370,19 +397,19 @@ def api_record_situation():
 
 @bp.route("/api/situation/latest")
 def api_latest_situation():
-    if not _page_unlocked():
+    if not _situation_read_authorized():
         return _unauthorized_api()
     events = load_situation_events(limit=1)
     latest = events[-1] if events else None
-    return jsonify({"success": True, "status": "ok", "latest": latest})
+    return _token_json_response({"success": True, "status": "ok", "latest": latest})
 
 
 @bp.route("/api/situation/settings")
 def api_situation_settings():
-    if not _page_unlocked():
+    if not _situation_read_authorized():
         return _unauthorized_api()
     config = _load_site_config()
-    return jsonify({
+    return _token_json_response({
         "success": True,
         "status": "ok",
         "wifi": config.get("wifi") or []
@@ -391,7 +418,7 @@ def api_situation_settings():
 
 @bp.route("/api/situation/track")
 def api_situation_track():
-    if not _page_unlocked():
+    if not _situation_read_authorized():
         return _unauthorized_api()
 
     end_time = _parse_client_time(request.args.get("end")) or _latest_event_time()
@@ -400,7 +427,7 @@ def api_situation_track():
         start_time, end_time = end_time, start_time
 
     points = load_track_points(start_time, end_time)
-    return jsonify({
+    return _token_json_response({
         "success": True,
         "status": "ok",
         "start": _format_client_time(start_time),
@@ -411,7 +438,7 @@ def api_situation_track():
 
 @bp.route("/api/situation/list")
 def api_list_situations():
-    if not _page_unlocked():
+    if not _situation_read_authorized():
         return _unauthorized_api()
     try:
         limit = int(request.args.get("limit", 100))
@@ -424,4 +451,4 @@ def api_list_situations():
         days = 7
     days = max(1, min(days, 3650))
     events = load_recent_situation_events(days=days, limit=limit)
-    return jsonify({"success": True, "status": "ok", "events": events})
+    return _token_json_response({"success": True, "status": "ok", "events": events})

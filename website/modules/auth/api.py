@@ -11,6 +11,11 @@ USER_DB = {
 }
 
 
+def verify_user_password(username, password):
+    user_hash = USER_DB.get(username)
+    return bool(user_hash and check_password_hash(user_hash, password))
+
+
 @bp.route("/api/auth/status")
 def auth_status():
     return jsonify({
@@ -25,8 +30,7 @@ def api_login():
     username = data.get("username")
     password = data.get("password")
 
-    user_hash = USER_DB.get(username)
-    if user_hash and check_password_hash(user_hash, password):
+    if verify_user_password(username, password):
         session["logged_in"] = True
         session["user"] = username
         session["login_time"] = int(time.time())

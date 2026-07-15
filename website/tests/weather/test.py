@@ -20,7 +20,7 @@ import matplotlib.dates as mdates
 
 # ----------------------------- 基础设置 -----------------------------
 DATA_DIR = "/home/bbdwz/projects/website/data/weather"
-OUTPUT_DIR = "/home/bbdwz/projects/website/storage/weather"
+OUTPUT_DIR = "/home/bbdwz/projects/website/data/weather"
 TXT_FILE = os.path.join(DATA_DIR, "number.txt")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -458,4 +458,3 @@ plt.close()
 print("✅ 已生成 usage_heatmap.svg")
 
 print("✅ 全部图表已生成完毕！")
-

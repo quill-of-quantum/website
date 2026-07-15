@@ -1,9 +1,0 @@
-CREATE TABLE tracker_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tracking_number TEXT NOT NULL,
-    enabled INTEGER DEFAULT 1,
-    interval_minutes INTEGER DEFAULT 60,
-    last_run TEXT,
-    last_status TEXT,
-    last_event TEXT
-);

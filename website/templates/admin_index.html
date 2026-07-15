@@ -35,6 +35,10 @@
     .bar { width:100%; background:#e7f0ff; border-radius:6px 6px 2px 2px; display:flex; align-items:flex-start; justify-content:center; box-sizing:border-box; padding-top:4px; }
     .bar-value { font-size:11px; color:#333; }
     .bar-label { font-size:11px; color:#666; text-align:center; }
+    .service-control { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #eee; }
+    .service-control:last-child { border-bottom:none; }
+    .service-title { font-weight:600; color:#333; }
+    .service-meta { font-size:12px; color:#666; margin-top:2px; }
   </style>
 </head>
 <body>
@@ -45,7 +49,10 @@
       </div>
 
       <div class="toolbar" style="justify-content:space-between; margin-bottom: 16px;">
-        <a class="btn" href="/1/nas">NAS 管理</a>
+        <div class="toolbar">
+          <a class="btn" href="/1/nas">NAS 管理</a>
+          <a class="btn" href="/1/token">Token 管理</a>
+        </div>
         <button class="btn" onclick="authManager.doLogout()">退出登录</button>
       </div>
 
@@ -69,6 +76,10 @@
         <div style="margin-top: 12px;">
           <h3 style="margin:0 0 6px 0; font-size: 14px;">实时访问路径（120s内）</h3>
           <div id="client_paths">暂无数据</div>
+        </div>
+        <div style="margin-top: 12px;">
+          <h3 style="margin:0 0 6px 0; font-size: 14px;">进程开关</h3>
+          <div id="managed_service_controls">加载中...</div>
         </div>
       </div>
 
@@ -129,6 +140,41 @@
       return `<div>${name}: <span class="status-pill ${cls}">${status}</span></div>`;
     });
     return items.join("");
+  }
+
+  function renderManagedServiceControls(services) {
+    if (!services) return "暂无数据";
+    const labels = {
+      gallery: "Gallery",
+      tracker: "Tracker 调度器"
+    };
+    return Object.keys(labels).map(key => {
+      const item = services[key] || {};
+      const enabled = String(item.enabled || "").toLowerCase();
+      const isEnabled = enabled === "enabled";
+      const status = item.status || "unknown";
+      let cls = "status-unknown";
+      const s = String(status || "").toLowerCase();
+      if (s.startsWith("active")) cls = "status-ok";
+      else if (s.startsWith("inactive") || s.startsWith("failed")) cls = "status-bad";
+      else if (s.startsWith("activating") || s.startsWith("deactivating")) cls = "status-warn";
+      const action = isEnabled ? "disable" : "enable";
+      const btnText = isEnabled ? "禁用并停止" : "启用并启动";
+      const btnClass = isEnabled ? "btn btn-danger" : "btn";
+      return `
+        <div class="service-control">
+          <div>
+            <div class="service-title">${labels[key]}</div>
+            <div class="service-meta">
+              <code>${item.unit || ""}</code>
+              <span class="status-pill ${cls}">${status}</span>
+              <span class="status-pill ${isEnabled ? "status-ok" : "status-bad"}">${item.enabled || "unknown"}</span>
+            </div>
+          </div>
+          <button class="${btnClass}" onclick="toggleManagedService('${key}', '${action}')">${btnText}</button>
+        </div>
+      `;
+    }).join("");
   }
 
   function renderNetworkStatus(network) {
@@ -276,6 +322,7 @@
     document.getElementById("status_meta").textContent =
       `最后更新: ${new Date((data.timestamp || 0) * 1000).toLocaleString()}`;
     document.getElementById("service_status").innerHTML = renderServiceStatus(data.services);
+    document.getElementById("managed_service_controls").innerHTML = renderManagedServiceControls(data.managed_services);
     document.getElementById("network_status").innerHTML = renderNetworkStatus(data.network);
     document.getElementById("client_status").innerHTML = renderClientStatus(data.clients);
     document.getElementById("client_paths").innerHTML = renderClientPaths(data.clients);
@@ -335,6 +382,27 @@
           statusMeta.textContent = "无法加载状态";
         });
     }
+  }
+
+  function toggleManagedService(service, action) {
+    const label = service === "gallery" ? "Gallery" : "Tracker 调度器";
+    const message = action === "disable"
+      ? `确定禁用并停止 ${label} 吗？重启树莓派后也不会自动启动。`
+      : `确定启用并启动 ${label} 吗？重启树莓派后会自动启动。`;
+    if (!confirm(message)) return;
+    fetch("/1/api/services/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service, action })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.ok) throw new Error(data.detail || data.error || "操作失败");
+        return fetch("/1/api/status");
+      })
+      .then(res => res.json())
+      .then(updateStatus)
+      .catch(err => alert("服务开关失败：" + err.message));
   }
 
   function parseLogLine(line) {
