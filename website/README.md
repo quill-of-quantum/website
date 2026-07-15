@@ -7,7 +7,7 @@
 ## 功能概览
 
 - 首页 / 云盘 / 剪贴板 / 视觉工具 / 追踪面板 / 路线规划 / 3D 预览（Flask）
-- 实时对战大厅 `/game/`（Socket.IO 房间管理 + boardgame.io 国际象棋嵌入）
+- 聊天大厅 `/chat` 与实时对战大厅 `/game/`（Socket.IO 实时通信）
 - 字母棋识别与推荐 `/letter`（OCR + GADDAG）
 - 后台追踪调度器（tracker_scheduler）
 - 系统监控、天气/能耗图表、花园记录、状态记录、极光信息
@@ -34,6 +34,7 @@ Nginx 反代：
 - `/`：主页（`templates/index.html`）
 - `/cloud`：云盘页（上传/文件浏览/缩略图）（`templates/cloud.html`）
 - `/clipboard`：网页剪贴板（`templates/tool_2.html`）
+- `/chat`：聊天大厅（`templates/chat.html`）
 - `/tracker`：物流追踪面板（`templates/tracker.html`）
 - `/map`：路线规划页面（`templates/map.html`）
 - `/route_creator`：路线创作页面（`templates/route_creator.html`）
@@ -69,6 +70,7 @@ Nginx 反代：
 │   ├── tools/                    # vision / clipboard 工具
 │   │   └── models/               # 视觉模型文件（如 yolov8n.pt）
 │   ├── game/api.py               # Socket.IO 房间/座位/悔棋逻辑
+│   ├── chat/api.py               # Socket.IO 聊天大厅
 │   ├── letter_league/api.py      # 字母棋识别/推荐
 │   ├── aurora/api.py             # 极光信息
 │   ├── weather/analyze.py        # 天气/能耗分析脚本
@@ -81,6 +83,8 @@ Nginx 反代：
 │   ├── sensor/
 │   ├── weather/
 │   ├── tools/
+│   ├── index/
+│   ├── chat/
 │   ├── aurora/
 │   ├── admin/
 │   ├── geoip/
@@ -335,6 +339,8 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - `data/tracker/tracker_result.html`、`data/tracker/tracker_last.json`：抓取/解析临时与最后结果
 - `data/weather/*.csv`、`data/weather/number.txt`：能耗原始数据与 CSV 数据
 - `data/weather/*.svg`：能耗图表输出
+- `data/index/exchange_rate.json`：首页汇率走势后台缓存
+- `data/chat/lobby.json`：聊天大厅设备身份、头像与消息记录
 - `data/map/history.json`：路线历史
 - `data/map/config.json`：路线配置（油价/能耗）
 - `data/map/favorites.json`、`data/map/favorite_images/`：路线收藏与图片

@@ -25,8 +25,15 @@ from flask_compress import Compress
 compress = Compress()
 compress.init_app(app)
 
-from modules.index.api import collect_system_info, register_routes as register_index_routes
+from modules.index.api import (
+    collect_system_info,
+    register_routes as register_index_routes,
+    start_exchange_rate_refresher,
+    start_system_info_collector,
+)
 register_index_routes(app)
+start_exchange_rate_refresher()
+start_system_info_collector()
 
 # 访问日志配置
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
@@ -67,6 +74,9 @@ from modules.game.api import bp as game_bp, socketio, start_room_cleaner
 app.register_blueprint(game_bp)
 socketio.init_app(app)
 start_room_cleaner()
+
+from modules.chat.api import bp as chat_bp
+app.register_blueprint(chat_bp)
 
 from modules.sensor.api import bp as sensor_bp, start_sensor_logger
 app.register_blueprint(sensor_bp)

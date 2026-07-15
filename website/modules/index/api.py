@@ -1,7 +1,10 @@
 from collections import deque
 from datetime import datetime, timedelta
+import json
 import os
+import shutil
 import subprocess
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -12,18 +15,25 @@ from flask import Response, jsonify, render_template, send_from_directory
 
 WEATHER_DATA_DIR = "/home/bbdwz/projects/website/data/weather"
 WEATHER_OUTPUT_DIR = "/home/bbdwz/projects/website/data/weather"
-EXCHANGE_RATE_CACHE_TTL = 600
+INDEX_DATA_DIR = "/home/bbdwz/projects/website/data/index"
+EXCHANGE_RATE_CACHE_PATH = os.path.join(INDEX_DATA_DIR, "exchange_rate.json")
+EXCHANGE_RATE_REFRESH_INTERVAL = 30 * 60
 EXCHANGE_RATE_CACHE = {
     "ts": 0,
     "data": None,
 }
+EXCHANGE_RATE_LOCK = threading.Lock()
+EXCHANGE_RATE_REFRESH_STARTED = False
 
 SYSINFO_CACHE = {
     "timestamps": deque(maxlen=30),
     "cpu": deque(maxlen=30),
     "memory": deque(maxlen=30),
     "temperature": deque(maxlen=30),
+    "latest": None,
 }
+SYSINFO_LOCK = threading.Lock()
+SYSINFO_COLLECTOR_STARTED = False
 
 
 def index():
@@ -61,38 +71,24 @@ def route_creator_ui():
     return render_template("route_creator.html")
 
 
-def exchange_rate_chart():
-    """
-    Get latest USD->CNY and EUR->CNY using open.er-api.com,
-    plus recent ECB history for chart background.
-    """
-    now_ts = time.time()
-    if EXCHANGE_RATE_CACHE["data"] and (now_ts - EXCHANGE_RATE_CACHE["ts"] < EXCHANGE_RATE_CACHE_TTL):
-        return jsonify(EXCHANGE_RATE_CACHE["data"])
-
+def _fetch_exchange_rate_payload():
     latest_usd = latest_eur = None
     latest_date = None
+
     try:
-        r = requests.get("https://open.er-api.com/v6/latest/CNY", timeout=5)
+        r = requests.get("https://open.er-api.com/v6/latest/CNY", timeout=8)
         data = r.json()
         if data.get("result") == "success":
             latest_date = data.get("time_last_update_utc", "").split(" ")[0]
             latest_eur = 1 / data["rates"]["EUR"]
             latest_usd = 1 / data["rates"]["USD"]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"汇率最新值获取失败: {e}")
 
     hist_url = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml"
-    try:
-        r = requests.get(hist_url, timeout=5)
-        tree = ET.fromstring(r.content)
-    except Exception:
-        if EXCHANGE_RATE_CACHE["data"]:
-            cached = dict(EXCHANGE_RATE_CACHE["data"])
-            cached["stale"] = True
-            cached["cached_at"] = datetime.utcnow().isoformat() + "Z"
-            return jsonify(cached)
-        return jsonify({"error": "cannot load ECB data"})
+    r = requests.get(hist_url, timeout=10)
+    r.raise_for_status()
+    tree = ET.fromstring(r.content)
 
     ns = {"def": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
     data_points = []
@@ -136,10 +132,90 @@ def exchange_rate_chart():
         "latest_date": latest_date,
         "latest_eur": latest_eur,
         "latest_usd": latest_usd,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
     }
-    EXCHANGE_RATE_CACHE["ts"] = now_ts
-    EXCHANGE_RATE_CACHE["data"] = payload
-    return jsonify(payload)
+    return payload
+
+
+def _write_exchange_rate_cache(payload):
+    os.makedirs(INDEX_DATA_DIR, exist_ok=True)
+    tmp_path = EXCHANGE_RATE_CACHE_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+    os.replace(tmp_path, EXCHANGE_RATE_CACHE_PATH)
+
+
+def _read_exchange_rate_cache_file():
+    if not os.path.exists(EXCHANGE_RATE_CACHE_PATH):
+        return None
+    try:
+        with open(EXCHANGE_RATE_CACHE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"读取汇率缓存失败: {e}")
+        return None
+
+
+def _set_exchange_rate_cache(payload):
+    with EXCHANGE_RATE_LOCK:
+        EXCHANGE_RATE_CACHE["ts"] = time.time()
+        EXCHANGE_RATE_CACHE["data"] = payload
+
+
+def refresh_exchange_rate_cache():
+    payload = _fetch_exchange_rate_payload()
+    _set_exchange_rate_cache(payload)
+    _write_exchange_rate_cache(payload)
+    return payload
+
+
+def _get_exchange_rate_cached_payload():
+    with EXCHANGE_RATE_LOCK:
+        if EXCHANGE_RATE_CACHE["data"]:
+            return dict(EXCHANGE_RATE_CACHE["data"])
+
+    payload = _read_exchange_rate_cache_file()
+    if payload:
+        _set_exchange_rate_cache(payload)
+        cached = dict(payload)
+        cached["stale"] = True
+        return cached
+    return None
+
+
+def exchange_rate_chart():
+    payload = _get_exchange_rate_cached_payload()
+    if payload:
+        return jsonify(payload)
+
+    try:
+        payload = refresh_exchange_rate_cache()
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": "cannot load exchange rate data", "detail": str(e)}), 503
+
+
+def exchange_rate_refresh_loop():
+    while True:
+        try:
+            refresh_exchange_rate_cache()
+        except Exception as e:
+            print(f"后台汇率刷新失败: {e}")
+        time.sleep(EXCHANGE_RATE_REFRESH_INTERVAL)
+
+
+def start_exchange_rate_refresher():
+    global EXCHANGE_RATE_REFRESH_STARTED
+    if EXCHANGE_RATE_REFRESH_STARTED:
+        return
+    EXCHANGE_RATE_REFRESH_STARTED = True
+
+    cached = _read_exchange_rate_cache_file()
+    if cached:
+        _set_exchange_rate_cache(cached)
+
+    thread = threading.Thread(target=exchange_rate_refresh_loop, daemon=True)
+    thread.start()
 
 
 def _read_system_info():
@@ -157,11 +233,15 @@ def _read_system_info():
     except FileNotFoundError:
         data["temperature"] = None
 
-    try:
-        iw_output = subprocess.check_output("iwconfig", shell=True, text=True)
-        line = [l for l in iw_output.split("\n") if "Signal level" in l]
-        data["wifi_signal"] = line[0].split("Signal level=")[-1].split()[0] if line else None
-    except Exception:
+    iwconfig_path = shutil.which("iwconfig")
+    if iwconfig_path:
+        try:
+            iw_output = subprocess.check_output([iwconfig_path], text=True, stderr=subprocess.DEVNULL, timeout=1)
+            line = [l for l in iw_output.split("\n") if "Signal level" in l]
+            data["wifi_signal"] = line[0].split("Signal level=")[-1].split()[0] if line else None
+        except Exception:
+            data["wifi_signal"] = None
+    else:
         data["wifi_signal"] = None
 
     uptime_seconds = time.time() - psutil.boot_time()
@@ -176,10 +256,12 @@ def collect_system_info():
             data = _read_system_info()
 
             timestamp = datetime.now().strftime("%H:%M:%S")
-            SYSINFO_CACHE["timestamps"].append(timestamp)
-            SYSINFO_CACHE["cpu"].append(data["cpu_percent"])
-            SYSINFO_CACHE["memory"].append(data["memory_percent"])
-            SYSINFO_CACHE["temperature"].append(data["temperature"])
+            with SYSINFO_LOCK:
+                SYSINFO_CACHE["latest"] = data
+                SYSINFO_CACHE["timestamps"].append(timestamp)
+                SYSINFO_CACHE["cpu"].append(data["cpu_percent"])
+                SYSINFO_CACHE["memory"].append(data["memory_percent"])
+                SYSINFO_CACHE["temperature"].append(data["temperature"])
 
             time.sleep(3)
         except Exception as e:
@@ -187,15 +269,26 @@ def collect_system_info():
             time.sleep(3)
 
 
+def start_system_info_collector():
+    global SYSINFO_COLLECTOR_STARTED
+    if SYSINFO_COLLECTOR_STARTED:
+        return
+    SYSINFO_COLLECTOR_STARTED = True
+    threading.Thread(target=collect_system_info, daemon=True).start()
+
+
 def system_info():
     """系统状态 API - 返回当前值和历史数据"""
-    data = _read_system_info()
-    data["history"] = {
-        "timestamps": list(SYSINFO_CACHE["timestamps"]),
-        "cpu": list(SYSINFO_CACHE["cpu"]),
-        "memory": list(SYSINFO_CACHE["memory"]),
-        "temperature": list(SYSINFO_CACHE["temperature"]),
-    }
+    with SYSINFO_LOCK:
+        latest = dict(SYSINFO_CACHE["latest"] or {})
+        history = {
+            "timestamps": list(SYSINFO_CACHE["timestamps"]),
+            "cpu": list(SYSINFO_CACHE["cpu"]),
+            "memory": list(SYSINFO_CACHE["memory"]),
+            "temperature": list(SYSINFO_CACHE["temperature"]),
+        }
+    data = latest or _read_system_info()
+    data["history"] = history
     return jsonify(data)
 
 
