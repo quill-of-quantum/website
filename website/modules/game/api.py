@@ -395,17 +395,24 @@ def handle_connect():
 
 @socketio.on("disconnect")
 def handle_disconnect():
+    sid = request.sid
     with ROOM_LOCK:
         global connected_clients
         connected_clients = max(0, connected_clients - 1)
-        result = _remove_player(request.sid, force=False)
+        result = _remove_player(sid, force=False)
         _broadcast_stats()
+    try:
+        from modules.chat.api import remove_chat_presence
+        remove_chat_presence(sid)
+    except Exception as e:
+        print(f"清理聊天在线状态失败: {e}")
+    with ROOM_LOCK:
         if not result:
             return
         if not result["destroyed"]:
             room = rooms[result["room_id"]]
             undo_request = room.get("undo_request")
-            if undo_request and undo_request.get("from_sid") == request.sid:
+            if undo_request and undo_request.get("from_sid") == sid:
                 room["undo_request"] = None
                 emit("undo_rejected", {"reason": "requester_left"}, to=result["room_id"])
             emit(

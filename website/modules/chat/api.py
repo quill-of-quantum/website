@@ -20,6 +20,8 @@ CHAT_DATA_DIR = "/home/bbdwz/projects/website/data/chat"
 CHAT_STATE_PATH = os.path.join(CHAT_DATA_DIR, "lobby.json")
 MAX_MESSAGES = 300
 STATE_LOCK = threading.Lock()
+PRESENCE_LOCK = threading.Lock()
+CHAT_SID_TO_DEVICE = {}
 
 ADJECTIVES = [
     "晴天", "夜行", "像素", "闪电", "温柔", "安静", "飞驰", "蓝莓",
@@ -194,6 +196,26 @@ def _broadcast_profile(device_id, profile):
     socketio.emit("chat_profile_changed", _public_profile(device_id, profile), to=CHAT_ROOM)
 
 
+def _presence_payload():
+    with PRESENCE_LOCK:
+        count = len(set(CHAT_SID_TO_DEVICE.values()))
+    return {"online_count": count, "server_time": _now_iso()}
+
+
+def _broadcast_presence():
+    socketio.emit("chat_presence", _presence_payload(), to=CHAT_ROOM)
+
+
+def remove_chat_presence(sid):
+    removed = False
+    with PRESENCE_LOCK:
+        if sid in CHAT_SID_TO_DEVICE:
+            CHAT_SID_TO_DEVICE.pop(sid, None)
+            removed = True
+    if removed:
+        _broadcast_presence()
+
+
 @bp.route("/chat")
 def chat_page():
     return render_template("chat.html")
@@ -237,7 +259,11 @@ def chat_join(data):
         _save_state_unlocked(state)
         payload = _public_state_unlocked(state, device_id=device_id)
     join_room(CHAT_ROOM)
+    with PRESENCE_LOCK:
+        CHAT_SID_TO_DEVICE[request.sid] = device_id
+        payload["online_count"] = len(set(CHAT_SID_TO_DEVICE.values()))
     emit("chat_joined", payload)
+    _broadcast_presence()
 
 
 @socketio.on("chat_send")

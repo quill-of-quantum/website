@@ -35,6 +35,13 @@
     }
     .header-title { display: flex; align-items: center; gap: 10px; }
     .header-title h1 { margin: 0; font-size: 20px; }
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .online-count { color: #4b5563; }
     .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; }
     .status-dot.online { background: #10b981; }
     .me-panel {
@@ -175,7 +182,10 @@
           <span id="statusDot" class="status-dot"></span>
           <div>
             <h1>聊天大厅</h1>
-            <div id="statusText" class="muted">连接中...</div>
+            <div class="status-line muted">
+              <span id="statusText">连接中...</span>
+              <span id="onlineCount" class="online-count">当前在线人数：--</span>
+            </div>
           </div>
         </div>
         <div class="toolbar">
@@ -219,6 +229,7 @@
 
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+    const onlineCount = document.getElementById('onlineCount');
     const meAvatar = document.getElementById('meAvatar');
     const meName = document.getElementById('meName');
     const messagesEl = document.getElementById('messages');
@@ -255,6 +266,11 @@
       me = profile;
       meAvatar.textContent = profile.avatar || '💬';
       meName.textContent = profile.name || '匿名旅人';
+    }
+
+    function updatePresence(payload) {
+      if (!payload || typeof payload.online_count !== 'number') return;
+      onlineCount.textContent = `当前在线人数：${payload.online_count}`;
     }
 
     function shouldStickToBottom() {
@@ -343,6 +359,7 @@
 
     function applyState(payload) {
       if (payload.me) updateMe(payload.me);
+      updatePresence(payload);
       messages = [];
       mergeMessages(Array.isArray(payload.messages) ? payload.messages : []);
       rememberCursor(payload);
@@ -377,7 +394,7 @@
 
     socket.on('connect', () => {
       statusDot.classList.add('online');
-      statusText.textContent = '已连接';
+      statusText.textContent = '已在线';
       socket.emit('chat_join', { device_id: deviceId });
       syncMessages();
     });
@@ -388,6 +405,7 @@
     });
 
     socket.on('chat_joined', applyState);
+    socket.on('chat_presence', updatePresence);
     socket.on('chat_state', applyState);
     socket.on('chat_profile', payload => {
       rememberCursor(payload);
