@@ -28,6 +28,10 @@ body {
   line-height: 1.5;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 a {
   color: var(--primary);
   text-decoration: none;

@@ -60,7 +60,9 @@ Nginx 反代：
 ├── modules/                      # 后端功能模块
 │   ├── index/api.py              # 首页与首页数据接口
 │   ├── admin/api.py              # 管理后台
+│   ├── nas/api.py                # 局域网 USB 硬盘 Samba 共享
 │   ├── auth/api.py               # 登录状态与登录/退出
+│   ├── auth/user_store.py        # 本地账户存储与密码校验
 │   ├── cloud/                    # 云盘上传/下载/缩略图
 │   ├── tracker/                  # 物流追踪 API、抓取逻辑与调度器
 │   ├── map/api.py                # 路线规划 API
@@ -87,6 +89,7 @@ Nginx 反代：
 │   ├── chat/
 │   ├── aurora/
 │   ├── admin/
+│   ├── nas/
 │   ├── geoip/
 │   └── route_creator/
 ├── storage/                      # 上传文件、用户文件与缩略图
@@ -350,6 +353,8 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - `data/sensor/sgp30.log`：SGP30 传感器日志
 - `data/aurora/selected_location.json`：极光观测位置
 - `data/admin/app_tokens.json`：App API Token 哈希与元数据
+- `data/admin/users.json`：本地账户哈希与角色；只有 `admin` 可进入 `/1/`
+- `data/nas/state.json`：局域网 USB 硬盘共享状态
 - `data/geoip/GeoLite2-City.mmdb`：管理区访问统计的 IP 地理位置库
 - `data/tools/clipboard.txt`：网页剪贴板内容
 - `storage/cloud/uploads/`：云盘上传文件

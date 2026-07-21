@@ -11,23 +11,25 @@ import shutil
 import threading
 import re
 from collections import deque
+from datetime import datetime, timedelta
 import geoip2.database
 import geoip2.errors
 
 from modules.admin.token_store import create_token, delete_token, enable_token, list_tokens, revoke_token
 from modules.auth.api import verify_user_password
+from modules.auth.user_store import create_user, delete_user, is_admin_user, list_users, update_user_password, user_exists
 
 bp = Blueprint("admin", __name__)
 
 ADMIN_PREFIX = "/1"
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
 GEOIP_DB_PATH = "/home/bbdwz/projects/website/data/geoip/GeoLite2-City.mmdb"
-NAS_STATE_PATH = "/home/bbdwz/projects/website/nas_state.json"
-NAS_MANAGED_CONF_PATH = "/etc/samba/smb.conf.d/website-nas.conf"
-NAS_SMB_CONF_PATH = "/etc/samba/smb.conf"
+PROJECT_ROOT = "/home/bbdwz/projects/website"
 MANAGED_SERVICE_UNITS = {
     "gallery": "gallery.service",
     "tracker": "tracker_scheduler.service",
+    "mihomo": "mihomo.service",
+    "frpc": "frpc.service",
 }
 
 def _get_lan_networks():
@@ -488,74 +490,14 @@ def _get_clients_snapshot():
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        if not session.get("logged_in"):
+        if session.get("logged_in") and not user_exists(session.get("user")):
+            session.clear()
+        if not session.get("logged_in") or not is_admin_user(session.get("user")):
             if request.path.startswith(ADMIN_PREFIX + "/api") or request.path.startswith("/api/"):
                 return jsonify({"require_login": True}), 403
             return redirect(url_for("index"))
         return f(*args, **kwargs)
     return wrapper
-
-def _default_nas_state():
-    return {
-        "version": 1,
-        "main_admin": "",
-        "users": {},
-        "shares": {},
-        "mount": {
-            "device": "",
-            "mount_point": "",
-            "fs_type": "ext4"
-        },
-        "sleep": {
-            "device": "",
-            "minutes": 0
-        }
-    }
-
-def _load_nas_state():
-    data = _default_nas_state()
-    try:
-        if os.path.exists(NAS_STATE_PATH):
-            with open(NAS_STATE_PATH, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            if isinstance(loaded, dict):
-                for key, value in loaded.items():
-                    data[key] = value
-    except Exception:
-        pass
-    if "users" not in data or not isinstance(data["users"], dict):
-        data["users"] = {}
-    if "shares" not in data or not isinstance(data["shares"], dict):
-        data["shares"] = {}
-    if "mount" not in data or not isinstance(data["mount"], dict):
-        data["mount"] = {"device": "", "mount_point": "", "fs_type": "ext4"}
-    if "sleep" not in data or not isinstance(data["sleep"], dict):
-        data["sleep"] = {"device": "", "minutes": 0}
-    return data
-
-def _save_nas_state(state):
-    tmp_path = NAS_STATE_PATH + ".tmp"
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=True, indent=2)
-        os.replace(tmp_path, NAS_STATE_PATH)
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-def _validate_username(name):
-    if not name or not isinstance(name, str):
-        return False
-    if len(name) > 32:
-        return False
-    return re.match(r"^[a-zA-Z0-9._-]+$", name) is not None
-
-def _validate_share_name(name):
-    if not name or not isinstance(name, str):
-        return False
-    if len(name) > 32:
-        return False
-    return re.match(r"^[a-zA-Z0-9._-]+$", name) is not None
 
 def _run_cmd(args):
     try:
@@ -597,170 +539,6 @@ def _run_root_cmd_input(args, input_text):
     if not sudo_path:
         return False, "", "sudo-not-found"
     return _run_cmd_input([sudo_path, "-n"] + args, input_text)
-
-def _read_root_file(path):
-    try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return True, f.read(), None
-    except Exception:
-        ok, out, err = _run_root_cmd(["cat", path])
-        if ok:
-            return True, out, None
-        return False, "", err
-
-def _write_root_file(path, content):
-    if os.geteuid() == 0:
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return True, None
-        except Exception as e:
-            return False, str(e)
-    sudo_path = shutil.which("sudo", path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-    if not sudo_path:
-        return False, "sudo-not-found"
-    try:
-        result = subprocess.run(
-            [sudo_path, "-n", "tee", path],
-            input=content,
-            text=True,
-            capture_output=True,
-            check=False
-        )
-        if result.returncode != 0:
-            return False, (result.stderr or "").strip()
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-def _ensure_samba_include():
-    include_line = f"include = {NAS_MANAGED_CONF_PATH}"
-    ok, content, err = _read_root_file(NAS_SMB_CONF_PATH)
-    if not ok:
-        return False, f"read-smbconf-failed: {err}"
-    if include_line.lower() in content.lower():
-        return True, "already"
-    lines = content.splitlines()
-    inserted = False
-    for idx, line in enumerate(lines):
-        if line.strip().lower() == "[global]":
-            lines.insert(idx + 1, include_line)
-            inserted = True
-            break
-    if not inserted:
-        lines.append("")
-        lines.append("[global]")
-        lines.append(include_line)
-    new_content = "\n".join(lines).rstrip() + "\n"
-    ok, err = _write_root_file(NAS_SMB_CONF_PATH, new_content)
-    if not ok:
-        return False, f"write-smbconf-failed: {err}"
-    return True, "added"
-
-def _sanitize_smb_value(value):
-    if value is None:
-        return ""
-    text = str(value).replace("\n", " ").replace("\r", " ").strip()
-    return text
-
-def _normalize_user_list(value):
-    if not value:
-        return []
-    if isinstance(value, list):
-        return [v for v in (str(x).strip() for x in value) if v]
-    return [v for v in (x.strip() for x in str(value).split(",")) if v]
-
-def _render_samba_conf(state):
-    lines = [
-        "# Managed by website/app.py",
-        "# Do not edit manually. Use the NAS panel instead.",
-        ""
-    ]
-    shares = state.get("shares", {}) or {}
-    for name, cfg in shares.items():
-        if not _validate_share_name(name):
-            continue
-        path = _sanitize_smb_value(cfg.get("path", ""))
-        if not path:
-            continue
-        lines.append(f"[{name}]")
-        lines.append(f"  path = {path}")
-        lines.append("  browseable = yes")
-        lines.append(f"  read only = {'yes' if cfg.get('read_only') else 'no'}")
-        lines.append(f"  guest ok = {'yes' if cfg.get('guest_ok') else 'no'}")
-        comment = _sanitize_smb_value(cfg.get("comment", ""))
-        if comment:
-            lines.append(f"  comment = {comment}")
-        valid_users = _normalize_user_list(cfg.get("valid_users"))
-        if valid_users:
-            lines.append(f"  valid users = {' '.join(valid_users)}")
-        admin_users = _normalize_user_list(cfg.get("admin_users"))
-        if admin_users:
-            lines.append(f"  admin users = {' '.join(admin_users)}")
-        write_list = _normalize_user_list(cfg.get("write_list"))
-        if write_list:
-            lines.append(f"  write list = {' '.join(write_list)}")
-        create_mask = _sanitize_smb_value(cfg.get("create_mask", ""))
-        if create_mask:
-            lines.append(f"  create mask = {create_mask}")
-        directory_mask = _sanitize_smb_value(cfg.get("directory_mask", ""))
-        if directory_mask:
-            lines.append(f"  directory mask = {directory_mask}")
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
-
-def _write_samba_managed_conf(state):
-    content = _render_samba_conf(state)
-    ok, err = _write_root_file(NAS_MANAGED_CONF_PATH, content)
-    if not ok:
-        return False, err
-    return True, None
-
-def _get_samba_users():
-    ok, out, err = _run_root_cmd(["pdbedit", "-L"])
-    if not ok:
-        return [], err
-    users = []
-    for line in out.splitlines():
-        if ":" in line:
-            name = line.split(":", 1)[0].strip()
-            if name:
-                users.append(name)
-    users.sort()
-    return users, None
-
-def _get_lsblk():
-    ok, out, err = _run_cmd(["lsblk", "-J", "-o", "NAME,KNAME,TYPE,FSTYPE,SIZE,LABEL,UUID,MOUNTPOINT"])
-    if not ok:
-        return None, err
-    try:
-        return json.loads(out), None
-    except Exception as e:
-        return None, str(e)
-
-def _get_findmnt():
-    ok, out, err = _run_cmd(["findmnt", "-J"])
-    if not ok:
-        return None, err
-    try:
-        return json.loads(out), None
-    except Exception as e:
-        return None, str(e)
-
-def _hdparm_value_from_minutes(minutes):
-    if minutes <= 0:
-        return 0
-    if minutes <= 20:
-        return int(max(1, min(240, round(minutes * 12))))
-    if minutes <= 330:
-        return int(241 + round((minutes - 30) / 30))
-    return 255
-
-def _get_samba_status():
-    return {
-        "smbd": _get_service_status("smbd.service"),
-        "nmbd": _get_service_status("nmbd.service")
-    }
 
 def _get_service_status(service_name):
     systemctl_path = shutil.which("systemctl", path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
@@ -925,12 +703,114 @@ def _get_local_ip():
             pass
     return ip
 
+def _format_bytes(size):
+    try:
+        size = float(size or 0)
+    except Exception:
+        size = 0.0
+    units = ["B", "KB", "MB", "GB", "TB"]
+    unit = 0
+    while size >= 1024 and unit < len(units) - 1:
+        size /= 1024
+        unit += 1
+    if unit == 0:
+        return f"{int(size)} {units[unit]}"
+    return f"{size:.1f} {units[unit]}"
+
+def _storage_item(label, path, kind):
+    path = os.path.expanduser(path)
+    total = 0
+    files = 0
+    dirs = 0
+    latest_mtime = None
+    exists = os.path.exists(path)
+    if exists:
+        try:
+            if os.path.isfile(path):
+                total = os.path.getsize(path)
+                files = 1
+                latest_mtime = os.path.getmtime(path)
+            else:
+                for dirpath, dirnames, filenames in os.walk(path):
+                    dirs += len(dirnames)
+                    for filename in filenames:
+                        full_path = os.path.join(dirpath, filename)
+                        try:
+                            stat = os.stat(full_path)
+                        except OSError:
+                            continue
+                        total += stat.st_size
+                        files += 1
+                        if latest_mtime is None or stat.st_mtime > latest_mtime:
+                            latest_mtime = stat.st_mtime
+        except Exception:
+            exists = False
+    return {
+        "label": label,
+        "path": path,
+        "kind": kind,
+        "exists": exists,
+        "bytes": total,
+        "size": _format_bytes(total),
+        "files": files,
+        "dirs": dirs,
+        "mtime": int(latest_mtime) if latest_mtime else None,
+    }
+
+def _get_storage_stats():
+    items = [
+        _storage_item("访问和快捷动作日志", os.path.join(PROJECT_ROOT, "logs"), "log"),
+        _storage_item("全部记录数据", os.path.join(PROJECT_ROOT, "data"), "data"),
+        _storage_item("上传和缩略图文件", os.path.join(PROJECT_ROOT, "storage"), "storage"),
+        _storage_item("项目缓存", os.path.join(PROJECT_ROOT, "cache"), "cache"),
+        _storage_item("Map 数据", os.path.join(PROJECT_ROOT, "data/map"), "map"),
+        _storage_item("Map 地理编码缓存", os.path.join(PROJECT_ROOT, "data/map/geocode_cache.db"), "map"),
+        _storage_item("Map 下载地理数据 SRTM", "~/.cache/srtm", "map"),
+        _storage_item("GeoIP 数据库", os.path.join(PROJECT_ROOT, "data/geoip"), "data"),
+        _storage_item("Situation 记录", os.path.join(PROJECT_ROOT, "data/situation"), "data"),
+        _storage_item("Tracker 记录", os.path.join(PROJECT_ROOT, "data/tracker"), "data"),
+        _storage_item("Chat 记录", os.path.join(PROJECT_ROOT, "data/chat"), "data"),
+        _storage_item("Weather 记录", os.path.join(PROJECT_ROOT, "data/weather"), "data"),
+        _storage_item("Route Creator 数据", os.path.join(PROJECT_ROOT, "data/route_creator"), "data"),
+    ]
+    total_labels = {
+        "访问和快捷动作日志",
+        "全部记录数据",
+        "上传和缩略图文件",
+        "项目缓存",
+        "Map 下载地理数据 SRTM",
+    }
+    total = sum(item["bytes"] for item in items if item["exists"] and item["label"] in total_labels)
+    disk = None
+    try:
+        usage = psutil.disk_usage("/")
+        disk = {
+            "path": "/",
+            "total_bytes": usage.total,
+            "used_bytes": usage.used,
+            "free_bytes": usage.free,
+            "percent": usage.percent,
+            "total_size": _format_bytes(usage.total),
+            "used_size": _format_bytes(usage.used),
+            "free_size": _format_bytes(usage.free),
+        }
+    except Exception:
+        pass
+    return {
+        "total_bytes": total,
+        "total_size": _format_bytes(total),
+        "disk": disk,
+        "items": items,
+    }
+
 def _get_status_payload():
     services = [
         "website.service",
         "cpolar.service",
         "gallery.service",
-        "tracker_scheduler.service"
+        "tracker_scheduler.service",
+        "mihomo.service",
+        "frpc.service",
     ]
     service_status = {name: _get_service_status(name) for name in services}
     payload = {
@@ -948,7 +828,8 @@ def _get_status_payload():
         "latency_samples_by_net": _get_request_samples_by_net(),
         "network_latency_samples": _get_network_latency_samples(),
         "latency_agg_14d": _get_latency_agg_14d(),
-        "network_latency_agg_14d": _get_network_latency_agg_14d()
+        "network_latency_agg_14d": _get_network_latency_agg_14d(),
+        "storage": _get_storage_stats()
     }
     return payload
 
@@ -959,6 +840,32 @@ def _read_log_tail(path, max_lines=1000):
         lines = [line.rstrip("\n") for line in tail]
         lines.reverse()
         return lines
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        return [f"读取日志失败: {e}"]
+
+def _parse_log_time(value):
+    try:
+        return datetime.strptime(str(value or "").strip(), "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+def _read_log_recent(path, days=7, max_lines=5000):
+    cutoff = datetime.now() - timedelta(days=days)
+    rows = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.rstrip("\n")
+                parsed = _parse_log_line(line)
+                log_time = _parse_log_time(parsed.get("time", ""))
+                if log_time and log_time >= cutoff:
+                    rows.append(line)
+                    if max_lines and len(rows) > max_lines:
+                        rows = rows[-max_lines:]
+        rows.reverse()
+        return rows
     except FileNotFoundError:
         return []
     except Exception as e:
@@ -1006,12 +913,6 @@ def _json_ok(data=None):
     if data:
         payload.update(data)
     return jsonify(payload)
-
-@bp.route(ADMIN_PREFIX + "/nas")
-@login_required
-def admin_nas():
-    return render_template("nas.html", user=session.get("user"))
-
 
 @bp.route(ADMIN_PREFIX + "/token")
 @login_required
@@ -1064,6 +965,42 @@ def token_delete():
     return jsonify({"ok": True})
 
 
+@bp.route(ADMIN_PREFIX + "/api/users")
+@login_required
+def admin_user_list():
+    return jsonify({"ok": True, "users": list_users()})
+
+
+@bp.route(ADMIN_PREFIX + "/api/users/create", methods=["POST"])
+@login_required
+def admin_user_create():
+    data = request.get_json(silent=True) or {}
+    ok, error = create_user(data.get("username"), data.get("password"), "user")
+    if not ok:
+        return _json_error(error)
+    return _json_ok({"users": list_users()})
+
+
+@bp.route(ADMIN_PREFIX + "/api/users/password", methods=["POST"])
+@login_required
+def admin_user_password():
+    data = request.get_json(silent=True) or {}
+    ok, error = update_user_password(data.get("username"), data.get("password"))
+    if not ok:
+        return _json_error(error)
+    return _json_ok({"users": list_users()})
+
+
+@bp.route(ADMIN_PREFIX + "/api/users/delete", methods=["POST"])
+@login_required
+def admin_user_delete():
+    data = request.get_json(silent=True) or {}
+    ok, error = delete_user(data.get("username"))
+    if not ok:
+        return _json_error(error)
+    return _json_ok({"users": list_users()})
+
+
 @bp.route("/api/app/login", methods=["POST"])
 def app_login():
     data = request.get_json(silent=True) or {}
@@ -1081,280 +1018,6 @@ def app_login():
         "token_type": "Bearer",
         "record": record,
     })
-
-@bp.route(ADMIN_PREFIX + "/api/nas/status")
-@login_required
-def nas_status():
-    state = _load_nas_state()
-    include_ok = False
-    include_msg = ""
-    ok, content, err = _read_root_file(NAS_SMB_CONF_PATH)
-    if ok:
-        include_ok = f"include = {NAS_MANAGED_CONF_PATH}".lower() in content.lower()
-        include_msg = "present" if include_ok else "missing"
-    else:
-        include_msg = err or "read-failed"
-    samba_users, samba_err = _get_samba_users()
-    disks, disks_err = _get_lsblk()
-    mounts, mounts_err = _get_findmnt()
-    return _json_ok({
-        "state": state,
-        "samba": {
-            "service": _get_samba_status(),
-            "include_ok": include_ok,
-            "include_msg": include_msg,
-            "managed_conf_path": NAS_MANAGED_CONF_PATH,
-            "samba_users": samba_users,
-            "samba_users_err": samba_err
-        },
-        "disks": disks,
-        "disks_err": disks_err,
-        "mounts": mounts,
-        "mounts_err": mounts_err
-    })
-
-@bp.route(ADMIN_PREFIX + "/api/nas/service", methods=["POST"])
-@login_required
-def nas_service():
-    data = request.get_json(silent=True) or {}
-    action = data.get("action", "")
-    service = data.get("service", "smbd")
-    if action not in ("start", "stop", "restart", "reload"):
-        return _json_error("invalid-action")
-    unit = "smbd.service" if service == "smbd" else "nmbd.service"
-    ok, out, err = _run_root_cmd(["systemctl", action, unit])
-    if not ok:
-        return _json_error("systemctl-failed", detail=err or out)
-    return _json_ok({"status": _get_service_status(unit)})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/include", methods=["POST"])
-@login_required
-def nas_include():
-    ok, msg = _ensure_samba_include()
-    if not ok:
-        return _json_error("include-failed", detail=msg)
-    return _json_ok({"result": msg})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/users/create", methods=["POST"])
-@login_required
-def nas_user_create():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
-    is_admin = bool(data.get("is_admin"))
-    if not _validate_username(username):
-        return _json_error("invalid-username")
-    if not password:
-        return _json_error("missing-password")
-    ok, out, err = _run_root_cmd(["useradd", "-M", "-s", "/usr/sbin/nologin", username])
-    if not ok and "already exists" not in (err or "").lower():
-        return _json_error("useradd-failed", detail=err or out)
-    smb_cmd = ["smbpasswd", "-a", "-s", username]
-    ok, out, err = _run_root_cmd_input(smb_cmd, f"{password}\n{password}\n")
-    if not ok:
-        return _json_error("smbpasswd-failed", detail=err or out)
-    state = _load_nas_state()
-    state["users"][username] = {"is_admin": is_admin}
-    if is_admin and not state.get("main_admin"):
-        state["main_admin"] = username
-    _save_nas_state(state)
-    return _json_ok({"users": state["users"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/users/delete", methods=["POST"])
-@login_required
-def nas_user_delete():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    if not _validate_username(username):
-        return _json_error("invalid-username")
-    ok, out, err = _run_root_cmd(["smbpasswd", "-x", username])
-    if not ok and "does not exist" not in (err or "").lower():
-        return _json_error("smbpasswd-delete-failed", detail=err or out)
-    ok, out, err = _run_root_cmd(["userdel", username])
-    if not ok and "does not exist" not in (err or "").lower():
-        return _json_error("userdel-failed", detail=err or out)
-    state = _load_nas_state()
-    state["users"].pop(username, None)
-    if state.get("main_admin") == username:
-        state["main_admin"] = ""
-    _save_nas_state(state)
-    return _json_ok({"users": state["users"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/users/password", methods=["POST"])
-@login_required
-def nas_user_password():
-    data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
-    if not _validate_username(username):
-        return _json_error("invalid-username")
-    if not password:
-        return _json_error("missing-password")
-    smb_cmd = ["smbpasswd", "-s", username]
-    ok, out, err = _run_root_cmd_input(smb_cmd, f"{password}\n{password}\n")
-    if not ok:
-        return _json_error("smbpasswd-failed", detail=err or out)
-    return _json_ok()
-
-@bp.route(ADMIN_PREFIX + "/api/nas/shares/create", methods=["POST"])
-@login_required
-def nas_share_create():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    path = (data.get("path") or "").strip()
-    if not _validate_share_name(name):
-        return _json_error("invalid-share-name")
-    if not path or not path.startswith("/"):
-        return _json_error("invalid-path")
-    state = _load_nas_state()
-    state["shares"][name] = {
-        "path": path,
-        "comment": data.get("comment", ""),
-        "read_only": bool(data.get("read_only")),
-        "guest_ok": bool(data.get("guest_ok")),
-        "valid_users": _normalize_user_list(data.get("valid_users")),
-        "admin_users": _normalize_user_list(data.get("admin_users")),
-        "write_list": _normalize_user_list(data.get("write_list")),
-        "create_mask": data.get("create_mask", ""),
-        "directory_mask": data.get("directory_mask", "")
-    }
-    ok, err = _write_samba_managed_conf(state)
-    if not ok:
-        return _json_error("write-smbconf-failed", detail=err)
-    _save_nas_state(state)
-    return _json_ok({"shares": state["shares"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/shares/update", methods=["POST"])
-@login_required
-def nas_share_update():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not _validate_share_name(name):
-        return _json_error("invalid-share-name")
-    state = _load_nas_state()
-    if name not in state["shares"]:
-        return _json_error("share-not-found")
-    share = state["shares"][name]
-    for key in ("path", "comment", "create_mask", "directory_mask"):
-        if key in data:
-            share[key] = data.get(key, "")
-    for key in ("read_only", "guest_ok"):
-        if key in data:
-            share[key] = bool(data.get(key))
-    for key in ("valid_users", "admin_users", "write_list"):
-        if key in data:
-            share[key] = _normalize_user_list(data.get(key))
-    ok, err = _write_samba_managed_conf(state)
-    if not ok:
-        return _json_error("write-smbconf-failed", detail=err)
-    _save_nas_state(state)
-    return _json_ok({"shares": state["shares"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/shares/delete", methods=["POST"])
-@login_required
-def nas_share_delete():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    if not _validate_share_name(name):
-        return _json_error("invalid-share-name")
-    state = _load_nas_state()
-    state["shares"].pop(name, None)
-    ok, err = _write_samba_managed_conf(state)
-    if not ok:
-        return _json_error("write-smbconf-failed", detail=err)
-    _save_nas_state(state)
-    return _json_ok({"shares": state["shares"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/permissions", methods=["POST"])
-@login_required
-def nas_permissions():
-    data = request.get_json(silent=True) or {}
-    path = (data.get("path") or "").strip()
-    owner = (data.get("owner") or "").strip()
-    group = (data.get("group") or "").strip()
-    mode = (data.get("mode") or "").strip()
-    if not path or not path.startswith("/"):
-        return _json_error("invalid-path")
-    if owner or group:
-        target = f"{owner}:{group}" if owner or group else ""
-        ok, out, err = _run_root_cmd(["chown", "-R", target, path])
-        if not ok:
-            return _json_error("chown-failed", detail=err or out)
-    if mode:
-        ok, out, err = _run_root_cmd(["chmod", "-R", mode, path])
-        if not ok:
-            return _json_error("chmod-failed", detail=err or out)
-    return _json_ok()
-
-@bp.route(ADMIN_PREFIX + "/api/nas/mount", methods=["POST"])
-@login_required
-def nas_mount():
-    data = request.get_json(silent=True) or {}
-    device = (data.get("device") or "").strip()
-    mount_point = (data.get("mount_point") or "").strip()
-    fs_type = (data.get("fs_type") or "").strip()
-    if not device.startswith("/dev/"):
-        return _json_error("invalid-device")
-    if not mount_point.startswith("/"):
-        return _json_error("invalid-mount-point")
-    ok, out, err = _run_root_cmd(["mkdir", "-p", mount_point])
-    if not ok:
-        return _json_error("mkdir-failed", detail=err or out)
-    cmd = ["mount"]
-    if fs_type:
-        cmd += ["-t", fs_type]
-    cmd += [device, mount_point]
-    ok, out, err = _run_root_cmd(cmd)
-    if not ok:
-        return _json_error("mount-failed", detail=err or out)
-    state = _load_nas_state()
-    state["mount"] = {"device": device, "mount_point": mount_point, "fs_type": fs_type or state.get("mount", {}).get("fs_type", "")}
-    _save_nas_state(state)
-    return _json_ok({"mount": state["mount"]})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/umount", methods=["POST"])
-@login_required
-def nas_umount():
-    data = request.get_json(silent=True) or {}
-    target = (data.get("target") or "").strip()
-    if not target:
-        return _json_error("invalid-target")
-    ok, out, err = _run_root_cmd(["umount", target])
-    if not ok:
-        return _json_error("umount-failed", detail=err or out)
-    return _json_ok()
-
-@bp.route(ADMIN_PREFIX + "/api/nas/sleep", methods=["POST"])
-@login_required
-def nas_sleep():
-    data = request.get_json(silent=True) or {}
-    device = (data.get("device") or "").strip()
-    minutes = data.get("minutes", 0)
-    try:
-        minutes = int(minutes)
-    except Exception:
-        return _json_error("invalid-minutes")
-    if not device.startswith("/dev/"):
-        return _json_error("invalid-device")
-    value = _hdparm_value_from_minutes(minutes)
-    ok, out, err = _run_root_cmd(["hdparm", "-S", str(value), device])
-    if not ok:
-        return _json_error("hdparm-failed", detail=err or out)
-    state = _load_nas_state()
-    state["sleep"] = {"device": device, "minutes": minutes}
-    _save_nas_state(state)
-    return _json_ok({"sleep": state["sleep"], "hdparm_value": value})
-
-@bp.route(ADMIN_PREFIX + "/api/nas/reload", methods=["POST"])
-@login_required
-def nas_reload():
-    ok, err = _write_samba_managed_conf(_load_nas_state())
-    if not ok:
-        return _json_error("write-smbconf-failed", detail=err)
-    ok, out, err = _run_root_cmd(["systemctl", "reload", "smbd.service"])
-    if not ok:
-        return _json_error("reload-failed", detail=err or out)
-    return _json_ok()
 
 @bp.route(ADMIN_PREFIX + "/logout")
 @login_required
@@ -1443,11 +1106,16 @@ def network_metrics():
 @bp.route(ADMIN_PREFIX + "/api/visiter_log")
 @login_required
 def visiter_log():
-    lines = _read_log_tail(VISITER_LOG_PATH, max_lines=1000)
+    try:
+        days = int(request.args.get("days", 7))
+    except Exception:
+        days = 7
+    days = max(1, min(days, 3650))
+    lines = _read_log_recent(VISITER_LOG_PATH, days=days, max_lines=5000)
     entries = []
     for line in lines:
         parsed = _parse_log_line(line)
         ip = parsed.get("ip", "")
         parsed["location"] = _lookup_geo(ip)
         entries.append(parsed)
-    return jsonify({"lines": lines, "entries": entries})
+    return jsonify({"days": days, "lines": lines, "entries": entries})

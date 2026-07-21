@@ -328,6 +328,9 @@ def _unauthorized_api():
 
 
 def _situation_read_authorized():
+    if session.get("logged_in"):
+        g.situation_token_record = None
+        return True
     if _page_unlocked():
         g.situation_token_record = None
         return True

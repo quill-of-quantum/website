@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>URL</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .probe-form { display: grid; gap: 16px; }
+    .field { display: grid; gap: 6px; }
+    .field label { font-weight: 600; }
+    .inline-fields { display: grid; grid-template-columns: 2fr repeat(3, 1fr); gap: 12px; }
+    textarea.input { min-height: 130px; resize: vertical; font-family: ui-monospace, monospace; }
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .table-wrap { overflow-x: auto; }
+    .url-cell { min-width: 280px; word-break: break-all; }
+    .speed-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .speed-metric { padding: 18px; border: 1px solid var(--border); border-radius: 10px; text-align: center; }
+    .speed-value { display: block; margin-top: 8px; font-size: 28px; font-weight: 700; }
+    .inline-result { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .speed-chart { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+    .speed-chart svg { display: block; width: 100%; min-width: 480px; height: auto; }
+    .chart-grid { stroke: var(--border); stroke-width: 1; }
+    .chart-download { fill: none; stroke: #2563eb; stroke-width: 3; }
+    .chart-upload { fill: none; stroke: #16a34a; stroke-width: 3; }
+    .chart-dot-download { fill: #2563eb; }
+    .chart-dot-upload { fill: #16a34a; }
+    .chart-label { fill: var(--muted); font-size: 12px; }
+    .chart-legend { display: flex; gap: 16px; margin-bottom: 8px; font-size: 13px; }
+    .chart-key::before { content: ''; display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; background: currentColor; }
+    .chart-key.download { color: #2563eb; }
+    .chart-key.upload { color: #16a34a; }
+    @media (max-width: 768px) { .inline-fields { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 600px) { .speed-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="container">
+      <header class="page-header">
+        <h1>🌐 URL</h1>
+        <p>URL 探测、子域名发现和当前设备网络测速</p>
+      </header>
+
+      <section class="card">
+        <h2 class="card-title">URL 路径批量探测</h2>
+        <p class="muted">按数字模板或自定义列表生成 URL，并检查网页是否可访问。</p>
+        <form id="pathProbeForm" class="probe-form">
+          <div class="field">
+            <label for="baseUrl">基础 URL</label>
+            <input id="baseUrl" class="input" placeholder="www.example.com" required>
+          </div>
+          <div class="stack">
+            <div class="field">
+              <label for="mode">规则类型</label>
+              <select id="mode" class="input">
+                <option value="numeric">数字模板</option>
+                <option value="custom">自定义列表</option>
+              </select>
+            </div>
+            <div id="numericFields" class="inline-fields">
+              <div class="field">
+                <label for="template">路径模板</label>
+                <input id="template" class="input" value="{n}" placeholder="archive/page-{n}.html">
+              </div>
+              <div class="field"><label for="start">起始</label><input id="start" class="input" type="number" value="1"></div>
+              <div class="field"><label for="end">结束</label><input id="end" class="input" type="number" value="10"></div>
+              <div class="field"><label for="step">步长</label><input id="step" class="input" type="number" value="1"></div>
+            </div>
+            <div id="customFields" class="field" hidden>
+              <label for="entries">路径或完整 URL（每行一个）</label>
+              <textarea id="entries" class="input" placeholder="about&#10;news/latest&#10;https://example.org/status"></textarea>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="pathRunButton" class="btn btn-primary" type="submit">开始探测</button>
+            <button id="pathStopButton" class="btn btn-danger" type="button" hidden>结束探测</button>
+            <a class="btn" href="/">返回主页</a>
+            <span class="muted">一次最多 50 个；5 秒为每个 URL 的超时</span>
+          </div>
+        </form>
+        <div id="pathResult" class="inline-result" hidden>
+          <div class="summary"><strong>探测结果</strong><span id="pathSummary" class="muted"></span></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>结果</th><th>状态码</th><th>URL</th><th>最终 URL / 错误</th></tr></thead>
+              <tbody id="pathResultBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">子域名发现</h2>
+        <p class="muted">组合证书透明度、证书 SAN 和常见 DNS 名称，并验证解析及网页状态。</p>
+        <form id="subdomainForm" class="probe-form">
+          <div class="field">
+            <label for="domain">根域名</label>
+            <input id="domain" class="input" placeholder="example.com" required>
+          </div>
+          <div class="toolbar">
+            <button id="subdomainRunButton" class="btn btn-primary" type="submit">开始发现</button>
+            <button id="subdomainStopButton" class="btn btn-danger" type="button" hidden>结束发现</button>
+            <span class="muted">轻量发现：证书、约 50 个 DNS 前缀，最多验证 100 个候选</span>
+          </div>
+        </form>
+        <div id="subdomainResult" class="inline-result" hidden>
+          <div class="summary"><strong>发现结果</strong><span id="subdomainSummary" class="muted"></span></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>子域名</th><th>IP</th><th>来源</th><th>网页状态</th></tr></thead>
+              <tbody id="subdomainResultBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">网络测速</h2>
+        <p class="muted">测试当前前端设备到本站后端服务器的往返延迟、下载速度和上传速度。数据块会根据当前链路速度自动调整。</p>
+        <div class="toolbar">
+          <button id="speedRunButton" class="btn btn-primary" type="button">开始测速</button>
+          <span class="muted">测速期间请保持页面在前台，并暂停其他大流量任务</span>
+        </div>
+        <div id="speedResult" class="inline-result" hidden>
+          <div class="summary"><strong>测速结果</strong><span id="speedStatus" class="muted"></span></div>
+          <div class="speed-grid" style="margin-top:16px">
+            <div class="speed-metric">延迟<span id="latencyValue" class="speed-value">—</span><span class="muted">ms</span></div>
+            <div class="speed-metric">下载<span id="downloadValue" class="speed-value">—</span><span class="muted">Mbps</span></div>
+            <div class="speed-metric">上传<span id="uploadValue" class="speed-value">—</span><span class="muted">Mbps</span></div>
+          </div>
+          <div id="speedChart" class="speed-chart" hidden></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const mode = document.getElementById('mode');
+    const pathForm = document.getElementById('pathProbeForm');
+    const subdomainForm = document.getElementById('subdomainForm');
+    const pathButton = document.getElementById('pathRunButton');
+    const subdomainButton = document.getElementById('subdomainRunButton');
+    const speedButton = document.getElementById('speedRunButton');
+    const pathStopButton = document.getElementById('pathStopButton');
+    const subdomainStopButton = document.getElementById('subdomainStopButton');
+    const pathResult = document.getElementById('pathResult');
+    const pathResultBody = document.getElementById('pathResultBody');
+    const pathSummary = document.getElementById('pathSummary');
+    const subdomainResult = document.getElementById('subdomainResult');
+    const subdomainResultBody = document.getElementById('subdomainResultBody');
+    const subdomainSummary = document.getElementById('subdomainSummary');
+    const speedResult = document.getElementById('speedResult');
+    const speedStatus = document.getElementById('speedStatus');
+    const speedChart = document.getElementById('speedChart');
+    let activeJobId = null;
+    let activeJobKind = 'url';
+    let pollTimer = null;
+
+    mode.addEventListener('change', () => {
+      document.getElementById('numericFields').hidden = mode.value !== 'numeric';
+      document.getElementById('customFields').hidden = mode.value !== 'custom';
+    });
+
+    function median(values) {
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    }
+
+    function adaptiveBytes(mbps, kind) {
+      if (kind === 'download') {
+        if (mbps < 5) return 512 * 1024;
+        if (mbps < 25) return 2 * 1024 * 1024;
+        return 5 * 1024 * 1024;
+      }
+      if (mbps < 5) return 256 * 1024;
+      if (mbps < 25) return 1024 * 1024;
+      return 2 * 1024 * 1024;
+    }
+
+    function formatMiB(bytes) {
+      return `${(bytes / 1024 / 1024).toFixed(bytes < 1024 * 1024 ? 2 : 1)} MiB`;
+    }
+
+    async function measureDownload(bytes, cacheBust) {
+      const started = performance.now();
+      const response = await fetch(`/api/url-probe/speed/download?bytes=${bytes}&_=${cacheBust()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('下载测速失败');
+      const body = await response.arrayBuffer();
+      return (body.byteLength * 8) / ((performance.now() - started) / 1000) / 1000000;
+    }
+
+    function makeUploadBody(bytes) {
+      const body = new Uint8Array(bytes);
+      const seed = body.subarray(0, Math.min(65536, bytes));
+      crypto.getRandomValues(seed);
+      for (let offset = seed.length; offset < body.length; offset += seed.length) {
+        body.set(seed.subarray(0, Math.min(seed.length, body.length - offset)), offset);
+      }
+      return body;
+    }
+
+    async function measureUpload(bytes, cacheBust) {
+      const body = makeUploadBody(bytes);
+      const started = performance.now();
+      const response = await fetch(`/api/url-probe/speed/upload?_=${cacheBust()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body
+      });
+      if (!response.ok) throw new Error('上传测速失败');
+      const payload = await response.json();
+      const received = payload.data && payload.data.received_bytes;
+      return (received * 8) / ((performance.now() - started) / 1000) / 1000000;
+    }
+
+    function renderSpeedChart(download, upload) {
+      const width = 640;
+      const height = 220;
+      const left = 48;
+      const right = 18;
+      const top = 18;
+      const bottom = 34;
+      const maxValue = Math.max(1, ...download, ...upload) * 1.15;
+      const x = index => left + index * ((width - left - right) / 2);
+      const y = value => top + (height - top - bottom) * (1 - value / maxValue);
+      const points = values => values.map((value, index) => `${x(index)},${y(value)}`).join(' ');
+      const dots = (values, className) => values.map((value, index) =>
+        `<circle class="${className}" cx="${x(index)}" cy="${y(value)}" r="4"><title>${value.toFixed(2)} Mbps</title></circle>`
+      ).join('');
+      const grid = [0, 0.5, 1].map(ratio => {
+        const gridY = top + (height - top - bottom) * ratio;
+        const label = maxValue * (1 - ratio);
+        return `<line class="chart-grid" x1="${left}" y1="${gridY}" x2="${width - right}" y2="${gridY}" />
+          <text class="chart-label" x="4" y="${gridY + 4}">${label.toFixed(0)}</text>`;
+      }).join('');
+      const labels = download.map((_, index) =>
+        `<text class="chart-label" text-anchor="middle" x="${x(index)}" y="${height - 8}">第 ${index + 1} 轮</text>`
+      ).join('');
+      speedChart.innerHTML = `
+        <div class="chart-legend">
+          <span class="chart-key download">下载 Mbps</span>
+          <span class="chart-key upload">上传 Mbps</span>
+        </div>
+        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="下载和上传速度折线图">
+          ${grid}
+          <polyline class="chart-download" points="${points(download)}" />
+          <polyline class="chart-upload" points="${points(upload)}" />
+          ${dots(download, 'chart-dot-download')}
+          ${dots(upload, 'chart-dot-upload')}
+          ${labels}
+        </svg>`;
+      speedChart.hidden = false;
+    }
+
+    async function runSpeedTest() {
+      const cacheBust = () => `${Date.now()}-${Math.random()}`;
+      speedResult.hidden = false;
+      speedChart.hidden = true;
+      ['latencyValue', 'downloadValue', 'uploadValue'].forEach(id => {
+        document.getElementById(id).textContent = '—';
+      });
+
+      speedStatus.textContent = '正在测试延迟…';
+      const latencySamples = [];
+      for (let index = 0; index < 6; index += 1) {
+        const started = performance.now();
+        const response = await fetch(`/api/url-probe/speed/ping?_=${cacheBust()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error('延迟测试失败');
+        await response.json();
+        if (index > 0) latencySamples.push(performance.now() - started);
+      }
+      document.getElementById('latencyValue').textContent = median(latencySamples).toFixed(1);
+
+      speedStatus.textContent = '正在估算下载速度并选择测试大小…';
+      const downloadEstimate = await measureDownload(512 * 1024, cacheBust);
+      const downloadBytes = adaptiveBytes(downloadEstimate, 'download');
+      const downloadSamples = [];
+      for (let round = 0; round < 3; round += 1) {
+        speedStatus.textContent = `正在测试下载速度（第 ${round + 1}/3 轮，每轮 ${formatMiB(downloadBytes)}）…`;
+        downloadSamples.push(await measureDownload(downloadBytes, cacheBust));
+      }
+      document.getElementById('downloadValue').textContent = median(downloadSamples).toFixed(2);
+
+      speedStatus.textContent = '正在估算上传速度并选择测试大小…';
+      const uploadEstimate = await measureUpload(256 * 1024, cacheBust);
+      const uploadBytes = adaptiveBytes(uploadEstimate, 'upload');
+      const uploadSamples = [];
+      for (let round = 0; round < 3; round += 1) {
+        speedStatus.textContent = `正在测试上传速度（第 ${round + 1}/3 轮，每轮 ${formatMiB(uploadBytes)}）…`;
+        uploadSamples.push(await measureUpload(uploadBytes, cacheBust));
+      }
+      document.getElementById('uploadValue').textContent = median(uploadSamples).toFixed(2);
+      renderSpeedChart(downloadSamples, uploadSamples);
+      speedStatus.textContent = `完成于 ${new Date().toLocaleTimeString()}；下载每轮 ${formatMiB(downloadBytes)}，上传每轮 ${formatMiB(uploadBytes)}`;
+    }
+
+    function cell(text, className = '') {
+      const td = document.createElement('td');
+      td.textContent = text;
+      td.className = className;
+      return td;
+    }
+
+    function renderJob(job) {
+      pathResult.hidden = false;
+      const labels = { running: '探测中', completed: '已完成', cancelled: '已结束' };
+      pathSummary.textContent = `${labels[job.state] || job.state}：${job.completed}/${job.total}，确认存在 ${job.exists} 个`;
+      pathResultBody.replaceChildren();
+      job.results.forEach(item => {
+        const tr = document.createElement('tr');
+        const state = item.error ? ['请求失败', 'badge badge-warning'] : item.exists
+          ? ['存在', 'badge badge-success'] : ['未找到', 'badge badge-danger'];
+        const stateTd = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = state[1]; badge.textContent = state[0]; stateTd.appendChild(badge);
+        tr.append(stateTd, cell(item.status ?? '—'), cell(item.url, 'url-cell'), cell(item.error || item.final_url, 'url-cell'));
+        pathResultBody.appendChild(tr);
+      });
+    }
+
+    function renderDiscovery(job) {
+      subdomainResult.hidden = false;
+      const state = job.state === 'running' ? job.phase : (job.state === 'cancelled' ? '已结束' : '已完成');
+      const wildcard = job.wildcard ? `；检测到泛解析 ${job.wildcard_ips.join(', ')}` : '';
+      const warning = job.warnings.length ? `；${job.warnings.join('；')}` : '';
+      subdomainSummary.textContent = `${state}：发现 ${job.results.length} 个，候选 ${job.candidate_count || '生成中'}${wildcard}${warning}`;
+      subdomainResultBody.replaceChildren();
+      job.results.forEach(item => {
+        const tr = document.createElement('tr');
+        const status = item.status == null ? (item.error || '无响应') : `${item.status}${item.exists ? ' 可访问' : ''}`;
+        tr.append(
+          cell(item.hostname, 'url-cell'),
+          cell(item.ips.join(', ') || '—', 'url-cell'),
+          cell(item.sources.join('、')),
+          cell(status)
+        );
+        subdomainResultBody.appendChild(tr);
+      });
+    }
+
+    function finishPolling() {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      activeJobId = null;
+      activeJobKind = 'url';
+      pathButton.disabled = false;
+      subdomainButton.disabled = false;
+      pathButton.textContent = '开始探测';
+      subdomainButton.textContent = '开始发现';
+      pathStopButton.hidden = true;
+      subdomainStopButton.hidden = true;
+      pathStopButton.disabled = false;
+      subdomainStopButton.disabled = false;
+      pathStopButton.textContent = '结束探测';
+      subdomainStopButton.textContent = '结束发现';
+    }
+
+    async function pollJob() {
+      if (!activeJobId) return;
+      try {
+        const endpoint = activeJobKind === 'subdomain'
+          ? `/api/url-probe/subdomains/jobs/${activeJobId}`
+          : `/api/url-probe/jobs/${activeJobId}`;
+        const response = await fetch(endpoint, { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) throw new Error(payload.error || '读取进度失败');
+        if (activeJobKind === 'subdomain') renderDiscovery(payload.data);
+        else renderJob(payload.data);
+        if (payload.data.state !== 'running') {
+          finishPolling();
+          return;
+        }
+        pollTimer = setTimeout(pollJob, 500);
+      } catch (error) {
+        (activeJobKind === 'subdomain' ? subdomainSummary : pathSummary).textContent = error.message;
+        finishPolling();
+      }
+    }
+
+    async function stopActiveJob() {
+      if (!activeJobId) return;
+      const stopButton = activeJobKind === 'subdomain' ? subdomainStopButton : pathStopButton;
+      stopButton.disabled = true;
+      stopButton.textContent = '正在结束…';
+      try {
+        const endpoint = activeJobKind === 'subdomain'
+          ? `/api/url-probe/subdomains/jobs/${activeJobId}/cancel`
+          : `/api/url-probe/jobs/${activeJobId}/cancel`;
+        const response = await fetch(endpoint, { method: 'POST' });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) throw new Error(payload.error || '结束失败');
+        if (activeJobKind === 'subdomain') renderDiscovery(payload.data);
+        else renderJob(payload.data);
+      } catch (error) {
+        (activeJobKind === 'subdomain' ? subdomainSummary : pathSummary).textContent = error.message;
+      } finally {
+        finishPolling();
+      }
+    }
+
+    pathStopButton.addEventListener('click', stopActiveJob);
+    subdomainStopButton.addEventListener('click', stopActiveJob);
+
+    async function startProbe(kind) {
+      activeJobKind = kind;
+      pathButton.disabled = true;
+      subdomainButton.disabled = true;
+      const button = kind === 'subdomain' ? subdomainButton : pathButton;
+      const stopButton = kind === 'subdomain' ? subdomainStopButton : pathStopButton;
+      button.textContent = kind === 'subdomain' ? '发现中…' : '探测中…';
+      stopButton.hidden = false;
+      const currentResult = kind === 'subdomain' ? subdomainResult : pathResult;
+      const currentSummary = kind === 'subdomain' ? subdomainSummary : pathSummary;
+      const currentBody = kind === 'subdomain' ? subdomainResultBody : pathResultBody;
+      currentResult.hidden = false;
+      currentSummary.textContent = '';
+      currentBody.replaceChildren();
+      const rule = mode.value === 'numeric'
+        ? {
+            mode: 'numeric',
+            template: document.getElementById('template').value,
+            start: document.getElementById('start').value,
+            end: document.getElementById('end').value,
+            step: document.getElementById('step').value
+          }
+        : { mode: 'custom', entries: document.getElementById('entries').value };
+      try {
+        const endpoint = kind === 'subdomain'
+          ? '/api/url-probe/subdomains/run'
+          : '/api/url-probe/run';
+        const requestBody = kind === 'subdomain'
+          ? { domain: document.getElementById('domain').value }
+          : { base_url: document.getElementById('baseUrl').value, rule };
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) throw new Error(payload.error || '探测失败');
+        activeJobId = payload.data.job_id;
+        if (kind === 'subdomain') renderDiscovery(payload.data);
+        else renderJob(payload.data);
+        pollJob();
+      } catch (error) {
+        currentResult.hidden = false;
+        currentSummary.textContent = error.message;
+        finishPolling();
+      }
+    }
+
+    pathForm.addEventListener('submit', event => {
+      event.preventDefault();
+      startProbe('url');
+    });
+
+    subdomainForm.addEventListener('submit', event => {
+      event.preventDefault();
+      startProbe('subdomain');
+    });
+
+    speedButton.addEventListener('click', async () => {
+      speedButton.disabled = true;
+      speedButton.textContent = '测速中…';
+      try {
+        await runSpeedTest();
+      } catch (error) {
+        speedResult.hidden = false;
+        speedStatus.textContent = error.message;
+      } finally {
+        speedButton.disabled = false;
+        speedButton.textContent = '开始测速';
+      }
+    });
+  </script>
+</body>
+</html>

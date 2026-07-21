@@ -1,0 +1,16 @@
+[Unit]
+Description=Mihomo proxy service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bbdwz
+Group=bbdwz
+WorkingDirectory=/home/bbdwz
+ExecStart=/usr/local/bin/mihomo -d /home/bbdwz/.config/mihomo
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

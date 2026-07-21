@@ -31,6 +31,18 @@ HISTORY_FILE = os.path.join(MAP_DIR, "history.json")
 FAVORITES_FILE = os.path.join(MAP_DIR, "favorites.json")
 FAVORITE_IMAGES_DIR = os.path.join(MAP_DIR, "favorite_images")
 DB_FILE = os.path.join(MAP_DIR, "geocode_cache.db")  # 👈 新增：数据库文件路径
+MAP_SOURCES = {
+    "amap": {
+        "tiles": "https://wprd01.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&style=7",
+        "attr": "高德地图",
+        "coordinate_system": "gcj02"
+    },
+    "osm": {
+        "tiles": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "attr": "&copy; OpenStreetMap contributors",
+        "coordinate_system": "wgs84"
+    }
+}
 
 # 自动初始化 SQLite 数据库
 def init_db():
@@ -594,6 +606,15 @@ def bd09_to_wgs84(bd_lat, bd_lng):
     
     return gcj_lat * 2 - mglat, gcj_lng * 2 - mglng
 
+def normalize_map_source(map_source):
+    return map_source if map_source in MAP_SOURCES else "amap"
+
+def bd09_to_map_coords(bd_lat, bd_lng, map_source):
+    source = MAP_SOURCES[normalize_map_source(map_source)]
+    if source["coordinate_system"] == "gcj02":
+        return bd09_to_gcj02(bd_lat, bd_lng)
+    return bd09_to_wgs84(bd_lat, bd_lng)
+
 def haversine_distance(lon1, lat1, lon2, lat2):
     R = 6371000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -680,7 +701,7 @@ def get_elevation_color(elevation, min_ele, max_ele):
     r, g, b = colorsys.hsv_to_rgb(h, 1.0, 1.0)
     return f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}'
 
-def generate_folium_map(route_data, origin_info, destination_info, waypoints_info=None, waypoint_addresses=None, elevation_data_list=None):
+def generate_folium_map(route_data, origin_info, destination_info, waypoints_info=None, waypoint_addresses=None, elevation_data_list=None, map_source="amap"):
     """
     使用folium生成交互式地图HTML
     返回: HTML字符串
@@ -705,9 +726,10 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     origin_lat, origin_lng = float(origin_parts[0]), float(origin_parts[1])
     dest_lat, dest_lng = float(dest_parts[0]), float(dest_parts[1])
     
-    # 修改为使用 GCJ02 (适配高德底图)，解决不重合和不显示起点的问题
-    origin_lat, origin_lng = bd09_to_gcj02(origin_lat, origin_lng)
-    dest_lat, dest_lng = bd09_to_gcj02(dest_lat, dest_lng)
+    map_source = normalize_map_source(map_source)
+    source_config = MAP_SOURCES[map_source]
+    origin_lat, origin_lng = bd09_to_map_coords(origin_lat, origin_lng, map_source)
+    dest_lat, dest_lng = bd09_to_map_coords(dest_lat, dest_lng, map_source)
     
     # 计算地图中心
     center_lat = (origin_lat + dest_lat) / 2
@@ -718,8 +740,8 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         location=[center_lat, center_lng],
         zoom_start=10,
         control_scale=True,
-        tiles='https://wprd01.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&style=7',
-        attr='高德地图'
+        tiles=source_config["tiles"],
+        attr=source_config["attr"]
     )
     
     # 路段类型配置
@@ -764,9 +786,8 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                 for point_str in polyline.split(';'):
                     if point_str.strip():
                         lng, lat = point_str.split(',')
-                        # 底图使用GCJ02渲染，解决偏移
-                        gcj_lat, gcj_lng = bd09_to_gcj02(float(lat), float(lng))
-                        coords.append([gcj_lat, gcj_lng])
+                        map_lat, map_lng = bd09_to_map_coords(float(lat), float(lng), map_source)
+                        coords.append([map_lat, map_lng])
                 
                 if len(coords) < 2:
                     continue
@@ -797,15 +818,18 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     ele_var_name = None  # 👈 新增：先初始化变量
     # 添加一个可选的海拔图层 (彩虹色阶)
     if elevation_data_list and len(elevation_data_list) > 1:
-        # 改为默认显示 (show=True)
-        ele_group = folium.FeatureGroup(name='🌈 海拔彩虹路线 (紫低红高)', show=True)
+        # 默认关闭，由地图上的“海拔线”按钮按需开启。
+        ele_group = folium.FeatureGroup(name='🌈 海拔彩虹路线 (紫低红高)', show=False)
         
         # 为了防止路线过长导致浏览器卡顿，这里保留抽稀逻辑，ColorLine 性能较好，放宽到 500 个点
         step_sz = max(1, len(elevation_data_list) // 5000)
         chart_elevation_list = elevation_data_list[::step_sz]
         
         # 提取坐标点和对应的海拔高度
-        coords = [[pt['gcj_lat'], pt['gcj_lng']] for pt in chart_elevation_list]
+        if source_config["coordinate_system"] == "gcj02":
+            coords = [[pt['gcj_lat'], pt['gcj_lng']] for pt in chart_elevation_list]
+        else:
+            coords = [[pt['lat'], pt['lng']] for pt in chart_elevation_list]
         elevations = [pt['ele'] for pt in chart_elevation_list]
         
         min_ele = min(elevations)
@@ -882,7 +906,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
 
                 wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
-                wp_lat, wp_lng = bd09_to_gcj02(wp_lat, wp_lng)
+                wp_lat, wp_lng = bd09_to_map_coords(wp_lat, wp_lng, map_source)
                 
                 folium.Marker(
                     location=[wp_lat, wp_lng],
@@ -919,7 +943,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                     
                 wp_parts = wp_coords.split(',')
                 wp_lat, wp_lng = float(wp_parts[0]), float(wp_parts[1])
-                wp_lat, wp_lng = bd09_to_gcj02(wp_lat, wp_lng)
+                wp_lat, wp_lng = bd09_to_map_coords(wp_lat, wp_lng, map_source)
                 all_lats.append(wp_lat)
                 all_lngs.append(wp_lng)
             except:
@@ -934,9 +958,9 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                 for point_str in polyline.split(';'):
                     if point_str.strip():
                         lng, lat = point_str.split(',')
-                        gcj_lat, gcj_lng = bd09_to_gcj02(float(lat), float(lng))
-                        all_lats.append(gcj_lat)
-                        all_lngs.append(gcj_lng)
+                        map_lat, map_lng = bd09_to_map_coords(float(lat), float(lng), map_source)
+                        all_lats.append(map_lat)
+                        all_lngs.append(map_lng)
         except:
             pass
     
@@ -1000,7 +1024,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
     if ele_var_name:
         ele_btn_html = f'''
         <button id="toggleEleBtn" onclick="toggleElevationLayer()" style="
-            padding: 8px 12px; background-color: #e53e3e; color: white; border: none;
+            padding: 8px 12px; background-color: #a0aec0; color: white; border: none;
             border-radius: 5px; cursor: pointer; font-weight: 600; font-size: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.3s ease;
         " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
@@ -1081,6 +1105,7 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
                 colormapContainer.style.marginTop = '50px';
                 colormapContainer.style.transformOrigin = 'top right';
                 if (window.innerWidth <= 768) colormapContainer.style.transform = 'scale(0.75)';
+                colormapContainer.style.display = 'none';
                 break;
             }}
         }}
@@ -1107,9 +1132,12 @@ def generate_folium_map(route_data, origin_info, destination_info, waypoints_inf
         }}
         
         if (eleBtn) {{
-            eleBtn.dataset.active = 'true';
+            var eleLayer = {ele_var_name if ele_var_name else 'null'};
+            if (eleLayer && myMap.hasLayer(eleLayer)) {{
+                myMap.removeLayer(eleLayer);
+            }}
+            eleBtn.dataset.active = 'false';
             window.toggleElevationLayer = function() {{
-                var eleLayer = {ele_var_name if ele_var_name else 'null'};
                 if (!eleLayer) return;
                 if (eleBtn.dataset.active === 'true') {{
                     myMap.removeLayer(eleLayer);
@@ -1404,6 +1432,7 @@ def route():
     origin_obj = data.get("origin")
     dest_obj = data.get("destination")
     waypoints_objs = data.get("waypoints", [])
+    map_source = normalize_map_source(data.get("map_source"))
     
     # 获取原始地址（用于历史记录）
     origin_address = data.get("origin_address")
@@ -1535,7 +1564,15 @@ def route():
         
         t_folium_start = time.time() # 🟢 5. 记录Folium地图渲染时间
         try:
-            map_html = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs, waypoint_addresses, elevation_data_list=elevation_data_list)
+            map_html = generate_folium_map(
+                route_data,
+                origin_obj,
+                dest_obj,
+                waypoints_objs,
+                waypoint_addresses,
+                elevation_data_list=elevation_data_list,
+                map_source=map_source
+            )
         except Exception as e:
             print(f"❌ 生成folium地图失败: {e}")
             map_html = None
@@ -1574,6 +1611,8 @@ def route():
             "roadTypeAnalysis": road_type_analysis,
             "map_url": map_url,
             "map_html": map_html,
+            "map_source": map_source,
+            "map_render_version": 2,
             "electric_cost": electric_cost,
             "electric_total_cost": electric_total_cost,
             "origin_detail": origin_obj if isinstance(origin_obj, dict) else {},
@@ -1715,6 +1754,7 @@ def get_map():
     origin_obj = data.get("origin")
     dest_obj = data.get("destination")
     waypoints_objs = data.get("waypoints", [])
+    map_source = normalize_map_source(data.get("map_source"))
     
     if not origin_obj or not dest_obj:
         return jsonify({"error": "缺少起点或终点"}), 400
@@ -1745,7 +1785,13 @@ def get_map():
         return jsonify({"error": "未找到合适的路线"}), 404
     
     # 生成Folium地图
-    map_file = generate_folium_map(route_data, origin_obj, dest_obj, waypoints_objs)
+    map_file = generate_folium_map(
+        route_data,
+        origin_obj,
+        dest_obj,
+        waypoints_objs,
+        map_source=map_source
+    )
     
     # 直接返回 HTML 文本
     return map_file, 200, {'Content-Type': 'text/html; charset=utf-8'}

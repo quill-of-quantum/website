@@ -39,6 +39,20 @@
     .service-control:last-child { border-bottom:none; }
     .service-title { font-weight:600; color:#333; }
     .service-meta { font-size:12px; color:#666; margin-top:2px; }
+    .log-filter-bar { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .filter-chip { display:inline-flex; align-items:center; gap:6px; padding:5px 8px; border-radius:999px; font-size:12px; border:1px solid transparent; }
+    .filter-chip.include { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+    .filter-chip.exclude { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+    .filter-chip button { border:0; background:transparent; color:inherit; cursor:pointer; font-weight:700; padding:0 2px; }
+    .log-context-menu { position:fixed; z-index:2000; background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.16); overflow:hidden; min-width:150px; }
+    .log-context-menu button { display:block; width:100%; padding:9px 12px; border:0; background:#fff; text-align:left; cursor:pointer; }
+    .log-context-menu button:hover { background:#f3f4f6; }
+    .log-table td { cursor: context-menu; }
+    .storage-summary { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .storage-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .storage-table th, .storage-table td { padding:8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+    .storage-table th { color:var(--muted); font-weight:600; }
+    .storage-path { color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; word-break:break-all; }
   </style>
 </head>
 <body>
@@ -84,6 +98,29 @@
       </div>
 
       <div class="card">
+        <h2 class="card-title">账户管理</h2>
+        <div id="account_list" class="muted">加载中...</div>
+        <div class="grid-2" style="margin-top:12px;">
+          <input id="account_username" class="input" placeholder="用户名">
+          <input id="account_password" class="input" type="password" placeholder="密码">
+        </div>
+        <div class="toolbar" style="margin-top:10px;">
+          <button class="btn btn-primary" onclick="createAccount()">新增账户</button>
+          <button class="btn" onclick="updateAccountPassword()">修改密码</button>
+          <button class="btn btn-danger" onclick="deleteAccount()">删除账户</button>
+        </div>
+        <div id="account_note" class="muted" style="margin-top:8px;">普通账户不能进入 /1/，但会触发首页登录后内容和普通登录权限。</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <h2 class="card-title" style="margin:0;">存储统计</h2>
+          <span id="storage_total" class="muted">加载中...</span>
+        </div>
+        <div id="storage_stats" style="margin-top:12px;">加载中...</div>
+      </div>
+
+      <div class="card">
         <h2 class="card-title">请求延迟散点（24小时内）</h2>
         <div id="latency_meta" class="muted">加载中...</div>
         <div id="latency_chart" style="margin-top:12px;">暂无数据</div>
@@ -110,8 +147,13 @@
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
           <h2 class="card-title" style="margin:0;">访问日志</h2>
-          <button class="btn" onclick="loadVisiterLog()">刷新</button>
+          <div class="toolbar" style="justify-content:flex-end;">
+            <span id="log_range_label" class="muted">最近 7 天</span>
+            <button class="btn btn-primary" onclick="loadVisiterLog()">刷新</button>
+            <button id="log_load_more_btn" class="btn" onclick="loadMoreVisiterLog()">加载更多</button>
+          </div>
         </div>
+        <div id="log_filter_bar" class="log-filter-bar"></div>
         <div id="visiter_log" class="log-wrap" style="margin-top:12px;">加载中...</div>
       </div>
 
@@ -125,6 +167,7 @@
     authManager.checkLoginStatus();
 
     initStatusStream();
+    loadAccounts();
     loadVisiterLog();
   });
 
@@ -142,11 +185,86 @@
     return items.join("");
   }
 
+  function accountNote(text, isError=false) {
+    const el = document.getElementById('account_note');
+    el.textContent = text;
+    el.style.color = isError ? '#991b1b' : '#6b7280';
+  }
+
+  async function adminApi(url, method='GET', data=null) {
+    const options = { method, headers: { 'Content-Type': 'application/json' } };
+    if (data) options.body = JSON.stringify(data);
+    const res = await fetch(url, options);
+    const payload = await res.json();
+    if (!payload.ok) throw new Error(payload.error || '操作失败');
+    return payload;
+  }
+
+  function renderAccounts(users) {
+    const rows = (users || []).map(user => {
+      const role = user.role === 'admin' ? '<span class="status-pill status-ok">admin</span>' : '<span class="status-pill status-unknown">user</span>';
+      return `<tr><td>${user.username}</td><td>${role}</td></tr>`;
+    }).join('');
+    document.getElementById('account_list').innerHTML = `
+      <table class="table">
+        <thead><tr><th>用户名</th><th>角色</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="2">暂无账户</td></tr>'}</tbody>
+      </table>
+    `;
+  }
+
+  async function loadAccounts() {
+    try {
+      const payload = await adminApi('/1/api/users');
+      renderAccounts(payload.users);
+    } catch (err) {
+      accountNote('账户加载失败：' + err.message, true);
+    }
+  }
+
+  async function createAccount() {
+    const username = document.getElementById('account_username').value.trim();
+    const password = document.getElementById('account_password').value;
+    try {
+      const payload = await adminApi('/1/api/users/create', 'POST', { username, password });
+      renderAccounts(payload.users);
+      accountNote('账户已新增');
+    } catch (err) {
+      accountNote('新增失败：' + err.message, true);
+    }
+  }
+
+  async function updateAccountPassword() {
+    const username = document.getElementById('account_username').value.trim();
+    const password = document.getElementById('account_password').value;
+    try {
+      const payload = await adminApi('/1/api/users/password', 'POST', { username, password });
+      renderAccounts(payload.users);
+      accountNote('密码已更新');
+    } catch (err) {
+      accountNote('修改失败：' + err.message, true);
+    }
+  }
+
+  async function deleteAccount() {
+    const username = document.getElementById('account_username').value.trim();
+    if (!username || !confirm(`确定删除账户 ${username}？`)) return;
+    try {
+      const payload = await adminApi('/1/api/users/delete', 'POST', { username });
+      renderAccounts(payload.users);
+      accountNote('账户已删除');
+    } catch (err) {
+      accountNote('删除失败：' + err.message, true);
+    }
+  }
+
   function renderManagedServiceControls(services) {
     if (!services) return "暂无数据";
     const labels = {
       gallery: "Gallery",
-      tracker: "Tracker 调度器"
+      tracker: "Tracker 调度器",
+      mihomo: "Mihomo 代理",
+      frpc: "FRP 隧道"
     };
     return Object.keys(labels).map(key => {
       const item = services[key] || {};
@@ -318,6 +436,56 @@
     }).join("");
   }
 
+  function renderStorageStats(storage) {
+    if (!storage || !Array.isArray(storage.items)) return "暂无数据";
+    const diskText = storage.disk
+      ? `系统盘 ${storage.disk.used_size || "0 B"} / ${storage.disk.total_size || "0 B"}（${storage.disk.percent || 0}%）`
+      : "系统盘暂无数据";
+    const kindLabels = {
+      log: "Log",
+      data: "记录",
+      storage: "上传",
+      cache: "缓存",
+      map: "Map"
+    };
+    const rows = storage.items.map(item => {
+      const exists = item.exists !== false;
+      const updated = item.mtime ? new Date(item.mtime * 1000).toLocaleString() : "-";
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(item.label || "-")}</strong><br>
+            <span class="status-pill ${exists ? "status-ok" : "status-unknown"}">${exists ? "存在" : "未创建"}</span>
+            <span class="status-pill status-unknown">${escapeHtml(kindLabels[item.kind] || item.kind || "-")}</span>
+          </td>
+          <td>${escapeHtml(item.size || "0 B")}</td>
+          <td>${Number(item.files || 0)} 文件 / ${Number(item.dirs || 0)} 目录</td>
+          <td>${escapeHtml(updated)}</td>
+          <td class="storage-path">${escapeHtml(item.path || "")}</td>
+        </tr>
+      `;
+    }).join("");
+    return `
+      <div class="storage-summary">
+        <span class="status-pill status-warn">${escapeHtml(diskText)}</span>
+        <span class="status-pill status-ok">总计 ${escapeHtml(storage.total_size || "0 B")}</span>
+        <span class="muted">包含 logs、data、storage、cache、Map 地理数据和各模块记录。</span>
+      </div>
+      <table class="storage-table">
+        <thead>
+          <tr>
+            <th>项目</th>
+            <th>大小</th>
+            <th>数量</th>
+            <th>最后更新</th>
+            <th>路径</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="5">暂无数据</td></tr>'}</tbody>
+      </table>
+    `;
+  }
+
   function updateStatus(data) {
     document.getElementById("status_meta").textContent =
       `最后更新: ${new Date((data.timestamp || 0) * 1000).toLocaleString()}`;
@@ -326,6 +494,11 @@
     document.getElementById("network_status").innerHTML = renderNetworkStatus(data.network);
     document.getElementById("client_status").innerHTML = renderClientStatus(data.clients);
     document.getElementById("client_paths").innerHTML = renderClientPaths(data.clients);
+    const disk = data.storage && data.storage.disk;
+    document.getElementById("storage_total").textContent = disk
+      ? `系统盘: ${disk.used_size} / ${disk.total_size}`
+      : `总计: ${(data.storage && data.storage.total_size) || "0 B"}`;
+    document.getElementById("storage_stats").innerHTML = renderStorageStats(data.storage);
     if (data.latency_samples_by_net) {
       const total = (data.latency && data.latency.total) || 0;
       const avg = (data.latency && data.latency.avg_ms) || 0;
@@ -385,7 +558,13 @@
   }
 
   function toggleManagedService(service, action) {
-    const label = service === "gallery" ? "Gallery" : "Tracker 调度器";
+    const labels = {
+      gallery: "Gallery",
+      tracker: "Tracker 调度器",
+      mihomo: "Mihomo 代理",
+      frpc: "FRP 隧道"
+    };
+    const label = labels[service] || service;
     const message = action === "disable"
       ? `确定禁用并停止 ${label} 吗？重启树莓派后也不会自动启动。`
       : `确定启用并启动 ${label} 吗？重启树莓派后会自动启动。`;
@@ -403,6 +582,26 @@
       .then(res => res.json())
       .then(updateStatus)
       .catch(err => alert("服务开关失败：" + err.message));
+  }
+
+  let logRows = [];
+  let logFilters = [];
+  let logDays = 7;
+
+  const logFieldLabels = {
+    time: "时间",
+    ip: "IP",
+    location: "归属地",
+    path: "路径",
+    login: "登录",
+    op: "操作",
+    device: "设备"
+  };
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, ch => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
   }
 
   function parseLogLine(line) {
@@ -439,25 +638,69 @@
     };
   }
 
-  function renderLogTable(lines, entries) {
-    const rows = (entries && entries.length) ? entries : lines.map(parseLogLine);
+  function normalizeLogRow(row) {
+    return {
+      time: row.time || "",
+      ip: row.ip || "",
+      location: row.location || "",
+      path: row.path || "",
+      login: row.login || "",
+      op: row.op || "",
+      device: row.device || ""
+    };
+  }
+
+  function rowMatchesFilters(row) {
+    return logFilters.every(filter => {
+      const value = String(row[filter.field] || "");
+      const matched = value === filter.value;
+      return filter.mode === "include" ? matched : !matched;
+    });
+  }
+
+  function filteredLogRows() {
+    return logRows.filter(rowMatchesFilters);
+  }
+
+  function renderFilterBar() {
+    const bar = document.getElementById("log_filter_bar");
+    if (!bar) return;
+    if (!logFilters.length) {
+      bar.innerHTML = "";
+      return;
+    }
+    bar.innerHTML = logFilters.map((filter, index) => {
+      const modeText = filter.mode === "include" ? "查看" : "排除";
+      return `
+        <span class="filter-chip ${filter.mode}">
+          ${modeText} ${escapeHtml(logFieldLabels[filter.field] || filter.field)}：${escapeHtml(filter.value)}
+          <button type="button" onclick="removeLogFilter(${index})">×</button>
+        </span>
+      `;
+    }).join("");
+  }
+
+  function renderLogTable() {
+    const rows = filteredLogRows();
     const body = rows.map(r => {
       const isLogin = r.login === "已登录" || r.login === "yes";
       const badgeClass = isLogin ? "badge-login" : "badge-logout";
       const loginLabel = r.login || "未登录";
       return `
         <tr>
-          <td>${r.time}</td>
-          <td>${r.ip}</td>
-          <td>${r.location || ""}</td>
-          <td>${r.path}</td>
-          <td><span class="badge ${badgeClass}">${loginLabel}</span></td>
-          <td>${r.op}</td>
-          <td>${r.device}</td>
+          <td data-field="time" data-value="${escapeHtml(r.time)}">${escapeHtml(r.time)}</td>
+          <td data-field="ip" data-value="${escapeHtml(r.ip)}">${escapeHtml(r.ip)}</td>
+          <td data-field="location" data-value="${escapeHtml(r.location)}">${escapeHtml(r.location)}</td>
+          <td data-field="path" data-value="${escapeHtml(r.path)}">${escapeHtml(r.path)}</td>
+          <td data-field="login" data-value="${escapeHtml(loginLabel)}"><span class="badge ${badgeClass}">${escapeHtml(loginLabel)}</span></td>
+          <td data-field="op" data-value="${escapeHtml(r.op)}">${escapeHtml(r.op)}</td>
+          <td data-field="device" data-value="${escapeHtml(r.device)}">${escapeHtml(r.device)}</td>
         </tr>
       `;
     }).join("");
+    renderFilterBar();
     return `
+      <div class="muted" style="padding:8px 8px 0;">显示 ${rows.length} / ${logRows.length} 条</div>
       <table class="log-table">
         <thead>
           <tr>
@@ -470,26 +713,98 @@
             <th>设备</th>
           </tr>
         </thead>
-        <tbody>${body}</tbody>
+        <tbody>${body || '<tr><td colspan="7">没有符合条件的日志</td></tr>'}</tbody>
       </table>
     `;
   }
 
+  function refreshLogTable() {
+    document.getElementById("visiter_log").innerHTML = renderLogTable();
+  }
+
+  function addLogFilter(mode, field, value) {
+    if (!field || value === undefined || value === "") return;
+    const exists = logFilters.some(f => f.mode === mode && f.field === field && f.value === value);
+    if (!exists) logFilters.push({ mode, field, value });
+    refreshLogTable();
+  }
+
+  function removeLogFilter(index) {
+    logFilters.splice(index, 1);
+    refreshLogTable();
+  }
+
+  function closeLogContextMenu() {
+    const old = document.getElementById("log_context_menu");
+    if (old) old.remove();
+  }
+
+  function openLogContextMenu(event, field, value) {
+    closeLogContextMenu();
+    const menu = document.createElement("div");
+    menu.id = "log_context_menu";
+    menu.className = "log-context-menu";
+    menu.innerHTML = `
+      <button type="button" data-mode="include">查看此项</button>
+      <button type="button" data-mode="exclude">排除此项</button>
+    `;
+    menu.addEventListener("click", e => e.stopPropagation());
+    menu.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        addLogFilter(btn.dataset.mode, field, value);
+        closeLogContextMenu();
+      });
+    });
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+    const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
+    menu.style.left = `${Math.max(8, left)}px`;
+    menu.style.top = `${Math.max(8, top)}px`;
+  }
+
   async function loadVisiterLog() {
     const logEl = document.getElementById("visiter_log");
+    const rangeLabel = document.getElementById("log_range_label");
+    const loadMoreBtn = document.getElementById("log_load_more_btn");
+    if (rangeLabel) rangeLabel.textContent = `最近 ${logDays} 天`;
+    if (loadMoreBtn) loadMoreBtn.disabled = true;
     try {
-      const res = await fetch("/1/api/visiter_log");
+      const res = await fetch(`/1/api/visiter_log?days=${logDays}`);
       const data = await res.json();
       if ((!data.lines || data.lines.length === 0) && (!data.entries || data.entries.length === 0)) {
         logEl.textContent = "暂无日志";
         return;
       }
-      logEl.innerHTML = renderLogTable(data.lines || [], data.entries || []);
+      logRows = ((data.entries && data.entries.length) ? data.entries : (data.lines || []).map(parseLogLine)).map(normalizeLogRow);
+      logEl.innerHTML = renderLogTable();
       logEl.scrollTop = logEl.scrollHeight;
     } catch (err) {
       logEl.textContent = "加载失败";
+    } finally {
+      if (loadMoreBtn) loadMoreBtn.disabled = false;
     }
   }
+
+  function loadMoreVisiterLog() {
+    logDays *= 2;
+    loadVisiterLog();
+  }
+
+  document.addEventListener("contextmenu", event => {
+    const cell = event.target.closest("#visiter_log td[data-field]");
+    if (!cell) return;
+    event.preventDefault();
+    openLogContextMenu(event, cell.dataset.field, cell.dataset.value || cell.textContent.trim());
+  });
+  document.addEventListener("click", event => {
+    const cell = event.target.closest("#visiter_log td[data-field]");
+    if (!cell) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openLogContextMenu(event, cell.dataset.field, cell.dataset.value || cell.textContent.trim());
+  });
+  document.addEventListener("click", closeLogContextMenu);
   </script>
   <script src="/static/js/net_metrics.js"></script>
 </body>

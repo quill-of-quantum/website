@@ -3,6 +3,8 @@ import sqlite3
 import asyncio
 import os
 import json
+import shutil
+import subprocess
 from datetime import datetime
 from modules.tracker.browser import fetch_tracking, parse_tracking_result, compare_with_last
 
@@ -10,6 +12,29 @@ bp = Blueprint("tracker", __name__)
 
 TRACKER_DATA_DIR = "/home/bbdwz/projects/website/data/tracker"
 DB_PATH = f"{TRACKER_DATA_DIR}/tracker.db"
+TRACKER_SERVICE_UNIT = "tracker_scheduler.service"
+
+
+def _systemctl_show(unit, properties):
+    systemctl_path = shutil.which("systemctl", path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+    if not systemctl_path:
+        return {}
+    args = [systemctl_path, "show"]
+    for prop in properties:
+        args.extend(["-p", prop])
+    args.append(unit)
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            return {}
+        data = {}
+        for line in result.stdout.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                data[key] = value
+        return data
+    except Exception:
+        return {}
 
 def db_conn():
     conn = sqlite3.connect(DB_PATH, timeout=10)
@@ -17,6 +42,24 @@ def db_conn():
     # 启用 WAL 模式避免锁定
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+@bp.route("/api/tracker/service/status")
+def tracker_service_status():
+    data = _systemctl_show(TRACKER_SERVICE_UNIT, ["ActiveState", "SubState", "UnitFileState"])
+    active_state = data.get("ActiveState") or "unknown"
+    enabled_state = data.get("UnitFileState") or "unknown"
+    enabled = enabled_state not in ("disabled", "masked")
+    visible = enabled or enabled_state == "unknown"
+    return jsonify({
+        "ok": True,
+        "unit": TRACKER_SERVICE_UNIT,
+        "active_state": active_state,
+        "sub_state": data.get("SubState") or "unknown",
+        "enabled_state": enabled_state,
+        "enabled": enabled,
+        "visible": visible,
+    })
 
 
 # === 获取任务列表 ===

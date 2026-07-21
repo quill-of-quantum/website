@@ -58,6 +58,9 @@ from modules.admin.api import bp as admin_bp
 from modules.admin.api import record_visit, record_request_timing, is_lan_ip
 app.register_blueprint(admin_bp)
 
+from modules.nas.api import bp as nas_bp
+app.register_blueprint(nas_bp)
+
 from modules.map.api import bp as map_bp
 app.register_blueprint(map_bp)
 
@@ -88,6 +91,9 @@ app.register_blueprint(vision_bp)
 from modules.tools.clipboard import bp as clipboard_bp
 app.register_blueprint(clipboard_bp)
 
+from modules.url_probe.api import bp as url_probe_bp
+app.register_blueprint(url_probe_bp)
+
 from modules.situation.api import bp as situation_bp
 app.register_blueprint(situation_bp)
 
@@ -105,6 +111,13 @@ app.register_blueprint(email_bp)
 
 @app.before_request
 def track_visit():
+    if session.get("logged_in"):
+        try:
+            from modules.auth.user_store import user_exists
+            if not user_exists(session.get("user")):
+                session.clear()
+        except Exception:
+            pass
     g.request_start = time.time()
     ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if ip and "," in ip:

@@ -37,7 +37,8 @@
       color: var(--muted);
       font-size: 0.82rem;
     }
-    .field input {
+    .field input,
+    .field select {
       padding: 9px 10px;
       border: 1px solid var(--border);
       border-radius: var(--r-sm);
@@ -60,6 +61,7 @@
       }
       .field,
       .field input,
+      .field select,
       .map-toolbar .btn {
         width: 100%;
       }
@@ -81,6 +83,13 @@
         <label for="endTime">结束时间</label>
         <input id="endTime" type="datetime-local">
       </div>
+      <div class="field">
+        <label for="mapSource">地图源</label>
+        <select id="mapSource" onchange="changeMapSource(this.value)">
+          <option value="amap">高德地图</option>
+          <option value="osm">OpenStreetMap</option>
+        </select>
+      </div>
       <button class="btn btn-primary" type="button" onclick="loadTrack()">加载</button>
       <div id="mapStatus" class="map-status">加载中...</div>
     </div>
@@ -88,15 +97,20 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/js/situation/maps.js"></script>
   <script>
-    const map = L.map('map').setView([39.9042, 116.4074], 12);
-    L.tileLayer('https://wprd01.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&style=7', {
-      maxZoom: 19,
-      attribution: '高德地图'
-    }).addTo(map);
+    const defaultCenter = [39.9042, 116.4074];
+    let selectedMapSource = SituationMaps.getSelectedSource();
+    const map = L.map('map').setView(
+      SituationMaps.projectPoint(defaultCenter[0], defaultCenter[1], selectedMapSource),
+      12
+    );
+    let baseMapLayer = SituationMaps.createTileLayer(selectedMapSource).addTo(map);
 
     let routeLayer = L.layerGroup().addTo(map);
     let markerLayer = L.layerGroup().addTo(map);
+    let currentTrackPoints = [];
+    document.getElementById('mapSource').value = selectedMapSource;
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -131,34 +145,22 @@
       return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
     }
 
-    async function loadTrack() {
-      const startInput = document.getElementById('startTime');
-      const endInput = document.getElementById('endTime');
-      const params = new URLSearchParams();
-      if (startInput.value) params.set('start', startInput.value);
-      if (endInput.value) params.set('end', endInput.value);
-
-      setStatus('加载中...');
-      const res = await fetch(`/api/situation/track?${params.toString()}`);
-      const payload = await res.json();
-      if (payload.status !== 'ok') {
-        setStatus(payload.error || '加载失败');
-        return;
-      }
-
-      startInput.value = payload.start || '';
-      endInput.value = payload.end || '';
-
+    function renderTrack(points) {
       routeLayer.clearLayers();
       markerLayer.clearLayers();
 
-      const points = payload.points || [];
       if (!points.length) {
+        map.setView(
+          SituationMaps.projectPoint(defaultCenter[0], defaultCenter[1], selectedMapSource),
+          12
+        );
         setStatus('当前范围没有位置点');
         return;
       }
 
-      const latlngs = points.map(point => [point.lat, point.lng]);
+      const latlngs = points.map(point => (
+        SituationMaps.projectPoint(point.lat, point.lng, selectedMapSource)
+      ));
       if (latlngs.length === 1) {
         L.circleMarker(latlngs[0], {
           radius: 7,
@@ -181,7 +183,7 @@
       }
 
       points.forEach((point, index) => {
-        const marker = L.circleMarker([point.lat, point.lng], {
+        const marker = L.circleMarker(latlngs[index], {
           radius: index === 0 || index === points.length - 1 ? 6 : 4,
           color: index === points.length - 1 ? '#047857' : '#2563eb',
           fillColor: index === points.length - 1 ? '#10b981' : '#60a5fa',
@@ -193,6 +195,35 @@
 
       map.fitBounds(L.latLngBounds(latlngs), { padding: [24, 24] });
       setStatus(`${points.length} 个位置点`);
+    }
+
+    function changeMapSource(sourceId) {
+      selectedMapSource = SituationMaps.setSelectedSource(sourceId);
+      map.removeLayer(baseMapLayer);
+      baseMapLayer = SituationMaps.createTileLayer(selectedMapSource).addTo(map);
+      renderTrack(currentTrackPoints);
+    }
+
+    async function loadTrack() {
+      const startInput = document.getElementById('startTime');
+      const endInput = document.getElementById('endTime');
+      const params = new URLSearchParams();
+      if (startInput.value) params.set('start', startInput.value);
+      if (endInput.value) params.set('end', endInput.value);
+
+      setStatus('加载中...');
+      const res = await fetch(`/api/situation/track?${params.toString()}`);
+      const payload = await res.json();
+      if (payload.status !== 'ok') {
+        setStatus(payload.error || '加载失败');
+        return;
+      }
+
+      startInput.value = payload.start || '';
+      endInput.value = payload.end || '';
+
+      currentTrackPoints = payload.points || [];
+      renderTrack(currentTrackPoints);
     }
 
     loadTrack().catch(err => setStatus(`加载失败：${err.message}`));

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>🏠 树莓派控制面板</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     /* 图表区域 */
     .chart-section {
@@ -80,6 +81,60 @@
       border-color: var(--primary);
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
     }
+    .situation-map {
+      width: 100%;
+      height: 260px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f3f4f6;
+      margin-top: 12px;
+    }
+    .situation-map .leaflet-container {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .situation-map-tools {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .situation-map-tools select {
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+    }
+    .situation-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .situation-meta-item {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f9fafb;
+      min-width: 0;
+    }
+    .situation-meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .situation-meta-value {
+      color: var(--text);
+      font-weight: 700;
+      word-break: break-word;
+    }
     .auth-only { }
     .guest-only { }
 
@@ -91,6 +146,9 @@
       }
       .tool-btn {
         min-width: auto;
+      }
+      .situation-meta {
+        grid-template-columns: 1fr 1fr;
       }
     }
   </style>
@@ -105,7 +163,7 @@
       </div>
 
       <!-- 最新物流进度 -->
-      <a class="card card-link" href="/tracker">
+      <a id="trackerCard" class="card card-link" href="/tracker" hidden>
         <h2 class="card-title">📦 最新物流进度</h2>
         <div id="latestStatus">加载中...</div>
       </a>
@@ -179,9 +237,45 @@
               <span>👁️</span>
               <span>视觉测算</span>
             </a>
+            <a href="/url-probe" class="btn tool-btn">
+              <span>🌐</span>
+              <span>URL</span>
+            </a>
           </div>
         </div>
       </div>
+
+      <!-- Situation -->
+      <a class="card card-link auth-only" href="/situation" hidden>
+        <h2 class="card-title">🪑 Situation</h2>
+        <div id="situationSummary" class="muted">加载中...</div>
+        <div class="situation-map-tools" onclick="event.preventDefault(); event.stopPropagation();">
+          <label for="situationMapSource">地图源</label>
+          <select id="situationMapSource" onchange="changeSituationMapSource(this.value, event)">
+            <option value="amap">高德地图</option>
+            <option value="osm">OpenStreetMap</option>
+          </select>
+        </div>
+        <div id="situationMap" class="situation-map" hidden></div>
+        <div class="situation-meta">
+          <div class="situation-meta-item">
+            <div class="situation-meta-label">时间</div>
+            <div id="situationTime" class="situation-meta-value">--</div>
+          </div>
+          <div class="situation-meta-item">
+            <div class="situation-meta-label">距今</div>
+            <div id="situationAgo" class="situation-meta-value">--</div>
+          </div>
+          <div class="situation-meta-item">
+            <div class="situation-meta-label">电量</div>
+            <div id="situationBattery" class="situation-meta-value">--</div>
+          </div>
+          <div class="situation-meta-item">
+            <div class="situation-meta-label">网络</div>
+            <div id="situationNet" class="situation-meta-value">--</div>
+          </div>
+        </div>
+      </a>
 
       <!-- 汇率走势 -->
       <div class="card">
@@ -271,21 +365,44 @@
 
   <!-- 引入统一的认证模块 -->
   <script src="/static/js/auth.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/js/situation/maps.js"></script>
 
   <!-- JS 脚本 -->
   <script>
+    let situationLeafletMap = null;
+    let situationLeafletMarker = null;
+    let situationLeafletBaseLayer = null;
+    let situationLatestPoint = null;
+    let selectedSituationMapSource = SituationMaps.getSelectedSource();
+
     // 初始化认证系统
     document.addEventListener('DOMContentLoaded', function() {
       loadMotivationQuote();
+      document.getElementById('situationMapSource').value = selectedSituationMapSource;
       if (window.authManager) {
         authManager.createLoginStatusWidget();
         authManager.onAuthChange(function(isLoggedIn) {
+          if (!isLoggedIn) {
+            const situationMap = document.getElementById('situationMap');
+            if (situationMap) {
+              if (situationLeafletMap) {
+                situationLeafletMap.remove();
+                situationLeafletMap = null;
+                situationLeafletMarker = null;
+                situationLeafletBaseLayer = null;
+              }
+              situationMap.hidden = true;
+              situationMap.innerHTML = '';
+            }
+          }
           document.querySelectorAll('.auth-only').forEach(el => {
             el.hidden = !isLoggedIn;
           });
           document.querySelectorAll('.guest-only').forEach(el => {
             el.hidden = isLoggedIn;
           });
+          if (isLoggedIn) loadSituationLatest();
         });
         authManager.checkLoginStatus();
       }
@@ -311,9 +428,24 @@
 
     // 加载最新物流状态
     async function loadLatest() {
+      const card = document.getElementById('trackerCard');
+      const target = document.getElementById('latestStatus');
+      if (!card || !target) return;
+      try {
+        const serviceRes = await fetch('/api/tracker/service/status', { cache: 'no-store' });
+        const service = await serviceRes.json();
+        if (service && service.ok && service.visible === false) {
+          card.hidden = true;
+          return;
+        }
+      } catch (err) {
+        card.hidden = true;
+        return;
+      }
+
       const res = await fetch('/api/tracker/list');
       const data = await res.json();
-      const target = document.getElementById('latestStatus');
+      card.hidden = false;
 
       if (!data.length) {
         target.innerText = '暂无物流任务';
@@ -330,6 +462,150 @@
       `;
     }
     loadLatest();
+
+    function parseSituationSite(site) {
+      const parts = String(site || '').split(',');
+      if (parts.length !== 2) return null;
+      const lat = Number(parts[0].trim());
+      const lng = Number(parts[1].trim());
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+      return { lat, lng };
+    }
+
+    function parseSituationTime(value) {
+      if (!value) return '--';
+      const text = String(value).trim();
+      let match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
+      if (match) {
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const offsetHours = Number(match[4]);
+        const offsetMinutes = Number(match[5] || 0);
+        const hour = Number(match[6]);
+        const minute = Number(match[7]);
+        const second = Number(match[8] || 0);
+        const sign = offsetHours >= 0 ? 1 : -1;
+        const offsetTotalMinutes = offsetHours * 60 + sign * offsetMinutes;
+        const utcMs = Date.UTC(year, month - 1, day, hour, minute, second) - offsetTotalMinutes * 60 * 1000;
+        return new Date(utcMs);
+      }
+      const parsed = new Date(text);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function formatSituationTime(value) {
+      const date = parseSituationTime(value);
+      if (!date) return '--';
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    function formatSituationAgo(value) {
+      const date = parseSituationTime(value);
+      if (!date) return '--';
+      const diffMs = Date.now() - date.getTime();
+      const absMs = Math.abs(diffMs);
+      const minute = 60 * 1000;
+      const hour = 60 * minute;
+      const day = 24 * hour;
+      let text;
+      if (absMs < minute) text = '刚刚';
+      else if (absMs < hour) text = `${Math.floor(absMs / minute)} 分钟`;
+      else if (absMs < day) text = `${Math.floor(absMs / hour)} 小时`;
+      else text = `${Math.floor(absMs / day)} 天`;
+      if (text === '刚刚') return text;
+      return diffMs >= 0 ? `${text}前` : `${text}后`;
+    }
+
+    function setSituationText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value || '--';
+    }
+
+    function renderSituationMap(point) {
+      const mapEl = document.getElementById('situationMap');
+      if (!mapEl || !point || typeof L === 'undefined') return;
+      mapEl.hidden = false;
+      const mapPoint = SituationMaps.projectPoint(
+        point.lat,
+        point.lng,
+        selectedSituationMapSource
+      );
+
+      if (!situationLeafletMap) {
+        situationLeafletMap = L.map(mapEl, {
+          zoomControl: false,
+          attributionControl: true
+        }).setView(mapPoint, 15);
+        situationLeafletBaseLayer = SituationMaps
+          .createTileLayer(selectedSituationMapSource)
+          .addTo(situationLeafletMap);
+        L.DomEvent.disableClickPropagation(mapEl);
+        L.DomEvent.disableScrollPropagation(mapEl);
+      } else {
+        situationLeafletMap.setView(mapPoint, 15);
+      }
+
+      if (situationLeafletMarker) {
+        situationLeafletMarker.setLatLng(mapPoint);
+      } else {
+        situationLeafletMarker = L.marker(mapPoint).addTo(situationLeafletMap);
+      }
+      setTimeout(() => situationLeafletMap && situationLeafletMap.invalidateSize(), 0);
+    }
+
+    function changeSituationMapSource(sourceId, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      selectedSituationMapSource = SituationMaps.setSelectedSource(sourceId);
+      if (!situationLeafletMap) return;
+
+      if (situationLeafletBaseLayer) {
+        situationLeafletMap.removeLayer(situationLeafletBaseLayer);
+      }
+      situationLeafletBaseLayer = SituationMaps
+        .createTileLayer(selectedSituationMapSource)
+        .addTo(situationLeafletMap);
+      if (situationLatestPoint) renderSituationMap(situationLatestPoint);
+    }
+
+    async function loadSituationLatest() {
+      const summary = document.getElementById('situationSummary');
+      if (!summary) return;
+      try {
+        const res = await fetch('/api/situation/latest', { cache: 'no-store' });
+        const payload = await res.json();
+        if (!payload.success || !payload.latest) {
+          summary.textContent = payload.error || '暂无报备记录';
+          return;
+        }
+        const latest = payload.latest;
+        const point = parseSituationSite(latest.site);
+        situationLatestPoint = point;
+        const batteryText = latest.battery
+          ? (String(latest.battery).includes('%') ? String(latest.battery) : `${latest.battery}%`)
+          : '--';
+        summary.textContent = latest.event ? `最近状态：${latest.event}` : '最近报备记录';
+        setSituationText('situationTime', formatSituationTime(latest.time));
+        setSituationText('situationAgo', formatSituationAgo(latest.time));
+        setSituationText('situationBattery', batteryText);
+        setSituationText('situationNet', latest.net);
+
+        if (point) renderSituationMap(point);
+      } catch (err) {
+        summary.textContent = 'Situation 加载失败';
+      }
+    }
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

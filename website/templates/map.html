@@ -246,14 +246,9 @@
     }
 
     /* 途径点组件 */
-    .waypoint-input-group {
+    .waypoint-add-row {
       display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .waypoint-input-group input {
-      flex: 1;
+      margin-top: 12px;
     }
 
     .waypoints-container {
@@ -832,26 +827,16 @@
         width: 100%;
       }
 
-      .waypoint-input-group {
-        gap: 6px;
+      .waypoint-add-row {
         width: 100%;
         display: flex;
-        align-items: stretch;
       }
 
-      .waypoint-input-group input {
-        min-width: 0;
-        flex: 2;
+      .waypoint-add-row .btn {
+        width: 100%;
         padding: 10px 8px;
-        font-size: 0.9em;
-      }
-
-      .waypoint-input-group .btn {
-        flex: 1;
-        padding: 10px 8px;
-        font-size: 0.75em;
+        font-size: 0.85em;
         white-space: nowrap;
-        min-width: 50px;
       }
 
       .waypoints-container {
@@ -1159,18 +1144,24 @@
                 <div class="location-btn" title="获取当前位置" onclick="fillCurrentLocation('destination')"></div>
               </div>
             </div>
+
+            <div class="form-group">
+              <label class="form-label" for="routeMapSource">🗺️ 地图源</label>
+              <select id="routeMapSource" class="form-input" onchange="changeRouteMapSource()">
+                <option value="amap">高德地图</option>
+                <option value="osm">OpenStreetMap</option>
+              </select>
+            </div>
           </div>
 
           <!-- 途径点设置 -->
           <div class="input-section">
             <h3 class="section-title">📌 途径点设置</h3>
             
-            <div class="waypoint-input-group">
-              <input type="text" id="waypointInput" class="form-input" placeholder="输入途径点地址">
-              <button class="btn btn-secondary btn-small" onclick="addWaypoint()">➕ 添加</button>
-            </div>
-            
             <div class="waypoints-container" id="waypointsList"></div>
+            <div class="waypoint-add-row">
+              <button class="btn btn-secondary btn-small" onclick="addWaypoint()">➕ 增加途径点</button>
+            </div>
           </div>
 
           <!-- 操作按钮 -->
@@ -1434,7 +1425,7 @@
 
 <script>
 // 全局变量
-let waypoints = [];
+let waypoints = [''];
 let currentRoute = null;
 let roadTypeChart = null;
 
@@ -1540,6 +1531,7 @@ const ROUTE_DB_NAME = 'routePlannerCache';
 const ROUTE_DB_VERSION = 1;
 const ROUTE_STORE_NAME = 'routeResults';
 const LAST_ROUTE_KEY = 'lastRoute';
+const ROUTE_MAP_RENDER_VERSION = 2;
 
 function openRouteCacheDb() {
   return new Promise((resolve, reject) => {
@@ -1582,6 +1574,9 @@ async function loadRouteResultFromCache() {
       request.onerror = () => reject(request.error);
     });
     db.close();
+    if (route && route.map_render_version !== ROUTE_MAP_RENDER_VERSION) {
+      return null;
+    }
     return route;
   } catch (e) {
     console.warn('读取完整路线缓存失败:', e);
@@ -1608,7 +1603,8 @@ function saveFormData() {
   const formData = {
     origin: document.getElementById('origin').value,
     destination: document.getElementById('destination').value,
-    waypoints: waypoints
+    waypoints: waypoints,
+    map_source: document.getElementById('routeMapSource').value
   };
   try {
     localStorage.setItem('routePlannerData', JSON.stringify(formData));
@@ -1709,13 +1705,17 @@ function getCurrentConfig() {
 
 // 从 localStorage 加载表单数据
 async function loadFormData() {
+  renderWaypoints();
   const saved = localStorage.getItem('routePlannerData');
   if (saved) {
     try {
       const formData = JSON.parse(saved);
       document.getElementById('origin').value = formData.origin || '';
       document.getElementById('destination').value = formData.destination || '';
-      waypoints = formData.waypoints || [];
+      document.getElementById('routeMapSource').value = formData.map_source || 'amap';
+      waypoints = Array.isArray(formData.waypoints) && formData.waypoints.length
+        ? formData.waypoints
+        : [''];
       renderWaypoints();
     } catch (e) {
       console.error('加载表单数据失败', e);
@@ -1729,13 +1729,17 @@ async function loadFormData() {
   }
 }
 
+function changeRouteMapSource() {
+  saveFormData();
+}
+
 // 清空表单数据
 function clearFormData() {
   if (!confirm('确定要清空所有输入吗？')) return;
   
   document.getElementById('origin').value = '';
   document.getElementById('destination').value = '';
-  waypoints = [];
+  waypoints = [''];
   renderWaypoints();
   resetRouteResults();
   localStorage.removeItem('routePlannerData');
@@ -2061,24 +2065,19 @@ async function saveConfig() {
 }
 
 // 添加途径点
-async function addWaypoint() {
-  const input = document.getElementById('waypointInput');
-  const address = input.value.trim();
-
-  if (!address) {
-    showMessage('请输入途径点地址', 'error');
-    return;
-  }
-
-  waypoints.push(address);
-  input.value = '';
+function addWaypoint() {
+  waypoints.push('');
   renderWaypoints();
   saveFormData();
+  const inputs = document.querySelectorAll('.waypoint-name-input');
+  const newInput = inputs[inputs.length - 1];
+  if (newInput) newInput.focus();
 }
 
 // 移除途径点
 function removeWaypoint(index) {
   waypoints.splice(index, 1);
+  if (waypoints.length === 0) waypoints.push('');
   renderWaypoints();
   saveFormData();
 }
@@ -2087,16 +2086,11 @@ function removeWaypoint(index) {
 function renderWaypoints() {
   const list = document.getElementById('waypointsList');
   
-  if (waypoints.length === 0) {
-    list.innerHTML = '<div style="text-align: center; color: #a0aec0; padding: 20px; font-size: 0.9em;">暂无途径点，可点击上方"添加"按钮添加</div>';
-    return;
-  }
-  
   list.innerHTML = waypoints.map((wp, i) => `
     <div class="waypoint-item" draggable="true" data-index="${i}">
       <span class="waypoint-handle">☰</span>
       <span class="waypoint-number">${i + 1}.</span>
-      <input type="text" class="waypoint-name-input" value="${wp}" onchange="updateWaypointName(${i}, this.value)" onblur="updateWaypointName(${i}, this.value)">
+      <input type="text" class="waypoint-name-input" value="${wp}" placeholder="输入途径点地址" onchange="updateWaypointName(${i}, this.value)" onblur="updateWaypointName(${i}, this.value)">
       <button class="waypoint-remove-btn" onclick="removeWaypoint(${i})">✕</button>
     </div>
   `).join('');
@@ -2199,11 +2193,8 @@ function addDragListeners() {
 
 // 更新途径点名称
 function updateWaypointName(index, newName) {
-  const trimmedName = newName.trim();
-  if (trimmedName) {
-    waypoints[index] = trimmedName;
-    saveFormData();
-  }
+  waypoints[index] = newName.trim();
+  saveFormData();
 }
 
 // 计算路线 (带性能诊断版)
@@ -2224,7 +2215,7 @@ async function calculateRoute() {
   try {
     const originAddress = origin;
     const destinationAddress = destination;
-    const waypointAddresses = [...waypoints];
+    const waypointAddresses = waypoints.map(wp => wp.trim()).filter(Boolean);
     const totalSteps = 4; // 简化为4个大步骤展示，体验更好
     
     perfLogs = []; 
@@ -2245,7 +2236,7 @@ async function calculateRoute() {
     const tasks = [
       getGeocodeTask(origin, originInput, '起点'),
       getGeocodeTask(destination, destInput, '终点'),
-      ...waypoints.map((wp, i) => getGeocodeTask(wp, null, `途径点 ${i + 1}`))
+      ...waypointAddresses.map((wp, i) => getGeocodeTask(wp, null, `途径点 ${i + 1}`))
     ];
     
     const resolvedInfos = await Promise.all(tasks);
@@ -2271,7 +2262,8 @@ async function calculateRoute() {
       body: JSON.stringify({
         origin: originInfo, destination: destInfo, waypoints: waypointInfos,
         origin_address: originAddress, destination_address: destinationAddress,
-        waypoint_addresses: waypointAddresses, config: currentConfig
+        waypoint_addresses: waypointAddresses, config: currentConfig,
+        map_source: document.getElementById('routeMapSource').value
       })
     });
 
@@ -2945,7 +2937,7 @@ function importHistoryTrip(origin, destination, waypointAddresses) {
   // 填充表单数据
   document.getElementById('origin').value = origin;
   document.getElementById('destination').value = destination;
-  waypoints = waypointAddresses || [];
+  waypoints = waypointAddresses && waypointAddresses.length ? waypointAddresses : [''];
   renderWaypoints();
   resetRouteResults();
   saveFormData();
