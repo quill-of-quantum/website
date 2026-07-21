@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, Response
+from flask import Blueprint, render_template, request, jsonify, Response, send_file
 import json
 import base64
 import io
@@ -9,6 +9,7 @@ import easyocr
 import os
 import math
 import time
+import threading
 from collections import defaultdict
 
 bp = Blueprint("letter", __name__)
@@ -22,17 +23,51 @@ BASE_DIR = "/home/bbdwz/projects/website/letter_league"
 
 INPUT_IMAGE = os.path.join(BASE_DIR, "test.png")
 LOGO_IMAGE  = os.path.join(BASE_DIR, "logo.png")
+SHUFFLE_IMAGE = os.path.join(BASE_DIR, "shuffle.png")
 DICT_FILE   = os.path.join(BASE_DIR, "twl06_ENABLE.txt")
+COMMON_WORDS_FILE = os.path.join(BASE_DIR, "twl06_google10000.txt")
 OUTPUT_DIR  = os.path.join(BASE_DIR, "output")
+EXAMPLE_IMAGE_FILE = os.path.join(os.path.dirname(__file__), "example.png")
+EXAMPLE_EVENTS_FILE = os.path.join(os.path.dirname(__file__), "example_events.ndjson")
 
-REC_TOP_N   = 3    # 1. 最佳长词推荐数
-REC_SHORT_N = 3    # 2. 短词防守推荐数
-REC_MULTI_N = 3    # 3. 【新增】多重组词推荐数 (一箭多雕)
+REC_TOP_N   = 7    # 1. 最佳推荐数
+REC_SHORT_N = 7    # 2. 常用词防守推荐数
+REC_MULTI_N = 7    # 3. 多重组词推荐数 (一箭多雕)
 
 MIN_DIST    = 3    # 走法间距
-SHORT_LEN   = 4    # 短词定义
 
 VIS_SHOW_DEBUG = True # Enable debug for web context
+
+_easyocr_reader = None
+_easyocr_reader_lock = threading.Lock()
+_common_word_ranks = None
+
+
+def get_easyocr_reader():
+    """Load the heavy OCR model once per worker, on the first OCR stage."""
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        with _easyocr_reader_lock:
+            if _easyocr_reader is None:
+                _easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+    return _easyocr_reader
+
+
+def get_common_word_ranks():
+    """Return Google-frequency rank for words that are valid in our dictionary."""
+    global _common_word_ranks
+    if _common_word_ranks is None:
+        ranks = {}
+        try:
+            with open(COMMON_WORDS_FILE, 'r', encoding='utf-8') as handle:
+                for rank, line in enumerate(handle):
+                    word = line.strip().upper()
+                    if len(word) > 1 and word not in ranks:
+                        ranks[word] = rank
+        except OSError:
+            ranks = {}
+        _common_word_ranks = ranks
+    return _common_word_ranks
 
 # ==============================================================================
 # 🧠 第一部分：GADDAG 核心算法
@@ -99,6 +134,7 @@ class ScrabbleSolver:
         self.rows = 15
         self.cols = 15
         self.cross_sets = []
+        self.opening_anchor = None
 
     def set_board(self, board_matrix):
         self.board = board_matrix
@@ -175,7 +211,9 @@ class ScrabbleSolver:
                     anchors.append(i)
         
         if not anchors and all(c=='' for r_ in self.board for c in r_):
-            anchors.append(self.cols // 2)
+            opening_row, opening_col = self.opening_anchor or (self.rows // 2, self.cols // 2)
+            if row == opening_row:
+                anchors.append(opening_col)
 
         for anchor in anchors:
             if anchor > 0 and line[anchor-1] != '': continue
@@ -275,7 +313,7 @@ class ScrabbleSolver:
 class LetterLeagueVision:
     def __init__(self):
         print("👁️ 初始化视觉模块...")
-        self.reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+        self.reader = None
         self.out_dir = OUTPUT_DIR
         os.makedirs(self.out_dir, exist_ok=True)
         self.correction_map = {'0': 'O', '8': 'B', '6': 'G', '5': 'S', '1': 'I', '2': 'Z'}
@@ -321,61 +359,499 @@ class LetterLeagueVision:
         _, buffer = cv2.imencode('.png', img_bgr)
         return f"data:image/png;base64,{base64.b64encode(buffer).decode('utf-8')}"
 
-    def segment_image(self, img, logo_path):
+    @staticmethod
+    def _trim_template_background(template):
+        """Remove the plain border around small UI templates before matching."""
+        if template is None or template.size == 0:
+            return template
+        hsv = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
+        mask = ((saturation > 35) & (value > 45)).astype(np.uint8) * 255
+        points = cv2.findNonZero(mask)
+        if points is None:
+            return template
+        x, y, w, h = cv2.boundingRect(points)
+        pad = 2
+        x1, y1 = max(0, x - pad), max(0, y - pad)
+        x2 = min(template.shape[1], x + w + pad)
+        y2 = min(template.shape[0], y + h + pad)
+        return template[y1:y2, x1:x2]
+
+    def _match_ui_anchor(self, gray, template_path, threshold=0.48):
+        """Match a UI anchor at several scales and return its box in input pixels."""
+        template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        if template is None:
+            return {"found": False, "score": 0.0, "path": template_path}
+        template = self._trim_template_background(template)
+        template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+
+        # Template matching cost grows quickly with screenshot resolution. Work
+        # on a bounded image and map the winning box back to original pixels.
+        image_scale = min(1.0, 1400.0 / gray.shape[1])
+        if image_scale < 1.0:
+            search_gray = cv2.resize(gray, None, fx=image_scale, fy=image_scale,
+                                     interpolation=cv2.INTER_AREA)
+        else:
+            search_gray = gray
+
+        best = None
+        # Screenshots in the fixture set already vary in displayed game size.  A
+        # multi-scale search makes the anchors independent of browser/Discord zoom.
+        for scale in np.linspace(0.50, 1.40, 13):
+            effective_scale = scale * image_scale
+            width = max(12, int(template_gray.shape[1] * effective_scale))
+            height = max(8, int(template_gray.shape[0] * effective_scale))
+            if width >= search_gray.shape[1] or height >= search_gray.shape[0]:
+                continue
+            resized = cv2.resize(template_gray, (width, height), interpolation=cv2.INTER_AREA)
+            result = cv2.matchTemplate(search_gray, resized, cv2.TM_CCOEFF_NORMED)
+            _, score, _, location = cv2.minMaxLoc(result)
+            if best is None or score > best["score"]:
+                best = {
+                    "found": False,
+                    "score": float(score),
+                    "x": int(round(location[0] / image_scale)),
+                    "y": int(round(location[1] / image_scale)),
+                    "w": int(round(width / image_scale)),
+                    "h": int(round(height / image_scale)),
+                    "scale": float(scale),
+                    "path": template_path,
+                }
+
+        if best is None:
+            return {"found": False, "score": 0.0, "path": template_path}
+        best["found"] = best["score"] >= threshold
+        return best
+
+    @staticmethod
+    def _anchor_center(match):
+        return match["x"] + match["w"] / 2.0, match["y"] + match["h"] / 2.0
+
+    def _find_shuffle_control(self, img, logo, template_path):
+        """Find the wide orange Shuffle control and reject square rack tiles."""
+        if not logo.get("found"):
+            return None
+
+        lx, ly, lw, lh = logo["x"], logo["y"], logo["w"], logo["h"]
+        ih, iw = img.shape[:2]
+        # Once Logo is known, Shuffle can only occur in this lower control area.
+        rx1 = max(0, int(lx + 1.80 * lw))
+        ry1 = max(0, int(ly + 2.00 * lh))
+        rx2 = min(iw, int(lx + 6.20 * lw))
+        # Responsive/tall layouts can place the controls around 15 logo-heights
+        # below the logo. Search to the bottom of the game viewport instead of
+        # assuming the compact desktop geometry.
+        ry2 = min(ih, int(ly + 20.0 * lh))
+        if rx2 <= rx1 or ry2 <= ry1:
+            return None
+
+        roi = img[ry1:ry2, rx1:rx2]
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        # Both controls and tiles are orange, but only controls form a wide,
+        # shallow connected rectangle. Saturation/value thresholds tolerate
+        # screenshot compression and Discord/browser scaling.
+        # Saturation is the useful separator here: the board/background is a
+        # pale peach (roughly S=60-85), while the control button is S>=150.
+        mask = cv2.inRange(hsv, np.array([0, 120, 110]), np.array([24, 255, 255]))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        template = cv2.imread(template_path, cv2.IMREAD_COLOR)
+        template = self._trim_template_background(template)
+        template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if template is not None else None
+        expected_x = lx + 3.95 * lw
+        candidates = []
+
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            x += rx1
+            y += ry1
+            aspect = w / max(1.0, float(h))
+            if not (2.15 <= aspect <= 6.5):
+                continue
+            if not (0.28 * lw <= w <= 1.15 * lw and 0.20 * lh <= h <= 0.80 * lh):
+                continue
+
+            crop = img[y:y+h, x:x+w]
+            text_score = 0.0
+            if template_gray is not None and crop.size:
+                crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                resized_tpl = cv2.resize(template_gray, (w, h), interpolation=cv2.INTER_AREA)
+                text_score = float(cv2.matchTemplate(
+                    crop_gray, resized_tpl, cv2.TM_CCOEFF_NORMED
+                )[0, 0])
+
+            position_error = abs(x - expected_x) / max(1.0, 1.5 * lw)
+            geometry_score = max(0.0, 1.0 - position_error)
+            combined = 0.75 * max(0.0, text_score) + 0.25 * geometry_score
+            candidates.append({
+                "found": True,
+                "score": float(combined),
+                "template_score": float(text_score),
+                "geometry_score": float(geometry_score),
+                "x": int(x), "y": int(y), "w": int(w), "h": int(h),
+                "scale": float(w / max(1, template.shape[1])) if template is not None else 0.0,
+                "path": template_path,
+                "method": "orange_control",
+                "search_box": [rx1, ry1, rx2, ry2],
+            })
+
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda item: item["score"])
+        # A weak candidate is safer to reject than to silently use a rack tile.
+        if best["score"] < 0.30:
+            best["found"] = False
+        return best
+
+    @staticmethod
+    def _validate_template_shuffle(img, logo, candidate):
+        """Reject a template hit on the orange rack even when its text looks similar."""
+        if not logo.get("found") or not candidate.get("found"):
+            return False
+        expected_x = logo["x"] + 3.95 * logo["w"]
+        if abs(candidate["x"] - expected_x) > 0.70 * logo["w"]:
+            return False
+        x, y, w, h = (candidate[k] for k in ("x", "y", "w", "h"))
+        crop = img[max(0, y):max(0, y) + h, max(0, x):max(0, x) + w]
+        if crop.size == 0:
+            return False
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        orange = cv2.inRange(hsv, np.array([0, 120, 100]), np.array([24, 255, 255]))
+        orange_ratio = float(np.count_nonzero(orange)) / orange.size
+        candidate["orange_ratio"] = orange_ratio
+        return orange_ratio >= 0.42
+
+    def segment_image(self, img, logo_path, shuffle_path=SHUFFLE_IMAGE):
         h_img, w_img = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        lx, ly, lh, lw = 0, 0, 0, 0
-        found_logo = False
-        maxv = 0.0 # Initialize maxv
-        
-        # Debug: Check logo path
-        logo_exists = os.path.exists(logo_path)
-        
-        if logo_exists:
-            tpl_l = cv2.imread(logo_path, 0)
-            if tpl_l is not None:
-                res = cv2.matchTemplate(gray, tpl_l, cv2.TM_CCOEFF_NORMED)
-                _, maxv, _, maxloc = cv2.minMaxLoc(res)
-                if maxv > 0.4:  # 从0.7降低到0.4，更容易检测到logo
-                    lx, ly = maxloc
-                    lh, lw = tpl_l.shape
-                    found_logo = True
-                    print(f"⚓ Logo 匹配成功 (分值: {maxv:.2f})")
-        
-        # Store debug info
-        self.debug_info['logo_detection'] = {
-            'found': found_logo,
-            'score': float(maxv),
-            'path': logo_path,
-            'exists': logo_exists
-        }
+        logo = self._match_ui_anchor(gray, logo_path, threshold=0.45)
+        raw_shuffle = self._match_ui_anchor(gray, shuffle_path, threshold=0.45)
+        shuffle = self._find_shuffle_control(img, logo, shuffle_path)
+        if not shuffle or not shuffle.get("found"):
+            shuffle = raw_shuffle
+            shuffle["method"] = "template_constrained"
+            shuffle["found"] = self._validate_template_shuffle(img, logo, shuffle)
 
-        if not found_logo:
-            lx, ly, lh, lw = 0, 0, int(h_img*0.05), int(w_img*0.05)
-        game_left = lx
-        game_width = w_img - game_left
-        game_top = int(ly + lh * 0.10)
-        game_height = int(game_width * 0.5)
-        game_bottom = min(h_img, game_top + game_height)
-        game_w = game_width
-        game_h = game_height
-        def safe_crop(x0, y0, w0, h0):
-            x = int(game_left + x0 * game_w)
-            y = int(game_top  + y0 * game_h)
-            w = int(w0 * game_w)
-            h = int(h0 * game_h)
-            x1, x2 = max(0, x), min(w_img, x+w)
-            y1, y2 = max(0, y), min(h_img, y+h)
-            if x2 <= x1 or y2 <= y1: return np.array([])
-            return img[y1:y2, x1:x2]
-        board = safe_crop(0.00, 0.13, 0.9, 0.70)
-        # 调整rack截取位置的4个参数: (x_offset, y_offset, width, height)
-        # 当前: x=0.35(35%右移), y=0.87(87%下移), w=0.28(28%宽度), h=0.11(11%高度)
-        rack  = safe_crop(0.30, 0.85, 0.35, 0.12)  # 示例调整
-        # Removed file writing for web context, handled in process_full_pipeline
+        mode = "fallback"
+        if logo.get("found") and shuffle.get("found"):
+            logo_cx, logo_cy = self._anchor_center(logo)
+            shuffle_cx, shuffle_cy = self._anchor_center(shuffle)
+            dx = shuffle_cx - logo_cx
+            dy = shuffle_cy - logo_cy
+            # Normalized geometry measured from the stable Letter League UI.
+            # Using the distance between two anchors removes dependence on the
+            # screenshot resolution and on the Discord/browser window size.
+            if dx > 200 and dy > 150:
+                # The game changes vertical spacing responsively. Interpolate
+                # geometry using the anchor slope: compact/wide screenshots are
+                # near 0.79, while tall browser layouts are near 1.49.
+                anchor_ratio = dy / dx
+                responsive_t = max(0.0, min(1.0, (anchor_ratio - 0.79) / 0.70))
+                left_factor = -0.186 + responsive_t * 0.143
+                top_factor = -0.127 + responsive_t * 0.273
+                width_factor = 1.866 - responsive_t * 0.200
+                height_factor = 1.302 - responsive_t * 0.512
+                board_x1 = logo_cx + left_factor * dx
+                board_y1 = logo_cy + top_factor * dy
+                board_x2 = board_x1 + width_factor * dx
+                board_y2 = board_y1 + height_factor * dy
+                mode = "dual_anchor"
+            else:
+                logo["found"] = False
+
+        if mode != "dual_anchor" and logo.get("found"):
+            # Preserve a compatible single-anchor fallback for partially cropped
+            # screenshots where the bottom controls are not visible.
+            board_x1 = logo["x"]
+            board_y1 = logo["y"] + logo["h"] * 0.10
+            board_x2 = w_img * 0.95
+            board_y2 = board_y1 + (board_x2 - board_x1) * 0.50
+            mode = "logo_only"
+        elif mode != "dual_anchor":
+            board_x1, board_y1 = 0, h_img * 0.05
+            board_x2, board_y2 = w_img, min(h_img, h_img * 0.75)
+
+        def clamp_box(x1, y1, x2, y2):
+            x1 = max(0, min(w_img - 1, int(round(x1))))
+            y1 = max(0, min(h_img - 1, int(round(y1))))
+            x2 = max(x1 + 1, min(w_img, int(round(x2))))
+            y2 = max(y1 + 1, min(h_img, int(round(y2))))
+            return x1, y1, x2, y2
+
+        board_box = clamp_box(board_x1, board_y1, board_x2, board_y2)
+        board = img[board_box[1]:board_box[3], board_box[0]:board_box[2]]
+
+        if shuffle.get("found"):
+            # The seven rack tiles sit directly below and around the Shuffle
+            # control. Express the crop in units of the matched button size.
+            sx, sy, sw, sh = shuffle["x"], shuffle["y"], shuffle["w"], shuffle["h"]
+            rack_box = clamp_box(sx - 2.20 * sw, sy + 0.90 * sh,
+                                 sx + 1.10 * sw, sy + 3.10 * sh)
+        else:
+            bw = board_box[2] - board_box[0]
+            bh = board_box[3] - board_box[1]
+            rack_box = clamp_box(board_box[0] + 0.37 * bw, board_box[1] + 0.86 * bh,
+                                 board_box[0] + 0.70 * bw, board_box[1] + 0.99 * bh)
+        rack = img[rack_box[1]:rack_box[3], rack_box[0]:rack_box[2]]
+
+        overlay = img.copy()
+        for match, color, label in ((logo, (0, 255, 0), "LOGO"),
+                                    (shuffle, (255, 0, 255), "SHUFFLE")):
+            if match.get("found"):
+                p1 = (match["x"], match["y"])
+                p2 = (match["x"] + match["w"], match["y"] + match["h"])
+                cv2.rectangle(overlay, p1, p2, color, 3)
+                cv2.putText(overlay, f"{label} {match['score']:.2f}",
+                            (p1[0], max(20, p1[1] - 8)), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.65, color, 2)
+        cv2.rectangle(overlay, board_box[:2], board_box[2:], (255, 255, 0), 3)
+        cv2.rectangle(overlay, rack_box[:2], rack_box[2:], (0, 165, 255), 3)
+
+        self.debug_info['logo_detection'] = logo
+        self.debug_info['shuffle_detection'] = shuffle
+        self.debug_info['layout_detection'] = {
+            'mode': mode,
+            'board_box': list(board_box),
+            'rack_box': list(rack_box),
+        }
+        if mode == "dual_anchor":
+            self.debug_info['layout_detection']['anchor_ratio'] = float(dy / dx)
+        self.debug_info['layout_overlay'] = self._img_to_base64(overlay)
         return board, rack
 
+    def _detect_rack_tiles(self, img):
+        """Detect the fixed row of seven square rack tiles at any UI scale."""
+        height, width = img.shape[:2]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+        binary = cv2.adaptiveThreshold(
+            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2,
+        )
+        binary = cv2.erode(binary, np.ones((3, 3), np.uint8), iterations=1)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        candidates = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            ratio = w / max(1.0, float(h))
+            if (0.30 * height <= w <= 0.90 * height and
+                    0.30 * height <= h <= 0.90 * height and
+                    0.72 <= ratio <= 1.30):
+                candidates.append((x, y, w, h))
+
+        # Find the most coherent horizontal row. This rejects the button row
+        # without relying on absolute pixel sizes.
+        best_row = []
+        for seed in candidates:
+            seed_cy = seed[1] + seed[3] / 2.0
+            row = [box for box in candidates
+                   if abs((box[1] + box[3] / 2.0) - seed_cy) <= 0.14 * height]
+            score = (-abs(len(row) - 7), sum(box[2] * box[3] for box in row))
+            best_score = (-abs(len(best_row) - 7),
+                          sum(box[2] * box[3] for box in best_row))
+            if score > best_score:
+                best_row = row
+
+        if best_row:
+            median_area = float(np.median([box[2] * box[3] for box in best_row]))
+            best_row = [box for box in best_row
+                        if 0.60 <= (box[2] * box[3]) / median_area <= 1.45]
+        best_row.sort(key=lambda box: box[0])
+
+        deduped = []
+        for box in best_row:
+            if deduped and abs(box[0] - deduped[-1][0]) < 0.20 * box[2]:
+                if box[2] * box[3] > deduped[-1][2] * deduped[-1][3]:
+                    deduped[-1] = box
+            else:
+                deduped.append(box)
+        if len(deduped) > 7:
+            # Seven consecutive boxes with the most regular spacing wins.
+            windows = [deduped[i:i + 7] for i in range(len(deduped) - 6)]
+            deduped = min(windows, key=lambda boxes: np.std([
+                boxes[i + 1][0] - boxes[i][0] for i in range(6)
+            ]))
+
+        debug = img.copy()
+        for index, (x, y, w, h) in enumerate(deduped):
+            cv2.rectangle(debug, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(debug, str(index + 1), (x + 2, max(12, y - 3)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
+        self.debug_info['rack_binary_map'] = self._img_to_base64(binary)
+        self.debug_info['rack_contour_debug'] = self._img_to_base64(debug)
+        self.debug_info['rack_binary_contour_debug'] = self._img_to_base64(
+            cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+        )
+        return deduped
+
+    def _rack_glyph(self, tile):
+        """Extract the large white glyph while masking the small score digit."""
+        h, w = tile.shape[:2]
+        hsv = cv2.cvtColor(tile, cv2.COLOR_BGR2HSV)
+        white = cv2.inRange(hsv, np.array([0, 0, 175]), np.array([180, 115, 255]))
+        # Remove rounded tile border and the score in the top-right corner.
+        border_x, border_y = max(1, int(w * 0.08)), max(1, int(h * 0.08))
+        white[:border_y, :] = 0
+        white[-border_y:, :] = 0
+        white[:, :border_x] = 0
+        white[:, -border_x:] = 0
+        white[:int(h * 0.24), int(w * 0.72):] = 0
+
+        contours, _ = cv2.findContours(white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = [c for c in contours if cv2.contourArea(c) >= max(2, 0.006 * w * h)]
+        if not contours:
+            return None, white, None
+        contour = max(contours, key=cv2.contourArea)
+        x, y, gw, gh = cv2.boundingRect(contour)
+        # A score fragment is small and lives high/right; it is not a rack glyph.
+        if gh < 0.28 * h or gw < 2:
+            return None, white, None
+        glyph = white[y:y + gh, x:x + gw]
+        return glyph, white, (x, y, gw, gh)
+
+    @staticmethod
+    def _normalize_rack_glyph(glyph):
+        canvas = np.ones((96, 96), dtype=np.uint8) * 255
+        gh, gw = glyph.shape[:2]
+        scale = min(60.0 / max(1, gw), 68.0 / max(1, gh))
+        resized = cv2.resize(glyph, None, fx=scale, fy=scale,
+                             interpolation=cv2.INTER_NEAREST)
+        rh, rw = resized.shape[:2]
+        y, x = (96 - rh) // 2, (96 - rw) // 2
+        target = canvas[y:y + rh, x:x + rw]
+        target[resized > 0] = 0
+        return canvas
+
+    def _recognize_rack_tile(self, tile):
+        glyph, glyph_mask, bbox = self._rack_glyph(tile)
+        if glyph is None:
+            return '?', 1.0, '没有主字形，判为万能牌', glyph_mask, None
+
+        canvas = self._normalize_rack_glyph(glyph)
+        gh, gw = glyph.shape[:2]
+        ratio = gw / max(1.0, float(gh))
+        # I is uniquely narrow in this tile font and is often missed entirely
+        # by general-purpose text detectors.
+        if ratio < 0.43:
+            return 'I', 1.0, f'窄高字形({ratio:.2f})', glyph_mask, canvas
+
+        normalized = self.reader.recognize(
+            canvas, horizontal_list=[(0, 96, 0, 96)], free_list=[],
+            detail=1, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+        )
+        norm_char, norm_conf = '', 0.0
+        if normalized:
+            norm_char = (normalized[0][1] or '').strip().upper()[:1]
+            norm_conf = float(normalized[0][2] or 0.0)
+
+        # Keep a color-image candidate for shapes such as Z/N where EasyOCR's
+        # normalized recognizer can be overconfident about a similar glyph.
+        color_char, color_conf = '', 0.0
+        if norm_char in ('', 'M', 'T', 'W'):
+            color_roi = tile[int(tile.shape[0] * 0.16):int(tile.shape[0] * 0.92),
+                             int(tile.shape[1] * 0.10):int(tile.shape[1] * 0.86)]
+            color_roi = cv2.copyMakeBorder(color_roi, 12, 12, 12, 12,
+                                           cv2.BORDER_CONSTANT, value=(255, 255, 255))
+            color_roi = cv2.resize(color_roi, None, fx=3, fy=3,
+                                   interpolation=cv2.INTER_CUBIC)
+            color_result = self.reader.readtext(
+                color_roi, detail=1, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+            )
+            if color_result:
+                best = max(color_result, key=lambda item: float(item[2]))
+                color_char = (best[1] or '').strip().upper()[:1]
+                color_conf = float(best[2] or 0.0)
+
+        char, confidence, reason = norm_char, norm_conf, '标准化字形'
+        if not char and color_char:
+            char, confidence, reason = color_char, color_conf, '彩色原图兜底'
+        elif norm_char == 'M' and color_char == 'N':
+            char, confidence, reason = 'N', max(norm_conf, color_conf), 'N/M 双通道修正'
+        elif norm_char == 'T' and color_char == 'Z':
+            char, confidence, reason = 'Z', max(norm_conf, color_conf), 'Z/T 双通道修正'
+
+        # U has two nearly vertical outer strokes and a sparse centre column;
+        # EasyOCR commonly calls this rounded game font W at small sizes.
+        binary = glyph > 0
+        center_fill = float(binary[:, binary.shape[1] // 2].mean())
+        edge_fill = float((binary[:, 0].mean() + binary[:, -1].mean()) / 2.0)
+        quarter = max(1, binary.shape[0] // 4)
+        top_fill = float(binary[:quarter].mean())
+        bottom_fill = float(binary[-quarter:].mean())
+        if char == 'T' and top_fill < 0.60 and bottom_fill > 0.42:
+            char, reason = 'Z', 'Z/T 底部横笔结构修正'
+        if char == 'W' and edge_fill > 0.55 and center_fill < 0.45:
+            char, reason = 'U', 'U/W 字形结构修正'
+
+        if not char:
+            char, confidence, reason = '?', 0.0, '双通道均未识别'
+        return char, confidence, reason, glyph_mask, canvas
+
     def ocr_rack(self, img):
+        if self.reader is None:
+            self.reader = get_easyocr_reader()
+        boxes = self._detect_rack_tiles(img)
+        results = []
+        details = [{
+            'index': -1,
+            'raw': f'检测到 {len(boxes)} 个牌块（目标 7）',
+            'final': 'STATS',
+            'process': '自适应方块检测 + 固定七槽单字识别',
+            'steps': [],
+        }]
+        glyph_cards = []
+        for index, (x, y, w, h) in enumerate(boxes):
+            tile = img[y:y + h, x:x + w]
+            char, confidence, reason, glyph_mask, canvas = self._recognize_rack_tile(tile)
+            results.append(char)
+            steps = [{
+                'name': '主字母蒙版',
+                'image': self._img_to_base64(glyph_mask),
+                'result': char,
+                'success': char != '?',
+            }]
+            if canvas is not None:
+                steps.append({
+                    'name': '标准化单字',
+                    'image': self._img_to_base64(canvas),
+                    'result': f'{char} ({confidence:.2f})',
+                    'success': char != '?',
+                })
+            details.append({
+                'index': index,
+                'raw': f'confidence={confidence:.3f}',
+                'final': char,
+                'process': reason,
+                'steps': steps,
+            })
+            glyph_cards.append((tile, char, confidence))
+
+        self.debug_info['rack_debug_data'] = details
+        recognition_debug = img.copy()
+        for index, ((x, y, w, h), char) in enumerate(zip(boxes, results)):
+            color = (0, 200, 0) if char != '?' else (0, 165, 255)
+            cv2.rectangle(recognition_debug, (x, y), (x + w, y + h), color, 2)
+            cv2.putText(recognition_debug, char, (x + max(2, w // 3), y + h - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.45, h / 70.0), color, 2)
+        # Keep the transport key for frontend compatibility; its content is now
+        # the useful final rack recognition rather than another contour bitmap.
+        self.debug_info['rack_binary_contour_debug'] = self._img_to_base64(recognition_debug)
+        self.debug_info['rack_y_filter'] = {
+            'reason': f'固定横排检测：{len(boxes)}/7',
+            'before_count': len(boxes), 'after_count': len(boxes),
+        }
+        self.debug_info['rack_area_filter'] = {
+            'reason': '尺寸阈值按字母架高度自适应',
+            'before_count': len(boxes), 'after_count': len(boxes),
+        }
+        return results
+
+    def _ocr_rack_legacy(self, img):
+        if self.reader is None:
+            self.reader = get_easyocr_reader()
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         enhanced_gray = clahe.apply(gray)
@@ -671,6 +1147,8 @@ class LetterLeagueVision:
         return results
 
     def ocr_board(self, img):
+        if self.reader is None:
+            self.reader = get_easyocr_reader()
         h, w = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
@@ -998,100 +1476,131 @@ class LetterLeagueVision:
 
             self.debug_info['ocr_tiles_debug'] = self._img_to_base64(viz_img)
 
-        # --- New Grid Fitting Logic ---
-        if not detected_raw:
-            return [['' for _ in range(15)] for _ in range(15)]
+        # --- Grid fitting from the board itself (works even when it is empty) ---
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        white_lines = ((hsv[:, :, 1] < 45) & (hsv[:, :, 2] > 225)).astype(np.uint8)
 
-        # 1. Calculate step size based on nearest neighbor distances
-        dists = []
-        for i, d1 in enumerate(detected_raw):
-            min_d = float('inf')
-            for j, d2 in enumerate(detected_raw):
-                if i == j: continue
-                d = math.sqrt((d1['cx']-d2['cx'])**2 + (d1['cy']-d2['cy'])**2)
-                if d < min_d: min_d = d
-            if min_d != float('inf'):
-                dists.append(min_d)
-        
-        if not dists:
-            step_size = w / 15.0
-        else:
-            dists.sort()
-            # Filter out very small distances (noise)
-            valid_dists = [d for d in dists if d > 10]
-            if valid_dists:
-                step_size = np.median(valid_dists)
-            else:
-                step_size = w / 15.0
+        def line_centers(profile, threshold):
+            indexes = np.where(profile > threshold)[0]
+            groups = []
+            for value in indexes:
+                if not groups or value > groups[-1][-1] + 1:
+                    groups.append([int(value)])
+                else:
+                    groups[-1].append(int(value))
+            centers = [float(np.mean(group)) for group in groups]
+            merged = []
+            for center in centers:
+                if merged and center - merged[-1] < 5:
+                    merged[-1] = (merged[-1] + center) / 2.0
+                else:
+                    merged.append(center)
+            return merged
 
-        true_step_x = step_size
-        true_step_y = step_size
-        print(f"📏 估算步长: {true_step_x:.1f}")
+        vertical = line_centers(white_lines.mean(axis=0), 0.35)
+        horizontal = line_centers(white_lines.mean(axis=1), 0.35)
+        if len(vertical) < 5 or len(horizontal) < 5:
+            # Retain a controlled fallback for unusually cropped screenshots.
+            step = float(np.median([d for d in np.diff(vertical) if 10 < d < 150])) if len(vertical) > 2 else w / 15.0
+            vertical = [i * step for i in range(int(w / step) + 1)]
+            horizontal = [i * step for i in range(int(h / step) + 1)]
 
-        # 2. Determine Grid Bounds (Dynamic Size)
-        anchor = detected_raw[0]
-        min_c, max_c = 0, 0
-        min_r, max_r = 0, 0
-        
-        temp_coords = []
-        for d in detected_raw:
-            c_rel = int(round((d['cx'] - anchor['cx']) / true_step_x))
-            r_rel = int(round((d['cy'] - anchor['cy']) / true_step_y))
-            temp_coords.append((c_rel, r_rel, d))
-            min_c = min(min_c, c_rel)
-            max_c = max(max_c, c_rel)
-            min_r = min(min_r, r_rel)
-            max_r = max(max_r, r_rel)
-            
-        # Extend by 4 grids in all directions
-        pad = 4
-        start_c = min_c - pad
-        end_c = max_c + pad
-        start_r = min_r - pad
-        end_r = max_r + pad
-        
-        cols = end_c - start_c + 1
-        rows = end_r - start_r + 1
-        
-        grid_origin_x = anchor['cx'] + start_c * true_step_x
-        grid_origin_y = anchor['cy'] + start_r * true_step_y
-        
+        true_step_x = float(np.median([d for d in np.diff(vertical) if 10 < d < 150]))
+        true_step_y = float(np.median([d for d in np.diff(horizontal) if 10 < d < 150]))
+        grid_origin_x = float(vertical[0] + true_step_x / 2.0)
+        grid_origin_y = float(horizontal[0] + true_step_y / 2.0)
+        cols, rows = len(vertical) - 1, len(horizontal) - 1
         matrix = [['' for _ in range(cols)] for _ in range(rows)]
-        
-        debug_viz = img.copy() if VIS_SHOW_DEBUG else None
-        
-        if debug_viz is not None:
-            # Draw grid lines
-            for c in range(cols + 1):
-                x = int(grid_origin_x + c * true_step_x - true_step_x/2)
-                cv2.line(debug_viz, (x, 0), (x, h), (255, 255, 0), 1)
-            for r in range(rows + 1):
-                y = int(grid_origin_y + r * true_step_y - true_step_y/2)
-                cv2.line(debug_viz, (0, y), (w, y), (255, 255, 0), 1)
+        debug_viz = img.copy()
 
-        for (c_rel, r_rel, d) in temp_coords:
-            c_idx = c_rel - start_c
-            r_idx = r_rel - start_r
-            if 0 <= c_idx < cols and 0 <= r_idx < rows:
-                matrix[r_idx][c_idx] = d['char']
-                if debug_viz is not None:
-                     cv2.rectangle(debug_viz, (int(d['cx'])-10, int(d['cy'])-10), (int(d['cx'])+10, int(d['cy'])+10), (0,255,0), 1)
-                     cv2.putText(debug_viz, d['char'], (int(d['cx'])-5, int(d['cy'])+5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1)
+        for x in vertical:
+            cv2.line(debug_viz, (int(x), 0), (int(x), h), (255, 255, 0), 1)
+        for y in horizontal:
+            cv2.line(debug_viz, (0, int(y)), (w, int(y)), (255, 255, 0), 1)
+        for item in detected_raw:
+            char = item.get('char', '')
+            if not (len(char) == 1 and char.upper() in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+                continue
+            c_idx = int(round((item['cx'] - grid_origin_x) / true_step_x))
+            r_idx = int(round((item['cy'] - grid_origin_y) / true_step_y))
+            if 0 <= r_idx < rows and 0 <= c_idx < cols:
+                matrix[r_idx][c_idx] = char
+                cv2.putText(debug_viz, char, (int(item['cx']) - 5, int(item['cy']) + 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-        if debug_viz is not None:
-             # cv2.imwrite(f"{self.out_dir}/debug_grid_fit.png", debug_viz)
-             self.debug_info['grid_fit'] = self._img_to_base64(debug_viz)
-             self.debug_info['grid_params'] = {
-                 'step_x': float(true_step_x),
-                 'step_y': float(true_step_y),
-                 'origin_x': float(grid_origin_x),
-                 'origin_y': float(grid_origin_y),
-                 'rows': rows,
-                 'cols': cols
-             }
+        # UI labels occasionally resemble an isolated tile near the board edge.
+        # Every legal board tile belongs to an orthogonally connected word, so
+        # discard singleton OCR detections without touching real words.
+        for r in range(rows):
+            for c in range(cols):
+                if not matrix[r][c]:
+                    continue
+                neighbors = ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1))
+                if not any(0 <= rr < rows and 0 <= cc < cols and matrix[rr][cc]
+                           for rr, cc in neighbors):
+                    matrix[r][c] = ''
 
+        self.debug_info['grid_fit'] = self._img_to_base64(debug_viz)
+        self.debug_info['grid_params'] = {
+            'step_x': true_step_x, 'step_y': true_step_y,
+            'origin_x': grid_origin_x, 'origin_y': grid_origin_y,
+            'rows': rows, 'cols': cols,
+        }
         self.grid_params = (grid_origin_x, grid_origin_y, true_step_x, true_step_y, rows, cols)
+        print(f"📏 网格线拟合: {cols}x{rows}, {true_step_x:.1f}x{true_step_y:.1f}")
         return matrix
+
+    def detect_premium_cells(self, board_matrix):
+        """Classify empty 2L/3L/2W/3W cells from their stable background color."""
+        rows = len(board_matrix)
+        cols = len(board_matrix[0]) if rows else 0
+        premiums = [['' for _ in range(cols)] for _ in range(rows)]
+        if not self.grid_params or self.seg_board_img is None:
+            return premiums
+        ox, oy, sx, sy, _, _ = self.grid_params
+        # BGR samples from the Letter League board. Color distance is more
+        # stable than OCR because the label can move to the corner under a tile.
+        prototypes = {
+            '2L': np.array([242, 199, 114], dtype=np.float32),
+            '2W': np.array([166, 242, 174], dtype=np.float32),
+            '3L': np.array([44, 172, 242], dtype=np.float32),
+            '3W': np.array([80, 124, 230], dtype=np.float32),
+        }
+        image = self.seg_board_img
+        ih, iw = image.shape[:2]
+        opening_anchor = None
+        opening_strength = 0
+        for r in range(rows):
+            for c in range(cols):
+                if board_matrix[r][c]:
+                    continue
+                cx, cy = int(round(ox + c * sx)), int(round(oy + r * sy))
+                radius = max(2, int(min(sx, sy) * 0.22))
+                x1, x2 = max(0, cx - radius), min(iw, cx + radius + 1)
+                y1, y2 = max(0, cy - radius), min(ih, cy + radius + 1)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                color = np.median(image[y1:y2, x1:x2].reshape(-1, 3), axis=0)
+                name, distance = min(
+                    ((name, float(np.linalg.norm(color - sample)))
+                     for name, sample in prototypes.items()),
+                    key=lambda item: item[1],
+                )
+                if distance < 75.0:
+                    premiums[r][c] = name
+                patch = image[y1:y2, x1:x2]
+                patch_hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+                purple = cv2.inRange(patch_hsv, np.array([125, 80, 100]),
+                                     np.array([165, 255, 255]))
+                purple_count = int(np.count_nonzero(purple))
+                if (1 < r < rows - 2 and 1 < c < cols - 2 and
+                        purple_count > max(3, purple.size * 0.008) and
+                        purple_count > opening_strength):
+                    opening_anchor = (r, c)
+                    opening_strength = purple_count
+        self.debug_info['premium_matrix'] = premiums
+        self.debug_info['opening_anchor'] = opening_anchor
+        return premiums
 
     # 🎨 可视化 (增加多重得分类型支持)
     def visualize_batch(self, moves_list, board_matrix):
@@ -1209,6 +1718,83 @@ def get_diverse_moves(moves, top_n=3, min_dist=3):
         if len(selected) >= top_n: break
     return selected
 
+
+# Letter League values observed on the rack tiles. Lowercase move letters are
+# blank tiles and deliberately score zero.
+LETTER_SCORES = {
+    'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2,
+    'H': 4, 'I': 1, 'J': 8, 'K': 5, 'L': 2, 'M': 3, 'N': 1,
+    'O': 1, 'P': 3, 'Q': 10, 'R': 1, 'S': 1, 'T': 1, 'U': 1,
+    'V': 4, 'W': 4, 'X': 8, 'Y': 4, 'Z': 10,
+}
+
+
+def _tile_score(char):
+    return 0 if char.islower() else LETTER_SCORES.get(char.upper(), 0)
+
+
+def score_move(move, board, premiums):
+    """Score a move, including every newly formed perpendicular word."""
+    row, col, word = move['row'], move['col'], move['word']
+    vertical = move.get('direction') == 'V'
+    dr, dc = (1, 0) if vertical else (0, 1)
+    cross_dr, cross_dc = (0, 1) if vertical else (1, 0)
+    rows = len(board)
+    cols = len(board[0]) if rows else 0
+    main_points = 0
+    main_word_multiplier = 1
+    cross_points = 0
+    placed = []
+
+    for index, char in enumerate(word):
+        rr, c = row + index * dr, col + index * dc
+        if not (0 <= rr < rows and 0 <= c < cols):
+            continue
+        existing = board[rr][c]
+        if existing:
+            main_points += _tile_score(existing)
+            continue
+        premium = premiums[rr][c] if premiums else ''
+        letter_multiplier = 3 if premium == '3L' else 2 if premium == '2L' else 1
+        word_multiplier = 3 if premium == '3W' else 2 if premium == '2W' else 1
+        points = _tile_score(char) * letter_multiplier
+        main_points += points
+        main_word_multiplier *= word_multiplier
+        placed.append({
+            'row': rr, 'col': c, 'letter': char.upper(),
+            'base': _tile_score(char), 'premium': premium,
+            'points': points,
+        })
+
+        before_r, before_c = rr - cross_dr, c - cross_dc
+        before_points = 0
+        before_count = 0
+        while 0 <= before_r < rows and 0 <= before_c < cols and board[before_r][before_c]:
+            before_points += _tile_score(board[before_r][before_c])
+            before_count += 1
+            before_r -= cross_dr
+            before_c -= cross_dc
+        after_r, after_c = rr + cross_dr, c + cross_dc
+        after_points = 0
+        after_count = 0
+        while 0 <= after_r < rows and 0 <= after_c < cols and board[after_r][after_c]:
+            after_points += _tile_score(board[after_r][after_c])
+            after_count += 1
+            after_r += cross_dr
+            after_c += cross_dc
+        if before_count or after_count:
+            subtotal = points
+            subtotal += before_points + after_points
+            cross_points += subtotal * word_multiplier
+
+    main_total = main_points * main_word_multiplier
+    move['score'] = int(main_total + cross_points)
+    move['score_breakdown'] = {
+        'main': int(main_total), 'cross': int(cross_points),
+        'word_multiplier': int(main_word_multiplier), 'placed': placed,
+    }
+    return move['score']
+
 # ==============================================================================
 # API Logic
 # ==============================================================================
@@ -1227,6 +1813,35 @@ def letter_ui():
     """字母游戏页面"""
     return render_template("letter.html")
 
+
+@bp.route("/api/letter/example/image")
+def letter_example_image():
+    """Return the source screenshot used by the interactive example."""
+    return send_file(EXAMPLE_IMAGE_FILE, mimetype="image/png", max_age=3600)
+
+
+@bp.route("/api/letter/example")
+def letter_example():
+    """Replay precomputed example events through the normal streaming UI."""
+    if not os.path.exists(EXAMPLE_EVENTS_FILE):
+        return jsonify({"status": "error", "message": "Example data is unavailable"}), 404
+
+    def generate():
+        with open(EXAMPLE_EVENTS_FILE, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                yield line if line.endswith("\n") else line + "\n"
+                # Make the cached run readable while preserving the same
+                # progressive behaviour as a real calculation.
+                time.sleep(0.16)
+
+    response = Response(generate(), mimetype="application/x-ndjson")
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['X-Accel-Buffering'] = 'no'
+    response.headers['Content-Encoding'] = 'identity'
+    return response
+
 @bp.route("/api/letter/process", methods=["POST"])
 def process_letter_image():
     """处理上传的图片 (Streaming Response)"""
@@ -1241,7 +1856,6 @@ def process_letter_image():
     rec_short_n = int(data.get('rec_short_n', REC_SHORT_N))
     rec_multi_n = int(data.get('rec_multi_n', REC_MULTI_N))
     min_dist = int(data.get('min_dist', MIN_DIST))
-    short_len = int(data.get('short_len', SHORT_LEN))
 
     def generate():
         try:
@@ -1272,6 +1886,9 @@ def process_letter_image():
             if rack_img is not None and rack_img.size > 0:
                 debug_data['seg_rack'] = vision._img_to_base64(rack_img)
             debug_data['logo_detection'] = vision.debug_info.get('logo_detection')
+            debug_data['shuffle_detection'] = vision.debug_info.get('shuffle_detection')
+            debug_data['layout_detection'] = vision.debug_info.get('layout_detection')
+            debug_data['layout_overlay'] = vision.debug_info.get('layout_overlay')
             
             yield json.dumps({"type": "debug", "data": debug_data}) + "\n"
 
@@ -1310,6 +1927,7 @@ def process_letter_image():
             board_matrix = [['' for _ in range(15)] for _ in range(15)]
             if board_img is not None and board_img.size > 0:
                 board_matrix = vision.ocr_board(board_img)
+            premium_matrix = vision.detect_premium_cells(board_matrix)
             
             grid_fit_b64 = vision.debug_info.get('grid_fit')
             ocr_tiles_debug_b64 = vision.debug_info.get('ocr_tiles_debug') # Get new debug img
@@ -1323,13 +1941,15 @@ def process_letter_image():
                 "ocr_tiles_debug": ocr_tiles_debug_b64, # Send it
                 "ocr_stats": ocr_stats, # Add stats
                 "ocr_logs": ocr_logs, # Add logs
-                "grid_params": grid_params
+                "grid_params": grid_params,
+                "premium_matrix": premium_matrix
             }}) + "\n"
 
             # 4. Solving
             yield json.dumps({"type": "step", "msg": "正在计算最佳走法..."}) + "\n"
             solver = ScrabbleSolver(get_gaddag())
             solver.set_board(board_matrix)
+            solver.opening_anchor = vision.debug_info.get('opening_anchor')
             
             # 基础 rack 字符串（OCR 识别的结果）
             rack_str = "".join(rack_letters)
@@ -1347,13 +1967,42 @@ def process_letter_image():
                 yield json.dumps({"type": "debug", "data": {"final_rack_str": rack_str, "wildcard_added": has_wildcard}}) + "\n"
             
             moves = solver.solve(rack_str)
+            for move in moves:
+                move['direction'] = 'H'
+
+            transposed_board = [list(row) for row in zip(*board_matrix)]
+            vertical_solver = ScrabbleSolver(get_gaddag())
+            vertical_solver.set_board(transposed_board)
+            if solver.opening_anchor:
+                vertical_solver.opening_anchor = (solver.opening_anchor[1], solver.opening_anchor[0])
+            vertical_moves = vertical_solver.solve(rack_str)
+            for move in vertical_moves:
+                original_row, original_col = move['col'], move['row']
+                move['row'], move['col'] = original_row, original_col
+                move['direction'] = 'V'
+            moves.extend(vertical_moves)
+            for move in moves:
+                score_move(move, board_matrix, premium_matrix)
+
+            def public_move(move):
+                return {
+                    "word": move["word"], "row": move["row"], "col": move["col"],
+                    "direction": move.get("direction", "H"),
+                    "cross": move.get("cross", 0), "score": move.get("score", 0),
+                    "score_breakdown": move.get("score_breakdown", {}),
+                }
             
             # 5. Formatting Results
             results = {
                 "best": [],
                 "short": [],
                 "multi": [],
-                "result_image": None
+                "highest": [],
+                "result_image": None,
+                "board_image": vision._img_to_base64(vision.seg_board_img),
+                "board_matrix": board_matrix,
+                "premium_matrix": premium_matrix,
+                "grid_params": grid_params,
             }
             
             final_viz_list = []
@@ -1363,15 +2012,23 @@ def process_letter_image():
                 for m in diverse_top:
                     m['type'] = 'best'
                     final_viz_list.append(m)
-                    results["best"].append({"word": m['word'], "row": m['row'], "col": m['col'], "cross": m['cross']})
+                    results["best"].append(public_move(m))
 
-                # 2. Top Short
-                short_moves = [m for m in moves if len(m['word']) <= short_len]
+                # 2. Common-word defense. This is based on Google frequency,
+                # not word length, so useful words such as GOOD and GRAMMAR are
+                # eligible alongside shorter everyday words.
+                common_ranks = get_common_word_ranks()
+                short_moves = [m for m in moves if m['word'].upper() in common_ranks]
+                short_moves.sort(key=lambda m: (
+                    common_ranks[m['word'].upper()],
+                    -m.get('score', 0),
+                    -len(m['word']),
+                ))
                 diverse_short = get_diverse_moves(short_moves, top_n=rec_short_n, min_dist=min_dist)
                 for m in diverse_short:
                     m['type'] = 'short'
                     final_viz_list.append(m)
-                    results["short"].append({"word": m['word'], "row": m['row'], "col": m['col']})
+                    results["short"].append(public_move(m))
 
                 # 3. Top Multi
                 multi_moves = [m for m in moves if m['cross'] > 0]
@@ -1381,14 +2038,13 @@ def process_letter_image():
                     m['type'] = 'multi'
                     if m not in final_viz_list:
                         final_viz_list.append(m)
-                    results["multi"].append({"word": m['word'], "cross": m['cross']})
-                
-                # Visualize
-                res_img = vision.visualize_batch(final_viz_list, board_matrix)
-                if res_img is not None:
-                    _, buffer = cv2.imencode('.png', res_img)
-                    img_str = base64.b64encode(buffer).decode('utf-8')
-                    results["result_image"] = f"data:image/png;base64,{img_str}"
+                    results["multi"].append(public_move(m))
+
+                # 4. Highest scoring placements. Diversity is applied after
+                # actual board/premium/cross-word scoring.
+                scored_moves = sorted(moves, key=lambda item: item.get('score', 0), reverse=True)
+                highest = get_diverse_moves(scored_moves, top_n=rec_top_n, min_dist=min_dist)
+                results["highest"] = [public_move(move) for move in highest]
 
             yield json.dumps({"type": "result", "data": results}) + "\n"
             yield json.dumps({"type": "step", "msg": "完成!"}) + "\n"
@@ -1398,4 +2054,9 @@ def process_letter_image():
             traceback.print_exc()
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
-    return Response(generate(), mimetype='application/x-ndjson')
+    response = Response(generate(), mimetype='application/x-ndjson')
+    # Force every yielded NDJSON line through Gunicorn/Nginx immediately.
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['X-Accel-Buffering'] = 'no'
+    response.headers['Content-Encoding'] = 'identity'
+    return response

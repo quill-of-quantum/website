@@ -12,12 +12,21 @@
             background-color: #f5f5f5;
         }
         .container {
-            max-width: 800px;
+            width: calc(100% - 40px);
+            max-width: 1400px;
+            box-sizing: border-box;
             margin: 0 auto;
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 640px) {
+            body { padding: 10px; }
+            .container {
+                width: 100%;
+                padding: 12px;
+            }
         }
         h1 {
             color: #333;
@@ -98,29 +107,31 @@
         <div class="controls">
             <div class="control-group">
                 <label title="最佳长词推荐数">最佳推荐 (Top N)</label>
-                <input type="number" id="recTopN" value="3" min="1" max="10">
+                <input type="number" id="recTopN" value="7" min="1" max="10">
             </div>
             <div class="control-group">
-                <label title="短词防守推荐数">短词推荐 (Short N)</label>
-                <input type="number" id="recShortN" value="5" min="1" max="10">
+                <label title="常用词推荐数，按词频筛选而不是长度">常用词推荐</label>
+                <input type="number" id="recShortN" value="7" min="1" max="10">
             </div>
             <div class="control-group">
                 <label title="多重组词推荐数">一箭多雕 (Multi N)</label>
-                <input type="number" id="recMultiN" value="5" min="1" max="10">
+                <input type="number" id="recMultiN" value="7" min="1" max="10">
             </div>
             <div class="control-group">
                 <label title="走法间距">最小间距 (Min Dist)</label>
                 <input type="number" id="minDist" value="1" min="0" max="10">
-            </div>
-            <div class="control-group">
-                <label title="短词最大长度">短词长度 (Max Len)</label>
-                <input type="number" id="shortLen" value="4" min="2" max="8">
             </div>
             <div class="control-group" style="flex-direction: row; align-items: center; margin-left: 10px;">
                 <!-- Default unchecked -->
                 <input type="checkbox" id="useWildcard" style="width: auto; margin-right: 5px; cursor: pointer;">
                 <label for="useWildcard" style="margin: 0; cursor: pointer;">使用万能替换 (?)</label>
             </div>
+        </div>
+
+        <div style="display:flex;justify-content:center;margin:-6px 0 14px;">
+            <button type="button" id="exampleButton" style="border:0;border-radius:7px;padding:10px 18px;background:#6f42c1;color:#fff;font-weight:700;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.15);">
+                🎮 查看案例展示
+            </button>
         </div>
 
         <div class="upload-area" id="dropZone">
@@ -130,6 +141,7 @@
         </div>
 
         <div class="loading" id="loading">正在计算中...</div>
+        <div id="progressLog" style="display:none; margin:10px 0; padding:10px 14px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; font-size:0.9em; line-height:1.7;"></div>
         
         <div class="result-area" id="resultArea">
             <h3>计算结果</h3>
@@ -150,6 +162,11 @@
                 </div>
                 
                 <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <div style="flex-basis: 100%;">
+                        <h5>定位总览（Logo + Shuffle）</h5>
+                        <div id="debugLayoutText" style="font-size:0.85em; color:#555; margin-bottom:5px; font-family:monospace;"></div>
+                        <img id="debugLayoutOverlay" style="max-width:100%; border:1px solid #999;">
+                    </div>
                     <div style="flex: 1; min-width: 300px;">
                         <h5>1. 棋盘分割 (Board Crop)</h5>
                         <img id="debugSegBoard" style="max-width: 100%; border: 1px solid #999;">
@@ -173,7 +190,7 @@
                                     <img id="debugRackContour" style="max-width: 100%; border: 1px solid #999;">
                                 </div>
                                 <div style="flex: 1; min-width: 140px;">
-                                    <p style="font-size: 0.75em; color: #666; margin: 2px 0;">二值化 + 轮廓</p>
+                                    <p style="font-size: 0.75em; color: #666; margin: 2px 0;">字母架识别结果</p>
                                     <img id="debugRackBinaryContour" style="max-width: 100%; border: 1px solid #999; background: black;">
                                 </div>
                             </div>
@@ -240,6 +257,8 @@
         const resultArea = document.getElementById('resultArea');
         const resultContent = document.getElementById('resultContent');
         const debugSection = document.getElementById('debugSection');
+        const progressLog = document.getElementById('progressLog');
+        const exampleButton = document.getElementById('exampleButton');
 
         // 点击上传
         dropZone.addEventListener('click', () => fileInput.click());
@@ -286,11 +305,14 @@
             reader.readAsDataURL(file);
         }
 
-        async function uploadAndProcess(base64Image) {
+        function prepareProcessingView() {
             loading.style.display = 'block';
             loading.textContent = "准备开始...";
+            progressLog.innerHTML = '';
+            progressLog.style.display = 'block';
             resultArea.style.display = 'none';
-            debugSection.style.display = 'block'; // Show debug immediately
+            // 调试图已经按步骤实时追加到 progressLog，不再在结果后重复展示。
+            debugSection.style.display = 'none';
             
             // Reset debug views
             document.getElementById('debugSegBoard').src = '';
@@ -309,6 +331,51 @@
             document.getElementById('debugFinalRackText').textContent = '';
             document.getElementById('debugBoardMatrix').textContent = '';
             document.getElementById('debugLogoStatus').innerHTML = 'Pending...';
+            document.getElementById('debugLayoutOverlay').src = '';
+            document.getElementById('debugLayoutText').textContent = '';
+        }
+
+        async function consumeStream(response) {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        handleStreamMessage(JSON.parse(line));
+                    } catch (e) {
+                        console.error("JSON Parse Error", e, line);
+                    }
+                }
+            }
+            if (buffer.trim()) handleStreamMessage(JSON.parse(buffer));
+        }
+
+        exampleButton.addEventListener('click', async () => {
+            previewContainer.innerHTML = '<img src="/api/letter/example/image" class="preview" alt="Letter League 案例截图">';
+            prepareProcessingView();
+            exampleButton.disabled = true;
+            try {
+                await consumeStream(await fetch('/api/letter/example', {cache: 'no-store'}));
+            } catch (error) {
+                console.error('Example error:', error);
+                alert('案例加载失败，请重试');
+            } finally {
+                loading.style.display = 'none';
+                exampleButton.disabled = false;
+            }
+        });
+
+        async function uploadAndProcess(base64Image) {
+            prepareProcessingView();
             
             // 获取所有参数
             const params = {
@@ -317,7 +384,6 @@
                 rec_short_n: document.getElementById('recShortN').value,
                 rec_multi_n: document.getElementById('recMultiN').value,
                 min_dist: document.getElementById('minDist').value,
-                short_len: document.getElementById('shortLen').value,
                 use_wildcard: document.getElementById('useWildcard').checked
             };
 
@@ -328,28 +394,7 @@
                     body: JSON.stringify(params)
                 });
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // Keep incomplete line in buffer
-
-                    for (const line of lines) {
-                        if (!line.trim()) continue;
-                        try {
-                            const msg = JSON.parse(line);
-                            handleStreamMessage(msg);
-                        } catch (e) {
-                            console.error("JSON Parse Error", e, line);
-                        }
-                    }
-                }
+                await consumeStream(response);
             } catch (error) {
                 console.error('Error:', error);
                 alert('发生错误，请重试');
@@ -361,13 +406,34 @@
         function handleStreamMessage(msg) {
             if (msg.type === 'step') {
                 loading.textContent = msg.msg;
+                const line = document.createElement('div');
+                line.textContent = `${new Date().toLocaleTimeString()}  ${msg.msg}`;
+                progressLog.appendChild(line);
+                progressLog.scrollTop = progressLog.scrollHeight;
             } else if (msg.type === 'debug') {
                 const d = msg.data;
+                if (d.layout_overlay) appendLiveImage('双锚点定位结果', d.layout_overlay);
+                if (d.seg_board) appendLiveImage('棋盘裁剪结果', d.seg_board);
+                if (d.seg_rack) appendLiveImage('字母架裁剪结果', d.seg_rack);
+                if (d.rack_binary_map) appendLiveImage('字母架二值化结果', d.rack_binary_map);
+                if (d.rack_contour_debug) appendLiveImage('字母架轮廓检测结果', d.rack_contour_debug);
+                if (d.rack_binary_contour_debug) appendLiveImage('字母架识别结果', d.rack_binary_contour_debug);
+                if (d.grid_fit) appendLiveImage('棋盘网格拟合结果', d.grid_fit);
+                if (d.ocr_tiles_debug) appendLiveImage('棋盘字母 OCR 结果', d.ocr_tiles_debug);
                 if (d.seg_board) document.getElementById('debugSegBoard').src = d.seg_board;
                 if (d.seg_rack) document.getElementById('debugSegRack').src = d.seg_rack;
                 if (d.rack_binary_map) document.getElementById('debugRackBinary').src = d.rack_binary_map;
                 if (d.rack_contour_debug) document.getElementById('debugRackContour').src = d.rack_contour_debug;
                 if (d.rack_binary_contour_debug) document.getElementById('debugRackBinaryContour').src = d.rack_binary_contour_debug;
+                if (d.layout_overlay) document.getElementById('debugLayoutOverlay').src = d.layout_overlay;
+                if (d.layout_detection) {
+                    const shuffle = d.shuffle_detection || {};
+                    document.getElementById('debugLayoutText').textContent =
+                        `mode=${d.layout_detection.mode} board=${d.layout_detection.board_box.join(',')} ` +
+                        `rack=${d.layout_detection.rack_box.join(',')} shuffle=${shuffle.found ? 'OK' : 'MISS'} ` +
+                        `method=${shuffle.method || 'unknown'} score=${Number(shuffle.score || 0).toFixed(2)} ` +
+                        `orange=${Number(shuffle.orange_ratio || 0).toFixed(2)}`;
+                }
                 
                 if (d.grid_fit) document.getElementById('debugGridFit').src = d.grid_fit;
                 if (d.ocr_tiles_debug) document.getElementById('debugOcrTiles').src = d.ocr_tiles_debug;
@@ -507,14 +573,38 @@
             }
         }
 
+        function appendLiveImage(title, source) {
+            if (!source) return;
+            const card = document.createElement('div');
+            card.style.cssText = 'margin:10px 0 16px;padding:10px;background:white;border:1px solid #ddd;border-radius:6px;';
+            const heading = document.createElement('div');
+            heading.textContent = `✅ ${title}`;
+            heading.style.cssText = 'font-weight:600;margin-bottom:8px;color:#285b36;';
+            const image = document.createElement('img');
+            image.src = source;
+            image.alt = title;
+            image.style.cssText = 'display:block;max-width:100%;max-height:520px;object-fit:contain;border:1px solid #aaa;border-radius:4px;';
+            card.appendChild(heading);
+            card.appendChild(image);
+            progressLog.appendChild(card);
+            card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+
         function renderResults(res) {
             resultArea.style.display = 'block';
             let html = '';
 
-            // 1. 显示结果图片
-            if (res.result_image) {
-                html += `<div style="text-align:center; margin-bottom:20px;">
-                    <img src="${res.result_image}" style="max-width:100%; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+            // Recommendation overlay is rendered by the browser. Every unique
+            // placement gets its own color and can be redrawn without asking
+            // the backend to generate another fixed bitmap.
+            if (res.grid_params && res.board_matrix) {
+                html += `<div style="margin-bottom:20px;">
+                    <div id="moveCategoryTabs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"></div>
+                    <div style="overflow:hidden;background:#24262b;padding:12px;border-radius:8px;">
+                        <canvas id="moveCanvas" style="display:block;width:100%;max-width:100%;height:auto;margin:auto;border-radius:5px;"></canvas>
+                    </div>
+                    <div id="moveLegend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
+                    <div style="font-size:.8em;color:#666;margin-top:6px;">点击分类切换结果；点击单词可单独高亮。每个格最多显示四个候选角标。</div>
                 </div>`;
             }
 
@@ -528,7 +618,10 @@
                 items.forEach((item, index) => {
                     let details = [];
                     if (item.cross !== undefined && item.cross > 0) details.push(`Cross: ${item.cross}`);
+                    if (item.score !== undefined) details.push(`Score: ${item.score}`);
+                    if (item.score_breakdown && item.score_breakdown.word_multiplier > 1) details.push(`Word ×${item.score_breakdown.word_multiplier}`);
                     if (item.row !== undefined) details.push(`Pos: [${item.row}, ${item.col}]`);
+                    if (item.direction) details.push(item.direction === 'V' ? '纵向' : '横向');
                     
                     const detailStr = details.length ? `<span style="color:#666; font-size:0.85em; margin-left:10px;">(${details.join(' | ')})</span>` : '';
 
@@ -543,15 +636,144 @@
             };
 
             // 3. 生成各部分内容
+            html += createList('最高分组合 (Highest Score)', res.highest, '💯', '#dc3545');
             html += createList('最佳推荐 (Best)', res.best, '🏆', '#007bff'); // Blue
-            html += createList('短词防守 (Short)', res.short, '🐣', '#6f42c1'); // Purple
+            html += createList('常用词防守 (Common)', res.short, '🐣', '#6f42c1'); // Purple
             html += createList('一箭多雕 (Multi)', res.multi, '🔱', '#e83e8c'); // Pink
 
-            if (!res.best.length && !res.short.length && !res.multi.length) {
+            if (!res.best.length && !res.short.length && !res.multi.length && !(res.highest || []).length) {
                 html += '<div style="text-align:center; padding:20px; color:#666;">❌ 未找到任何合法走法</div>';
             }
 
             resultContent.innerHTML = html;
+            if (res.grid_params && res.board_matrix) renderMoveOverlay(res);
+        }
+
+        function renderMoveOverlay(res) {
+            const canvas = document.getElementById('moveCanvas');
+            const legend = document.getElementById('moveLegend');
+            const tabs = document.getElementById('moveCategoryTabs');
+            if (!canvas || !legend || !tabs) return;
+            const board = res.board_matrix || [];
+            const premiums = res.premium_matrix || [];
+            const rows = board.length;
+            const cols = rows ? board[0].length : 0;
+            const cell = 42;
+            canvas.width = cols * cell;
+            canvas.height = rows * cell;
+            const ctx = canvas.getContext('2d');
+            const palette = ['#e63946','#2a9d8f','#4361ee','#f4a261','#9b5de5','#00b4d8','#ef476f','#588157'];
+            const baseScores = {A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:2,M:3,N:1,O:1,P:3,Q:10,R:1,S:1,T:1,U:1,V:4,W:4,X:8,Y:4,Z:10};
+            const categories = [
+                {key:'highest', label:'💯 最高分', moves:res.highest || []},
+                {key:'best', label:'🏆 最佳推荐', moves:res.best || []},
+                {key:'short', label:'🐣 常用词防守', moves:res.short || []},
+                {key:'multi', label:'🔱 一箭多雕', moves:res.multi || []}
+            ].filter(category => category.moves.length);
+            let active = categories[0] || {key:'none', moves:[]};
+            let selectedIndex = null;
+
+            function drawBaseBoard() {
+                const premiumColors = {"2L":"#9fddf4","3L":"#ffc94f","2W":"#a8e9a7","3W":"#f28b68"};
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (let row=0; row<rows; row++) for (let col=0; col<cols; col++) {
+                    const premium = premiums[row] ? premiums[row][col] : '';
+                    ctx.fillStyle = premiumColors[premium] || '#f5d7ae';
+                    ctx.fillRect(col*cell, row*cell, cell, cell);
+                    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1;
+                    ctx.strokeRect(col*cell+.5, row*cell+.5, cell-1, cell-1);
+                    if (premium) {
+                        ctx.fillStyle = '#53757d'; ctx.font = 'bold 10px Arial';
+                        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+                        ctx.fillText(premium, col*cell+3, row*cell+3);
+                    }
+                    const existing = board[row][col];
+                    if (existing) {
+                        ctx.fillStyle = '#74cf70';
+                        ctx.fillRect(col*cell+4, row*cell+4, cell-8, cell-8);
+                        ctx.fillStyle = '#111'; ctx.font = 'bold 22px Arial';
+                        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(existing.toUpperCase(), col*cell+cell/2, row*cell+cell/2+1);
+                        ctx.font = 'bold 9px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+                        ctx.fillText(baseScores[existing.toUpperCase()] || 0, col*cell+cell-6, row*cell+5);
+                    }
+                }
+            }
+
+            function moveCells(move) {
+                return [...move.word].map((letter, offset) => ({
+                    letter,
+                    row: move.row + (move.direction === 'V' ? offset : 0),
+                    col: move.col + (move.direction === 'V' ? 0 : offset)
+                })).filter(item => item.row >= 0 && item.row < rows && item.col >= 0 && item.col < cols);
+            }
+
+            function drawCategory() {
+                drawBaseBoard();
+                const moves = active.moves;
+                function drawCandidateBadges(excludedIndex = null) {
+                    const perCell = new Map();
+                    moves.forEach((move, moveIndex) => moveCells(move).forEach(item => {
+                        if (moveIndex === excludedIndex) return;
+                        if (board[item.row][item.col]) return;
+                        const key=`${item.row}:${item.col}`;
+                        if (!perCell.has(key)) perCell.set(key,[]);
+                        if (perCell.get(key).length < 4) perCell.get(key).push({...item,moveIndex});
+                    }));
+                    const offsets=[[2,2],[cell/2+1,2],[2,cell/2+1],[cell/2+1,cell/2+1]];
+                    perCell.forEach(items => items.forEach((item,index) => {
+                        const [dx,dy]=offsets[index];const size=cell/2-3;
+                        ctx.fillStyle=palette[item.moveIndex%palette.length];
+                        ctx.fillRect(item.col*cell+dx,item.row*cell+dy,size,size);
+                        ctx.fillStyle='#fff';ctx.font='bold 13px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+                        ctx.fillText(item.letter.toUpperCase(),item.col*cell+dx+size/2,item.row*cell+dy+size/2);
+                    }));
+                }
+
+                if (selectedIndex !== null && moves[selectedIndex]) {
+                    // Keep every other candidate in its original compact badge
+                    // form; only the selected word expands to a full-cell path.
+                    drawCandidateBadges(selectedIndex);
+                    const move = moves[selectedIndex];
+                    const color = palette[selectedIndex % palette.length];
+                    moveCells(move).forEach(item => {
+                        const x=item.col*cell, y=item.row*cell;
+                        if (board[item.row][item.col]) {
+                            ctx.strokeStyle=color; ctx.lineWidth=4;
+                            ctx.strokeRect(x+3,y+3,cell-6,cell-6);
+                            return;
+                        }
+                        ctx.fillStyle=color;
+                        ctx.fillRect(x+4,y+4,cell-8,cell-8);
+                        ctx.fillStyle='#fff';ctx.font='bold 21px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+                        ctx.fillText(item.letter.toUpperCase(),x+cell/2,y+cell/2+1);
+                    });
+                } else {
+                    drawCandidateBadges();
+                }
+            }
+
+            function renderTabs() {
+                tabs.innerHTML='';
+                categories.forEach(category => {
+                    const button=document.createElement('button');button.type='button';button.textContent=category.label;
+                    button.style.cssText=`border:0;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600;color:${category===active?'#fff':'#333'};background:${category===active?'#343a40':'#e9ecef'};`;
+                    button.onclick=()=>{active=category;selectedIndex=null;renderTabs();renderLegend();drawCategory();};
+                    tabs.appendChild(button);
+                });
+            }
+            function renderLegend() {
+                legend.innerHTML='';
+                active.moves.forEach((move,index)=>{
+                    const button=document.createElement('button');button.type='button';
+                    button.textContent=`${move.word.toUpperCase()} · ${move.score||0}分 · ${move.direction==='V'?'纵':'横'}`;
+                    const chosen=selectedIndex===index;
+                    button.style.cssText=`border:2px solid ${palette[index%palette.length]};border-radius:5px;padding:5px 9px;cursor:pointer;font-weight:600;color:${chosen?'#fff':'#333'};background:${chosen?palette[index%palette.length]:'#fff'};`;
+                    button.onclick=()=>{selectedIndex=chosen?null:index;renderLegend();drawCategory();};
+                    legend.appendChild(button);
+                });
+            }
+            renderTabs(); renderLegend(); drawCategory();
         }
     </script>
   <script src="/static/js/net_metrics.js"></script>
