@@ -73,7 +73,8 @@ app.register_blueprint(aurora_bp)
 from modules.letter_league.api import bp as letter_bp
 app.register_blueprint(letter_bp)
 
-from modules.game.api import bp as game_bp, socketio, start_room_cleaner
+from modules.realtime import socketio
+from modules.game.api import bp as game_bp, start_room_cleaner
 app.register_blueprint(game_bp)
 socketio.init_app(app)
 start_room_cleaner()

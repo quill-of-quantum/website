@@ -100,18 +100,24 @@
       const lightboxCaption = document.querySelector("[data-lightbox-caption]");
       const closeBtn = document.querySelector("[data-lightbox-close]");
       const focusLoading = document.querySelector("[data-focus-loading]");
+      const groupModalInner = groupModal.querySelector(".group-modal-inner");
       let pauseHighRes = false;
+      let lightboxRequestId = 0;
 
       const closeGroupModal = () => {
+        cancelBackgroundLoads();
         groupModal.hidden = true;
         groupContent.innerHTML = "";
         document.body.classList.remove("no-scroll");
+        scheduleVisibleLoad();
       };
 
       const closeLightbox = () => {
+        lightboxRequestId += 1;
+        lightboxImage.src = "";
         lightbox.hidden = true;
         closeBtn.hidden = true;
-        document.body.classList.remove("no-scroll");
+        document.body.classList.toggle("no-scroll", !groupModal.hidden);
         focusLoading.hidden = true;
         pauseHighRes = false;
         scheduleVisibleLoad();
@@ -127,24 +133,8 @@
             groupContent.innerHTML = panel.innerHTML;
             groupModal.hidden = false;
             document.body.classList.add("no-scroll");
-            const modalImages = [...groupContent.querySelectorAll("[data-full-src]")];
-            const loadModalVisible = () => {
-              const visible = modalImages.filter((img) => {
-                const rect = img.getBoundingClientRect();
-                return rect.bottom > 0 && rect.top < window.innerHeight;
-              });
-              visible.forEach((img) => {
-                if (fullImages.has(img)) {
-                  return;
-                }
-                if (img.complete) {
-                  loadFull(img);
-                } else {
-                  img.addEventListener("load", () => loadFull(img), { once: true });
-                }
-              });
-            };
-            requestAnimationFrame(loadModalVisible);
+            cancelBackgroundLoads();
+            scheduleVisibleLoad();
             return;
           }
         });
@@ -157,7 +147,10 @@
         }
         const img = card.querySelector("img");
         pauseHighRes = true;
+        cancelBackgroundLoads();
         focusLoading.hidden = false;
+        const requestId = ++lightboxRequestId;
+        lightboxImage.fetchPriority = "high";
         lightboxImage.src = card.dataset.full;
         lightboxImage.alt = img.alt;
         lightboxCaption.textContent = img.alt;
@@ -165,6 +158,9 @@
         closeBtn.hidden = false;
         document.body.classList.add("no-scroll");
         const resumeLoads = () => {
+          if (requestId !== lightboxRequestId) {
+            return;
+          }
           pauseHighRes = false;
           focusLoading.hidden = true;
           scheduleVisibleLoad();
@@ -178,6 +174,8 @@
       });
 
       const fullImages = new Map();
+      const activeLoads = new Map();
+      const maxConcurrentLoads = navigator.connection?.saveData ? 1 : 2;
       const setLoading = (img, loading) => {
         img.classList.toggle("is-loading", loading);
         const frame = img.closest(".photo-frame");
@@ -186,50 +184,111 @@
         }
       };
 
-      const loadFull = (img) => {
-        const full = img.dataset.fullSrc;
-        if (!full || fullImages.has(img)) {
+      const cancelLoad = (img) => {
+        const state = fullImages.get(img);
+        if (!state || state.status !== "loading") {
           return;
         }
-        fullImages.set(img, true);
-        setLoading(img, true);
-        const high = new Image();
-        high.src = full;
-        high.onload = () => {
-          img.addEventListener(
-            "load",
-            () => {
-              setLoading(img, false);
-            },
-            { once: true }
-          );
-          img.src = full;
-        };
-        high.onerror = () => {
-          setLoading(img, false);
-        };
+        state.controller.abort();
+        state.status = "idle";
+        if (activeLoads.get(img) === state) {
+          activeLoads.delete(img);
+        }
+        setLoading(img, false);
       };
 
-      const allImages = [...document.querySelectorAll("[data-full-src]")];
+      const cancelBackgroundLoads = () => {
+        [...activeLoads.keys()].forEach(cancelLoad);
+      };
+
+      const loadFull = async (img) => {
+        const full = img.dataset.fullSrc;
+        const previous = fullImages.get(img);
+        if (!full || previous?.status === "loading" || previous?.status === "loaded") {
+          return;
+        }
+        const controller = new AbortController();
+        const state = { status: "loading", controller };
+        fullImages.set(img, state);
+        activeLoads.set(img, state);
+        setLoading(img, true);
+        try {
+          const response = await fetch(full, {
+            signal: controller.signal,
+            priority: "high",
+          });
+          if (!response.ok) {
+            throw new Error(`图片加载失败：${response.status}`);
+          }
+          const objectUrl = URL.createObjectURL(await response.blob());
+          if (controller.signal.aborted) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          state.status = "loaded";
+          img.addEventListener("load", () => {
+            setLoading(img, false);
+            URL.revokeObjectURL(objectUrl);
+          }, { once: true });
+          img.src = objectUrl;
+        } catch (error) {
+          if (error.name !== "AbortError") {
+            state.status = "error";
+          }
+          if (fullImages.get(img) === state) {
+            setLoading(img, false);
+          }
+        } finally {
+          if (activeLoads.get(img) === state) {
+            activeLoads.delete(img);
+          }
+          scheduleVisibleLoad();
+        }
+      };
+
+      const currentImages = () => groupModal.hidden
+        ? [...document.querySelectorAll(".stack-photos [data-full-src]")]
+        : [...groupContent.querySelectorAll("[data-full-src]")];
+
+      const isVisible = (img) => {
+        const rect = img.getBoundingClientRect();
+        if (groupModal.hidden) {
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        }
+        const bounds = groupModalInner.getBoundingClientRect();
+        return rect.bottom > bounds.top && rect.top < bounds.bottom;
+      };
 
       const loadVisibleHighRes = () => {
         if (pauseHighRes) {
           return;
         }
-        const visible = allImages.filter((img) => {
-          const rect = img.getBoundingClientRect();
-          return rect.bottom > 0 && rect.top < window.innerHeight;
-        });
-        visible.forEach((img) => {
-          if (fullImages.has(img)) {
-            return;
+        const visible = currentImages().filter(isVisible);
+        const visibleSet = new Set(visible);
+        [...activeLoads.keys()].forEach((img) => {
+          if (!visibleSet.has(img)) {
+            cancelLoad(img);
           }
-          if (img.complete) {
+        });
+
+        const viewportCenter = window.innerHeight / 2;
+        visible.sort((a, b) => {
+          const aRect = a.getBoundingClientRect();
+          const bRect = b.getBoundingClientRect();
+          const aDistance = Math.abs((aRect.top + aRect.bottom) / 2 - viewportCenter);
+          const bDistance = Math.abs((bRect.top + bRect.bottom) / 2 - viewportCenter);
+          return aDistance - bDistance;
+        });
+
+        for (const img of visible) {
+          if (activeLoads.size >= maxConcurrentLoads) {
+            break;
+          }
+          const state = fullImages.get(img);
+          if (!state || state.status === "idle") {
             loadFull(img);
-          } else {
-            img.addEventListener("load", () => loadFull(img), { once: true });
           }
-        });
+        }
       };
 
       const scheduleVisibleLoad = () => {
@@ -246,6 +305,7 @@
       window.addEventListener("load", scheduleVisibleLoad, { once: true });
       window.addEventListener("scroll", scheduleVisibleLoad, { passive: true });
       window.addEventListener("resize", scheduleVisibleLoad);
+      groupModalInner.addEventListener("scroll", scheduleVisibleLoad, { passive: true });
 
       groupClose.addEventListener("click", closeGroupModal);
       groupModal.addEventListener("click", (event) => {

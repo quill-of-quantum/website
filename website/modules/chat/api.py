@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, render_template, request
 from flask_socketio import emit, join_room
 
-from modules.game.api import socketio
+from modules.realtime import socketio
 
 
 bp = Blueprint("chat", __name__)

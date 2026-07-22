@@ -3,12 +3,14 @@ import threading
 import time
 
 from flask import Blueprint, render_template, request
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import emit, join_room, leave_room
+
+from modules.realtime import socketio
 
 bp = Blueprint("game", __name__, url_prefix="/game")
-socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent", serve_client=True)
 
 ROOM_LOCK = threading.Lock()
+CONNECTION_LOCK = threading.Lock()
 rooms = {}
 sid_to_room = {}
 _cleaner_started = False
@@ -132,6 +134,7 @@ def start_room_cleaner():
     threading.Thread(target=_cleaner, daemon=True).start()
 
 
+@bp.route("")
 @bp.route("/")
 def game_index():
     room_id = request.args.get("room", "")
@@ -388,19 +391,21 @@ def handle_switch_seat(data):
 @socketio.on("connect")
 def handle_connect():
     global connected_clients
-    with ROOM_LOCK:
+    with CONNECTION_LOCK:
         connected_clients += 1
-        _broadcast_stats()
+    _broadcast_stats()
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
+    global connected_clients
     sid = request.sid
-    with ROOM_LOCK:
-        global connected_clients
+    with CONNECTION_LOCK:
         connected_clients = max(0, connected_clients - 1)
+    _broadcast_stats()
+
+    with ROOM_LOCK:
         result = _remove_player(sid, force=False)
-        _broadcast_stats()
     try:
         from modules.chat.api import remove_chat_presence
         remove_chat_presence(sid)
