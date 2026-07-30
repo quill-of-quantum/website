@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>新建邮件</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .mail-form { display:grid; gap:16px; }
+    .field { display:grid; gap:6px; }
+    .field label { font-weight:600; }
+    .mail-body { min-height:260px; resize:vertical; font-family:inherit; line-height:1.6; }
+    .mail-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .mail-status { min-height:24px; }
+    .mail-status.success { color:var(--success); }
+    .mail-status.error { color:var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <main class="container" style="max-width:760px;">
+      <div class="page-header">
+        <h1>✉️ 新建邮件</h1>
+        <p>通过已配置的邮箱账户发送纯文本邮件</p>
+      </div>
+
+      <section class="card">
+        <form id="mail-form" class="mail-form">
+          <div class="field">
+            <label for="recipient">收件人</label>
+            <input id="recipient" name="to" class="input" type="email" autocomplete="email" placeholder="name@example.com" required>
+          </div>
+          <div class="field">
+            <label for="subject">主题</label>
+            <input id="subject" name="subject" class="input" type="text" maxlength="200" placeholder="请输入邮件主题" required>
+          </div>
+          <div class="field">
+            <label for="body">正文</label>
+            <textarea id="body" name="text" class="input mail-body" placeholder="请输入邮件正文" required></textarea>
+          </div>
+          <div class="mail-actions">
+            <a class="btn" href="/">返回首页</a>
+            <button id="send-button" class="btn btn-primary" type="submit">发送邮件</button>
+          </div>
+          <div id="mail-status" class="mail-status muted" role="status" aria-live="polite"></div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById('mail-form');
+    const sendButton = document.getElementById('send-button');
+    const statusElement = document.getElementById('mail-status');
+
+    function showStatus(message, type) {
+      statusElement.textContent = message;
+      statusElement.className = `mail-status ${type || 'muted'}`;
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      sendButton.disabled = true;
+      sendButton.textContent = '发送中...';
+      showStatus('正在发送邮件，请稍候…');
+
+      const payload = {
+        to: form.elements.to.value.trim(),
+        subject: form.elements.subject.value.trim(),
+        text: form.elements.text.value.trim()
+      };
+
+      try {
+        const response = await fetch('/api/mail/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = typeof result.detail === 'string' ? result.detail : result.error;
+          throw new Error(detail || '邮件发送失败');
+        }
+        showStatus('邮件已发送。', 'success');
+        form.reset();
+      } catch (error) {
+        showStatus(`发送失败：${error.message}`, 'error');
+      } finally {
+        sendButton.disabled = false;
+        sendButton.textContent = '发送邮件';
+      }
+    });
+  </script>
+</body>
+</html>

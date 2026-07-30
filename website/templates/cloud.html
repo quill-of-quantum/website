@@ -7,7 +7,14 @@
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
   <style>
-    .file-list { margin-top: 1rem; }
+    .file-list {
+      margin-top: 1rem;
+      user-select: none;
+    }
+    .file-list.selection-active {
+      user-select: none;
+      cursor: default;
+    }
     .file-item {
       background: #f8fafc;
       margin: 4px 0;
@@ -18,6 +25,34 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 0.5rem;
+      border: 1px solid transparent;
+      position: relative;
+      transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    .file-item:hover {
+      background: #f1f5f9;
+    }
+    .file-item.selected {
+      background: var(--primary-weak);
+      border-color: #93c5fd;
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+    .file-item:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+    .selection-box {
+      position: fixed;
+      z-index: 1000;
+      pointer-events: none;
+      border: 1px solid var(--primary);
+      background: rgba(37, 99, 235, 0.13);
+      border-radius: 3px;
+    }
+    .selection-help {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin: 0.45rem 0 0;
     }
     .file-info {
       display: flex;
@@ -129,8 +164,9 @@
         <button id="orderDesc" class="active">⬇️ 降序</button>
         <button id="orderAsc">⬆️ 升序</button>
       </div>
+      <p class="selection-help">提示：单击选择；Ctrl/⌘ 点击多选；Shift 点击连续选择；在列表空白处拖动可框选。</p>
     
-      <div id="fileList" class="file-list"></div>
+      <div id="fileList" class="file-list" role="listbox" aria-multiselectable="true"></div>
     </div>
   </div>
 
@@ -148,6 +184,9 @@
   let imageFiles = [];
   let currentImageIndex = -1;
   let keyListenerAttached = false;
+  let selectionAnchor = null;
+  let marqueeState = null;
+  let suppressItemClick = false;
 
   let currentSort = "time";
   let currentOrder = "desc";
@@ -196,6 +235,121 @@
     info.textContent = count
       ? `已选择 ${count} 个文件，共 ${formatSize(totalMB)}`
       : "未选择文件";
+    document.querySelectorAll(".file-item").forEach(item => {
+      const selected = selectedFiles.has(item.dataset.name);
+      item.classList.toggle("selected", selected);
+      item.setAttribute("aria-selected", String(selected));
+      const checkbox = item.querySelector(".file-checkbox");
+      if (checkbox) checkbox.checked = selected;
+    });
+  }
+
+  function fileDataAt(index) {
+    const f = totalFiles[index];
+    if (!f) return null;
+    return {
+      name: f.stored_name,
+      size: parseFloat(f.size),
+      display: f.display_name
+    };
+  }
+
+  function selectIndex(index, selected = true) {
+    const file = fileDataAt(index);
+    if (!file) return;
+    if (selected) selectedFiles.set(file.name, { size: file.size, display: file.display });
+    else selectedFiles.delete(file.name);
+  }
+
+  function selectRange(from, to, additive = false) {
+    if (!additive) selectedFiles.clear();
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
+    for (let i = start; i <= end; i++) selectIndex(i);
+  }
+
+  function handleItemSelection(index, event) {
+    const additive = event.ctrlKey || event.metaKey;
+    if (event.shiftKey && selectionAnchor !== null) {
+      selectRange(selectionAnchor, index, additive);
+    } else if (additive) {
+      const file = fileDataAt(index);
+      selectIndex(index, !selectedFiles.has(file.name));
+      selectionAnchor = index;
+    } else {
+      selectedFiles.clear();
+      selectIndex(index);
+      selectionAnchor = index;
+    }
+    updateSelectionInfo();
+  }
+
+  function beginMarquee(event) {
+    if (event.pointerType !== "mouse" || event.button !== 0 || event.target.closest("button, a, input, .thumbnail")) return;
+    const list = document.getElementById("fileList");
+    const box = document.createElement("div");
+    box.className = "selection-box";
+    box.style.display = "none";
+    document.body.appendChild(box);
+    marqueeState = {
+      startX: event.clientX,
+      startY: event.clientY,
+      additive: event.ctrlKey || event.metaKey || event.shiftKey,
+      initial: new Set(selectedFiles.keys()),
+      dragging: false,
+      box
+    };
+    window.addEventListener("pointermove", updateMarquee);
+    window.addEventListener("pointerup", endMarquee, { once: true });
+    window.addEventListener("pointercancel", endMarquee, { once: true });
+  }
+
+  function updateMarquee(event) {
+    if (!marqueeState) return;
+    const distance = Math.hypot(event.clientX - marqueeState.startX, event.clientY - marqueeState.startY);
+    if (!marqueeState.dragging && distance < 5) return;
+    if (!marqueeState.dragging) {
+      marqueeState.dragging = true;
+      marqueeState.box.style.display = "block";
+      document.getElementById("fileList").classList.add("selection-active");
+      if (!marqueeState.additive) selectedFiles.clear();
+    }
+    const left = Math.min(marqueeState.startX, event.clientX);
+    const top = Math.min(marqueeState.startY, event.clientY);
+    const right = Math.max(marqueeState.startX, event.clientX);
+    const bottom = Math.max(marqueeState.startY, event.clientY);
+    Object.assign(marqueeState.box.style, {
+      left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px`
+    });
+
+    selectedFiles.clear();
+    if (marqueeState.additive) {
+      marqueeState.initial.forEach(name => {
+        const index = totalFiles.findIndex(file => file.stored_name === name);
+        if (index >= 0) selectIndex(index);
+      });
+    }
+    document.querySelectorAll(".file-item").forEach(item => {
+      const rect = item.getBoundingClientRect();
+      const intersects = rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top;
+      if (intersects) selectIndex(Number(item.dataset.index));
+    });
+    updateSelectionInfo();
+  }
+
+  function endMarquee() {
+    if (!marqueeState) return;
+    const wasDragging = marqueeState.dragging;
+    marqueeState.box.remove();
+    marqueeState = null;
+    document.getElementById("fileList").classList.remove("selection-active");
+    window.removeEventListener("pointermove", updateMarquee);
+    window.removeEventListener("pointerup", endMarquee);
+    window.removeEventListener("pointercancel", endMarquee);
+    if (wasDragging) {
+      suppressItemClick = true;
+      setTimeout(() => { suppressItemClick = false; }, 0);
+    }
   }
 
   // --- 判断是否图片文件 ---
@@ -279,6 +433,9 @@
 
     const list = document.getElementById("fileList");
     list.innerHTML = "";
+    selectedFiles.forEach((_, name) => {
+      if (!totalFiles.some(file => file.stored_name === name)) selectedFiles.delete(name);
+    });
 
     const toolbar = document.createElement("div");
     toolbar.style.marginBottom = "0.8rem";
@@ -296,6 +453,10 @@
     data.files.forEach((f, idx) => {
       const div = document.createElement("div");
       div.className = "file-item";
+      div.dataset.index = idx;
+      div.dataset.name = f.stored_name || f.name;
+      div.tabIndex = 0;
+      div.setAttribute("role", "option");
       const storedName = f.stored_name || f.name;
       const displayName = f.display_name || f.original_name || f.name;
       const isImg = isImageFile(storedName);
@@ -341,21 +502,37 @@
           <button class="btn btn-sm btn-danger" onclick="deleteFile('${storedName}','${displayName.replace(/'/g, "\\'")}')">删除</button>
         </span>`;
       list.appendChild(div);
+      div.addEventListener("click", event => {
+        if (suppressItemClick) {
+          event.preventDefault();
+          return;
+        }
+        if (event.target.closest("a, button, .thumbnail")) return;
+        handleItemSelection(idx, event);
+      });
+      div.addEventListener("keydown", event => {
+        if (event.target.closest("a, button, input")) return;
+        if (event.key !== " " && event.key !== "Enter") return;
+        event.preventDefault();
+        handleItemSelection(idx, event);
+      });
     });
 
     document.querySelectorAll(".file-checkbox").forEach(cb => {
-      cb.addEventListener("change", e => {
-        const name = e.target.dataset.name;
-        const display = e.target.dataset.display;
-        const size = parseFloat(e.target.dataset.size);
-        if (e.target.checked) selectedFiles.set(name, { size, display });
-        else selectedFiles.delete(name);
-        updateSelectionInfo();
+      cb.addEventListener("click", event => {
+        event.stopPropagation();
+        const index = Number(event.target.closest(".file-item").dataset.index);
+        handleItemSelection(index, {
+          ctrlKey: !event.shiftKey,
+          metaKey: false,
+          shiftKey: event.shiftKey
+        });
       });
     });
 
     document.getElementById("selectAllBtn").onclick = () => {
       selectedFiles.clear();
+      selectionAnchor = totalFiles.length ? 0 : null;
       document.querySelectorAll(".file-checkbox").forEach(cb => {
         cb.checked = true;
         selectedFiles.set(cb.dataset.name, { size: parseFloat(cb.dataset.size), display: cb.dataset.display });
@@ -366,6 +543,7 @@
     document.getElementById("clearSelectBtn").onclick = () => {
       document.querySelectorAll(".file-checkbox").forEach(cb => (cb.checked = false));
       selectedFiles.clear();
+      selectionAnchor = null;
       updateSelectionInfo();
     };
 
@@ -373,7 +551,24 @@
     document.getElementById("batchDownloadBtn").onclick = batchDownload;
 
     updateSelectionInfo();
+    list.addEventListener("pointerdown", beginMarquee);
   }
+
+  document.addEventListener("keydown", event => {
+    const overlay = document.getElementById("imageOverlay");
+    if (overlay && overlay.style.display === "flex") return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      selectedFiles.clear();
+      totalFiles.forEach((_, index) => selectIndex(index));
+      updateSelectionInfo();
+    } else if (event.key === "Escape") {
+      selectedFiles.clear();
+      selectionAnchor = null;
+      updateSelectionInfo();
+    }
+  });
 
   // --- 批量删除 ---
   async function batchDelete() {

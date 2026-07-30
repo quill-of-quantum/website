@@ -264,7 +264,8 @@
       gallery: "Gallery",
       tracker: "Tracker 调度器",
       mihomo: "Mihomo 代理",
-      frpc: "FRP 隧道"
+      frpc: "FRP 隧道",
+      email: "邮件服务"
     };
     return Object.keys(labels).map(key => {
       const item = services[key] || {};
@@ -562,7 +563,8 @@
       gallery: "Gallery",
       tracker: "Tracker 调度器",
       mihomo: "Mihomo 代理",
-      frpc: "FRP 隧道"
+      frpc: "FRP 隧道",
+      email: "邮件服务"
     };
     const label = labels[service] || service;
     const message = action === "disable"

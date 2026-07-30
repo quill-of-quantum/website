@@ -1,15 +1,20 @@
 import os
 
 import requests
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
 
-bp = Blueprint("email", __name__, url_prefix="/api/mail")
+bp = Blueprint("email", __name__)
 
 EMAIL_SERVICE_URL = os.getenv("EMAIL_SERVICE_URL", "http://127.0.0.1:8081")
 
 
-@bp.route("/send", methods=["POST"])
+@bp.route("/mail", methods=["GET"])
+def mail_page():
+    return render_template("mail.html")
+
+
+@bp.route("/api/mail/send", methods=["POST"])
 def send_mail():
     payload = request.get_json(silent=True) or {}
     to = (payload.get("to") or "").strip()

@@ -22,6 +22,8 @@
   - boardgame.io Server（内部端口 `8000`）
 - **tracker_scheduler.service**
   - 物流追踪后台调度
+- **email-service.service**
+  - 独立 Spring Boot 邮件服务（内部端口 `8081`，由 `modules/mail/` 转发调用）
 
 Nginx 反代：
 - `/` → Flask（`/home/bbdwz/website.sock`）
@@ -45,6 +47,7 @@ Nginx 反代：
 - `/garden` 与 `/garden/<garden_id>`：菜地记录页面（`templates/garden.html`）
 - `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
 - `/aurora/`：极光信息页面（`templates/aurora.html`）
+- `/mail`：手动发送邮件页面（`templates/mail.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
 

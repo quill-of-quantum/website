@@ -30,6 +30,7 @@ MANAGED_SERVICE_UNITS = {
     "tracker": "tracker_scheduler.service",
     "mihomo": "mihomo.service",
     "frpc": "frpc.service",
+    "email": "email-service.service",
 }
 
 def _get_lan_networks():
@@ -811,6 +812,7 @@ def _get_status_payload():
         "tracker_scheduler.service",
         "mihomo.service",
         "frpc.service",
+        "email-service.service",
     ]
     service_status = {name: _get_service_status(name) for name in services}
     payload = {
