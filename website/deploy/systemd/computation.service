@@ -1,0 +1,18 @@
+[Unit]
+Description=Website shared background computation scheduler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bbdwz
+Group=bbdwz
+WorkingDirectory=/home/bbdwz/projects/website
+Environment="PATH=/home/bbdwz/miniconda3/envs/web/bin:/usr/local/bin:/usr/bin:/bin"
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bbdwz/miniconda3/envs/web/bin/python /home/bbdwz/projects/website/modules/computation/scheduler.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, Response
+from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, Response, make_response
 from functools import wraps
 import os
 import time
@@ -26,10 +26,13 @@ VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"
 GEOIP_DB_PATH = "/home/bbdwz/projects/website/data/geoip/GeoLite2-City.mmdb"
 PROJECT_ROOT = "/home/bbdwz/projects/website"
 MANAGED_SERVICE_UNITS = {
+    "computation": "computation.service",
     "gallery": "gallery.service",
+    "boardgame": "boardgame.service",
     "tracker": "tracker_scheduler.service",
     "mihomo": "mihomo.service",
     "frpc": "frpc.service",
+    "cpolar": "cpolar.service",
     "email": "email-service.service",
 }
 
@@ -807,12 +810,7 @@ def _get_storage_stats():
 def _get_status_payload():
     services = [
         "website.service",
-        "cpolar.service",
-        "gallery.service",
-        "tracker_scheduler.service",
-        "mihomo.service",
-        "frpc.service",
-        "email-service.service",
+        "nginx.service",
     ]
     service_status = {name: _get_service_status(name) for name in services}
     payload = {
@@ -1034,7 +1032,9 @@ def admin_dashboard():
     """管理主页"""
     cpu = psutil.cpu_percent()
     mem = psutil.virtual_memory().percent
-    return render_template("admin_index.html", user=session.get("user"), cpu=cpu, mem=mem)
+    response = make_response(render_template("admin_index.html", user=session.get("user"), cpu=cpu, mem=mem))
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 @bp.route(ADMIN_PREFIX + "/api/command", methods=["POST"])
 @login_required

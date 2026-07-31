@@ -10,6 +10,7 @@ from modules.cloud.service import (
     is_image_file,
     save_uploaded_bytes,
     save_uploaded_file,
+    save_uploaded_stream,
 )
 from modules.cloud.storage import (
     THUMBNAIL_FOLDER,
@@ -22,6 +23,8 @@ from modules.cloud.storage import (
 
 
 bp = Blueprint("cloud", __name__)
+MIN_FREE_BYTES = 5 * 1024**3
+LEGACY_UPLOAD_LIMIT = 500 * 1024**2
 
 
 def _raw_upload_filename():
@@ -50,6 +53,43 @@ def _raw_upload_filename():
 
 @bp.route("/api/cloud/upload", methods=["POST"])
 def upload_file():
+    is_stream_upload = request.headers.get("X-Cloud-Raw-Upload") == "1"
+    if not is_stream_upload and request.content_length and request.content_length > LEGACY_UPLOAD_LIMIT:
+        return jsonify({
+            "success": False,
+            "error": "传统上传接口最大支持 500 MB，请使用 Cloud 网页进行大型文件流式上传",
+            "code": "LEGACY_UPLOAD_TOO_LARGE",
+        }), 413
+    if request.content_length:
+        free = shutil.disk_usage(UPLOAD_FOLDER).free
+        if request.content_length > max(0, free - MIN_FREE_BYTES):
+            return jsonify({
+                "success": False,
+                "error": "空间不足：上传完成后必须至少保留 5 GB 可用空间",
+                "code": "INSUFFICIENT_STORAGE",
+            }), 507
+    if is_stream_upload:
+        meta = load_meta()
+        saved, error = save_uploaded_stream(
+            request.stream,
+            _raw_upload_filename(),
+            meta,
+            expected_size=request.content_length,
+            minimum_free_bytes=MIN_FREE_BYTES,
+        )
+        if error:
+            return jsonify({
+                "success": False,
+                "error": error.get("error", "上传失败"),
+                "code": "UPLOAD_FAILED",
+            }), 507 if "空间不足" in error.get("error", "") else 400
+        save_meta(meta)
+        return jsonify({
+            "success": True,
+            "message": f"✅ 文件已上传：{saved['original_name']}",
+            "data": saved,
+        })
+
     files = request.files.getlist("file")
     if not files:
         files = [file for _, file in request.files.items()]
@@ -123,6 +163,8 @@ def list_files():
         "total": f"{total / (1024**3):.2f} GB",
         "used": f"{used / (1024**3):.2f} GB",
         "free": f"{free / (1024**3):.2f} GB",
+        "available_for_upload": f"{max(0, free - MIN_FREE_BYTES) / (1024**3):.2f} GB",
+        "minimum_free": "5.00 GB",
     }
 
     return jsonify({

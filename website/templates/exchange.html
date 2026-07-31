@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>换汇预判</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <style>
+    .hero { background:linear-gradient(135deg,#172554,#1d4ed8);color:#fff }
+    .hero .muted { color:#bfdbfe }
+    .decision { font-size:clamp(36px,7vw,60px);font-weight:750;line-height:1;margin:12px 0 }
+    .metrics { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px }
+    .metric,.model { padding:14px;border:1px solid var(--border);border-radius:var(--r);background:#f8fafc }
+    .metric-label { color:var(--muted);font-size:13px }
+    .metric-value { margin-top:5px;font-size:21px;font-weight:700 }
+    .score { font-size:30px;font-weight:750 }
+    .chart-box { height:330px }
+    .model-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px }
+    .model h3 { margin:0 0 6px;font-size:15px }
+    .model-main { font-size:20px;font-weight:700 }
+    .plan-grid { display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px }
+    .plan-grid label,.execution-grid label { color:var(--muted);font-size:13px }
+    .plan-grid .input,.execution-grid .input { margin-top:4px }
+    .execution-grid { display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px }
+    .reason-grid { display:grid;grid-template-columns:1fr 1fr;gap:12px }
+    .reason-box { padding:14px;border-radius:var(--r);border:1px solid var(--border) }
+    .reason-box h3 { margin:0 0 8px;font-size:15px }
+    .reason-box ul { margin:0;padding-left:20px }
+    .reason-for { background:#f0fdf4;border-color:#bbf7d0 }.reason-against { background:#fffbeb;border-color:#fde68a }
+    .notice { padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);color:#854d0e;font-size:13px }
+    .status { min-height:22px;font-size:13px;color:var(--muted) }
+    .table-wrap { overflow-x:auto }
+    .range-tabs { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px }
+    .range-tabs .active { background:var(--primary);border-color:var(--primary);color:#fff }
+    .rule-status { font-weight:700 }.rule-effective{color:var(--success)}.rule-candidate{color:var(--warning)}.rule-invalid{color:var(--muted)}
+    @media(max-width:760px){.metrics,.model-grid,.plan-grid,.execution-grid{grid-template-columns:1fr 1fr}.reason-grid{grid-template-columns:1fr}.chart-box{height:260px}}
+    @media(max-width:430px){.metrics,.model-grid,.plan-grid,.execution-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="page"><div class="container">
+  <header class="page-header">
+    <h1>💱 一年期动态换汇优化</h1>
+    <div style="margin-top:10px"><a class="btn btn-ghost" href="/">🏠 返回首页</a></div>
+  </header>
+
+  <section class="card hero">
+    <div class="muted">今日建议兑换</div>
+    <div class="decision"><span id="suggested">--</span> <small style="font-size:.36em">EUR</small></div>
+    <div id="suggested-range">建议区间：--</div>
+    <div class="muted" id="decision-detail" style="margin-top:8px">读取后台最后成功结果…</div>
+  </section>
+
+  <section class="metrics card">
+    <div class="metric"><div class="metric-label">当前 EUR/CNY</div><div class="metric-value" id="current">--</div></div>
+    <div class="metric"><div class="metric-label">兑换强度</div><div class="metric-value" id="intensity">--</div></div>
+    <div class="metric"><div class="metric-label">当前价格位置</div><div class="score" id="attractiveness">--</div><div id="attractiveness-label" class="muted">--</div></div>
+    <div class="metric"><div class="metric-label">执行紧迫度</div><div class="score" id="urgency">--</div><div id="urgency-label" class="muted">--</div></div>
+  </section>
+
+  <section class="metrics card">
+    <div class="metric"><div class="metric-label">剩余需求</div><div class="metric-value" id="remaining">--</div></div>
+    <div class="metric"><div class="metric-label">剩余时间</div><div class="metric-value" id="days-left">--</div></div>
+    <div class="metric"><div class="metric-label">隐含模型准入</div><div class="metric-value" id="model-admission">--</div></div>
+    <div class="metric"><div class="metric-label">模型总调整</div><div class="metric-value" id="model-adjustment">--</div></div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">非线性隐含形态模型</h2>
+    <p class="card-subtitle" id="pattern-status">读取模型结果…</p>
+    <div class="metrics" style="margin-bottom:14px">
+      <div class="metric"><div class="metric-label">20日上涨 / 下跌</div><div class="metric-value" id="pattern-20-prob">--</div><div class="muted" id="pattern-20-range">--</div></div>
+      <div class="metric"><div class="metric-label">60日上涨 / 下跌</div><div class="metric-value" id="pattern-60-prob">--</div><div class="muted" id="pattern-60-range">--</div></div>
+      <div class="metric"><div class="metric-label">20日样本外方向</div><div class="metric-value" id="pattern-20-accuracy">--</div><div class="muted" id="pattern-20-baseline">--</div></div>
+      <div class="metric"><div class="metric-label">60日样本外方向</div><div class="metric-value" id="pattern-60-accuracy">--</div><div class="muted" id="pattern-60-baseline">--</div></div>
+    </div>
+    <p class="muted">模型将EUR/CNY、EUR/USD和USD/CNY过去60日联合走势压缩为16维非线性隐空间，并从历史中寻找50个相似但不重叠的形态。只有滚动样本外验证超过简单基准时才允许影响建议。</p>
+    <div class="chart-box" style="height:260px;margin:12px 0"><canvas id="pattern-chart"></canvas></div>
+    <h3 class="section-title">最相似的历史形态</h3>
+    <div class="table-wrap"><table class="table"><thead><tr><th>历史日期</th><th>当时汇率</th><th>隐空间距离</th><th>随后20日</th><th>随后60日</th></tr></thead><tbody id="matches-body"><tr><td colspan="5">加载中…</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">为什么是这个金额</h2>
+    <div class="reason-grid">
+      <div class="reason-box reason-for"><h3>支持现在多换</h3><ul id="reasons-for"><li>--</li></ul></div>
+      <div class="reason-box reason-against"><h3>支持继续等待</h3><ul id="reasons-against"><li>--</li></ul></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">历史汇率与模型指标</h2><p class="card-subtitle" id="data-date">加载数据…</p>
+    <div class="range-tabs" id="range-tabs">
+      <button class="btn btn-sm active" type="button" data-range="3m">过去3个月</button>
+      <button class="btn btn-sm" type="button" data-range="6m">过去6个月</button>
+      <button class="btn btn-sm" type="button" data-range="1y">过去1年</button>
+    </div>
+    <div class="chart-box"><canvas id="rate-chart"></canvas></div>
+    <p class="muted" style="font-size:13px;margin-bottom:0">绿色点表示经过样本外验证的周期性低价窗口，红色点表示周期性高价风险；没有标记代表没有足够可靠的规律。</p>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">周期规律发现</h2>
+    <p class="card-subtitle" id="seasonality-summary">读取后台周期报告…</p>
+    <div class="metrics" style="margin-bottom:14px">
+      <div class="metric"><div class="metric-label">有效规律</div><div class="metric-value" id="effective-count">--</div></div>
+      <div class="metric"><div class="metric-label">候选规律</div><div class="metric-value" id="candidate-count">--</div></div>
+      <div class="metric"><div class="metric-label">失效规律</div><div class="metric-value" id="invalid-count">--</div></div>
+      <div class="metric"><div class="metric-label">当前月内交易日</div><div class="metric-value" id="month-trading-day">--</div></div>
+    </div>
+    <h3 class="section-title">当前正在生效</h3><div id="active-rules" class="muted">暂无通过验证且当前生效的规律</div>
+    <h3 class="section-title" style="margin-top:18px">证据最强的规律</h3>
+    <div class="table-wrap"><table class="table"><thead><tr><th>规律</th><th>状态</th><th>方向</th><th>样本</th><th>样本外命中率</th><th>样本外平均幅度</th><th>FDR q值</th></tr></thead><tbody id="rules-body"><tr><td colspan="7">加载中…</td></tr></tbody></table></div>
+    <h3 class="section-title" style="margin-top:18px">年度低点最常出现月份</h3><div id="low-months" class="muted">--</div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">当前市场描述</h2><p class="card-subtitle">以下指标只描述当前价格和波动，不参与周期版建议金额。</p>
+    <div class="model-grid">
+      <div class="model"><h3>估值 · OU近似</h3><div class="model-main" id="valuation">--</div><div class="muted" id="valuation-note"></div></div>
+      <div class="model"><h3>波动 · EWMA</h3><div class="model-main" id="volatility">--</div><div class="muted">年化波动率；GARCH待接入</div></div>
+      <div class="model"><h3>趋势 · 状态近似</h3><div class="model-main" id="regime">--</div><div class="muted" id="trend-note">HMM待接入</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">换汇计划</h2><p class="card-subtitle">保存后由computation.service在一分钟内重算。</p>
+    <form id="plan-form"><div class="plan-grid">
+      <label>目标金额<input class="input" id="target" type="number" min="1" step="100" required></label>
+      <label>已经兑换<input class="input" id="purchased" type="number" min="0" step="50" required></label>
+      <label>计划开始<input class="input" id="start-date" type="date" required></label>
+      <label>完成期限<input class="input" id="deadline" type="date" required></label>
+      <label>人民币年化收益<input class="input" id="yield" type="number" step="0.1" required></label>
+    </div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" type="submit">保存计划</button><span class="status" id="save-status"></span></div></form>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">确认实际兑换</h2><p class="card-subtitle">只有实际成交后才记录，记录后自动更新剩余需求。</p>
+    <form id="execution-form"><div class="execution-grid">
+      <label>兑换欧元<input class="input" id="execution-eur" type="number" min="0.01" step="50" required></label>
+      <label>实际成交汇率<input class="input" id="execution-rate" type="number" min="0.0001" step="0.0001" required></label>
+      <label>成交时间<input class="input" id="execution-time" type="datetime-local"></label>
+      <label>备注<input class="input" id="execution-note" type="text" maxlength="120"></label>
+    </div><div class="toolbar" style="margin-top:12px"><button class="btn btn-primary" type="submit">确认已兑换</button><span class="status" id="execution-status"></span></div></form>
+    <div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>时间</th><th>欧元</th><th>汇率</th><th>人民币</th><th>备注</th></tr></thead><tbody id="execution-body"><tr><td colspan="5">暂无记录</td></tr></tbody></table></div>
+  </section>
+
+  <section class="card"><h2 class="card-title">后台计算状态</h2><div id="computation-status" class="muted">加载中…</div></section>
+  <div class="notice">当前为模型研究版。只有通过滚动样本外验证并超过简单基准的隐含模型，或通过多重检验修正的周期规律，才会影响建议；未通过结果仅展示。建议不构成投资建议。</div>
+</div></main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+let rateChart;
+let patternChart;
+let currentRange='3m';
+let seasonalityData=null;
+const $=id=>document.getElementById(id), set=(id,v)=>$(id).textContent=v;
+const num=v=>Number(v).toLocaleString('zh-CN',{maximumFractionDigits:2});
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const list=(id,items)=>$(id).innerHTML=(items.length?items:['暂无']).map(x=>`<li>${esc(x)}</li>`).join('');
+
+async function loadDashboard(){
+  const [ar,er,sr,sear,pr]=await Promise.all([fetch('/api/exchange/analysis'),fetch('/api/exchange/executions'),fetch('/api/exchange/computation_status'),fetch('/api/exchange/seasonality'),fetch('/api/exchange/pattern_model')]);
+  const a=await ar.json(), executions=await er.json(), status=await sr.json(), seasonality=await sear.json(), pattern=await pr.json();
+  if(!ar.ok) throw new Error(a.error||'分析加载失败');
+  if(!sear.ok) throw new Error(seasonality.error||'周期报告加载失败');
+  if(!pr.ok) throw new Error(pattern.error||'隐含形态模型加载失败');
+  seasonalityData=seasonality;
+  set('suggested',num(a.decision.suggested_eur));
+  set('suggested-range',`建议区间：${num(a.decision.suggested_range_eur.min)}–${num(a.decision.suggested_range_eur.max)} EUR`);
+  set('decision-detail',`预计使用 ¥${num(a.decision.estimated_cny)} · 常规月度基准 ${num(a.decision.baseline_monthly_eur)} EUR · ${a.decision.multiplier}倍`);
+  set('current',a.market.current.toFixed(4));set('intensity',a.decision.intensity_label);
+  set('attractiveness',`${a.scores.attractiveness}/100`);set('attractiveness-label','仅表示相对历史位置');
+  set('urgency',`${a.scores.urgency}/100`);set('urgency-label',a.scores.urgency_label);
+  set('remaining',`${num(a.plan.remaining_eur)} EUR`);set('days-left',`${a.plan.days_left}天`);
+  set('model-admission',a.decision.pattern_model_approved?'已通过':'未通过');set('model-adjustment',`${a.decision.total_model_adjustment_pct>0?'+':''}${a.decision.total_model_adjustment_pct}%`);
+  list('reasons-for',a.decision.reasons_for);list('reasons-against',a.decision.reasons_against);
+  set('valuation',a.market.percentile<=35?'相对便宜':a.market.percentile>=65?'相对偏贵':'中性区间');
+  set('valuation-note',`历史第${a.market.percentile}百分位，均衡值${a.market.equilibrium}`);
+  set('volatility',`${a.market.annualized_volatility_pct}%`);set('regime',a.market.regime);set('trend-note',`趋势差${a.market.trend_pct}% · HMM待接入`);
+  set('data-date',`数据截至${a.as_of||'--'} · 历史样本${a.method.history_days}个交易日`);
+  $('target').value=a.plan.target_eur;$('purchased').value=a.plan.purchased_eur;$('start-date').value=a.plan.start_date;$('deadline').value=a.plan.deadline;$('yield').value=a.plan.cny_yield;$('execution-rate').value=a.market.current;
+  $('execution-body').innerHTML=executions.data.length?executions.data.map(x=>`<tr><td>${esc(x.executed_at)}</td><td>${num(x.eur_amount)}</td><td>${Number(x.rate).toFixed(4)}</td><td>¥${num(x.cny_amount)}</td><td>${esc(x.note)}</td></tr>`).join(''):'<tr><td colspan="5">暂无记录</td></tr>';
+  $('computation-status').innerHTML=status.data.length?status.data.map(x=>`<div><b>${esc(x.name)}</b> · ${esc(x.status)} · 上次成功 ${esc(x.last_success_at||'--')} · 耗时 ${x.duration_seconds==null?'--':Number(x.duration_seconds).toFixed(2)+'秒'}${x.last_error?' · '+esc(x.last_error):''}</div>`).join(''):'computation.service尚未运行';
+  renderSeasonality(seasonality);
+  renderPattern(pattern);
+  await loadHistory(currentRange);
+}
+
+function renderPattern(data){
+  set('pattern-status',`${data.model.type} · ${data.status} · 更新于${data.generated_at}`);
+  ['20','60'].forEach(horizon=>{
+    const forecast=data.forecast[horizon], metric=data.walk_forward.metrics[horizon];
+    set(`pattern-${horizon}-prob`,forecast?`${forecast.up_probability_pct}% / ${forecast.down_probability_pct}%`:'--');
+    set(`pattern-${horizon}-range`,forecast?`P10–P90：${forecast.rate_quantiles.p10}–${forecast.rate_quantiles.p90}`:'样本不足');
+    set(`pattern-${horizon}-accuracy`,metric?`${metric.direction_accuracy_pct}%`:'--');
+    set(`pattern-${horizon}-baseline`,metric?`模型误差${metric.model_mae_pct}% · 不变基准${metric.unchanged_baseline_mae_pct}% · ${metric.approved?'通过':'未通过'}`:'--');
+  });
+  $('matches-body').innerHTML=data.forecast.matches.length?data.forecast.matches.map(item=>`<tr><td>${esc(item.date)}</td><td>${Number(item.rate).toFixed(4)}</td><td>${item.distance}</td><td>${item.change_20d_pct==null?'--':item.change_20d_pct+'%'}</td><td>${item.change_60d_pct==null?'--':item.change_60d_pct+'%'}</td></tr>`).join(''):'<tr><td colspan="5">没有足够的相似历史形态</td></tr>';
+  const current=Number($('current').textContent), f20=data.forecast['20'], f60=data.forecast['60'];
+  if(patternChart)patternChart.destroy();
+  patternChart=new Chart($('pattern-chart'),{type:'line',data:{labels:['当前','未来20日','未来60日'],datasets:[
+    {label:'预测中位P50',data:[current,f20?.rate_quantiles.p50,f60?.rate_quantiles.p50],borderColor:'#7c3aed',backgroundColor:'#7c3aed',tension:.25},
+    {label:'乐观边界P10',data:[current,f20?.rate_quantiles.p10,f60?.rate_quantiles.p10],borderColor:'#16a34a',borderDash:[6,4],pointRadius:2,tension:.25},
+    {label:'保守边界P90',data:[current,f20?.rate_quantiles.p90,f60?.rate_quantiles.p90],borderColor:'#dc2626',borderDash:[6,4],pointRadius:2,tension:.25}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'隐含形态模型的未来分布（未通过准入时仅供研究）'}}}});
+}
+
+function renderSeasonality(data){
+  set('effective-count',data.effective_rules.length);set('candidate-count',data.candidate_rules.length);set('invalid-count',data.invalid_rules.length);
+  set('month-trading-day',`第${data.current.trading_day_of_month}日`);
+  set('seasonality-summary',`${data.source.first_date}至${data.source.last_date}，${num(data.source.points)}个交易日、${data.source.years}年；前70%发现，后30%样本外验证，FDR修正。`);
+  $('active-rules').innerHTML=data.current.active_rules.length?data.current.active_rules.map(rule=>`<div class="reason-box reason-for" style="margin-bottom:8px"><b>${esc(rule.label)}</b> · 预期${esc(rule.direction)} · 样本外命中率${rule.test.hit_rate_pct}% · 平均幅度${rule.test.mean_pct}%</div>`).join(''):'暂无通过验证且当前生效的规律，周期因素不调整今日金额。';
+  const rules=[...data.effective_rules.slice(0,8),...data.candidate_rules.slice(0,5)];
+  $('rules-body').innerHTML=rules.length?rules.map(rule=>`<tr><td>${esc(rule.label)}</td><td class="rule-status ${rule.status==='有效'?'rule-effective':'rule-candidate'}">${rule.status}</td><td>${rule.direction}</td><td>${rule.all.samples}</td><td>${rule.test.hit_rate_pct}%</td><td>${rule.test.mean_pct}%</td><td>${rule.q_value}</td></tr>`).join(''):'<tr><td colspan="7">没有发现达到展示条件的规律</td></tr>';
+  const lows=[...data.yearly_extremes.low_months].sort((a,b)=>b.count-a.count).slice(0,5);
+  set('low-months',lows.map(item=>`${item.label} ${item.count}/${data.yearly_extremes.years}年`).join(' · '));
+}
+
+async function loadHistory(rangeName){
+  currentRange=rangeName;
+  const response=await fetch(`/api/exchange/history?range=${rangeName}`), data=await response.json();
+  if(!response.ok)throw new Error(data.error||'历史指标加载失败');
+  document.querySelectorAll('#range-tabs button').forEach(button=>button.classList.toggle('active',button.dataset.range===rangeName));
+  set('data-date',`${data.dates[0]||'--'} 至 ${data.dates[data.dates.length-1]||'--'} · 指标更新于 ${data.updated_at||'--'}`);
+  const lowByDate={},highByDate={};
+  (seasonalityData?.historical_signals||[]).forEach(signal=>{if(signal.direction==='低价窗口')lowByDate[signal.date]=signal.rate;else highByDate[signal.date]=signal.rate});
+  if(rateChart)rateChart.destroy();
+  rateChart=new Chart($('rate-chart'),{type:'line',data:{labels:data.dates,datasets:[
+    {label:'EUR/CNY',data:data.eur_cny,borderColor:'#2563eb',backgroundColor:'transparent',pointRadius:0,tension:.18,yAxisID:'rate'},
+    {type:'scatter',label:'周期性低价窗口',data:data.dates.map((date,index)=>lowByDate[date]==null?null:{x:date,y:data.eur_cny[index]}),borderColor:'#16a34a',backgroundColor:'#16a34a',pointRadius:4,yAxisID:'rate'},
+    {type:'scatter',label:'周期性高价风险',data:data.dates.map((date,index)=>highByDate[date]==null?null:{x:date,y:data.eur_cny[index]}),borderColor:'#dc2626',backgroundColor:'#dc2626',pointRadius:4,yAxisID:'rate'}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{x:{ticks:{maxTicksLimit:9}},rate:{type:'linear',position:'left',title:{display:true,text:'EUR/CNY'}}}}});
+}
+
+$('plan-form').addEventListener('submit',async e=>{e.preventDefault();set('save-status','保存中…');const r=await fetch('/api/exchange/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_eur:$('target').value,purchased_eur:$('purchased').value,start_date:$('start-date').value,deadline:$('deadline').value,cny_yield:$('yield').value})});const d=await r.json();set('save-status',r.ok?d.message:`保存失败：${d.error}`)});
+$('execution-form').addEventListener('submit',async e=>{e.preventDefault();set('execution-status','保存中…');const local=$('execution-time').value;const r=await fetch('/api/exchange/executions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eur_amount:$('execution-eur').value,rate:$('execution-rate').value,executed_at:local?new Date(local).toISOString():null,note:$('execution-note').value})});const d=await r.json();set('execution-status',r.ok?d.message:`记录失败：${d.error}`);if(r.ok)await loadDashboard()});
+document.querySelectorAll('#range-tabs button').forEach(button=>button.addEventListener('click',()=>loadHistory(button.dataset.range).catch(error=>set('data-date',`加载失败：${error.message}`))));
+loadDashboard().catch(e=>set('decision-detail',`加载失败：${e.message}。请确认computation.service已经运行。`));
+</script>
+</body></html>

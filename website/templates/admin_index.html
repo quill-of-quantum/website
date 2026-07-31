@@ -75,7 +75,7 @@
         <div id="status_meta" class="muted">连接中...</div>
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px;">
           <div>
-            <h3 style="margin:0 0 6px 0; font-size: 14px;">服务状态</h3>
+            <h3 style="margin:0 0 6px 0; font-size: 14px;">核心服务状态</h3>
             <div id="service_status">加载中...</div>
           </div>
           <div>
@@ -261,10 +261,13 @@
   function renderManagedServiceControls(services) {
     if (!services) return "暂无数据";
     const labels = {
+      computation: "统一计算服务",
       gallery: "Gallery",
+      boardgame: "Boardgame 对战服务",
       tracker: "Tracker 调度器",
       mihomo: "Mihomo 代理",
       frpc: "FRP 隧道",
+      cpolar: "Cpolar 隧道",
       email: "邮件服务"
     };
     return Object.keys(labels).map(key => {
@@ -560,10 +563,13 @@
 
   function toggleManagedService(service, action) {
     const labels = {
+      computation: "统一计算服务",
       gallery: "Gallery",
+      boardgame: "Boardgame 对战服务",
       tracker: "Tracker 调度器",
       mihomo: "Mihomo 代理",
       frpc: "FRP 隧道",
+      cpolar: "Cpolar 隧道",
       email: "邮件服务"
     };
     const label = labels[service] || service;

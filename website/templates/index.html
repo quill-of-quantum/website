@@ -281,8 +281,10 @@
         </div>
       </a>
 
-      <!-- 汇率走势 -->
-      <div class="card">
+      <!-- 汇率走势：保留首页原图，整卡点击进入详细分析 -->
+      <div class="card card-link" role="link" tabindex="0"
+           onclick="window.location.href='/exchange'"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='/exchange'}">
         <h2 class="card-title">💱 汇率走势</h2>
         <div id="exchange-container" style="text-align:center;">
           <p>加载中...</p>

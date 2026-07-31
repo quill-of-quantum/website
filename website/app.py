@@ -18,7 +18,8 @@ time.tzset()
 # ===============================
 app = Flask(__name__)
 app.secret_key = "replace_this_with_a_strong_random_key"  # 请替换为随机长字符串
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 允许最大 500MB 上传
+# 请求体大小由 Nginx 按路由限制；Cloud 使用流式直传并由磁盘余量检查控制。
+app.config['MAX_CONTENT_LENGTH'] = None
 
 # 👇 新增：引入并开启全局 GZIP 压缩
 from flask_compress import Compress
@@ -28,12 +29,13 @@ compress.init_app(app)
 from modules.index.api import (
     collect_system_info,
     register_routes as register_index_routes,
-    start_exchange_rate_refresher,
     start_system_info_collector,
 )
 register_index_routes(app)
-start_exchange_rate_refresher()
 start_system_info_collector()
+
+from modules.exchange.api import bp as exchange_bp
+app.register_blueprint(exchange_bp)
 
 # 访问日志配置
 VISITER_LOG_PATH = "/home/bbdwz/projects/website/logs/visiter.log"

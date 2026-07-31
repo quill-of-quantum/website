@@ -26,6 +26,21 @@
       display: none;
       border-radius: var(--r-lg);
     }
+    .selection-layer {
+      position: absolute;
+      display: none;
+      cursor: crosshair;
+      touch-action: none;
+      user-select: none;
+    }
+    .selection-layer.active { display: block; }
+    .selection-box {
+      position: absolute;
+      border: 2px solid #22c55e;
+      background: rgba(34, 197, 94, 0.15);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
+      pointer-events: none;
+    }
     .placeholder-text {
       color: var(--muted);
       font-size: 0.95rem;
@@ -50,6 +65,11 @@
       font-size: 1.5rem;
       font-weight: bold;
       color: var(--primary);
+    }
+    .result-meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 0.4rem;
     }
     /* 调试步骤图片网格 */
     .debug-grid {
@@ -89,7 +109,7 @@
     <div class="container">
       <div class="page-header">
         <h1>👁️ 视觉测算</h1>
-        <p>嘻嘻～</p>
+        <p>本地识别人数、道路车辆与竹签端面；密集场景会自动切片分析。</p>
       </div>
 
       <div class="card">
@@ -101,6 +121,9 @@
         <div class="preview-container" id="previewBox">
           <span class="placeholder-text" id="placeholderText">请上传图片或拍照...</span>
           <img id="previewImg" src="" alt="预览图">
+          <div class="selection-layer" id="selectionLayer">
+            <div class="selection-box" id="selectionBox" hidden></div>
+          </div>
         </div>
 
         <input type="file" id="imgUpload" accept="image/*" capture="environment">
@@ -109,6 +132,14 @@
           <button class="btn btn-primary tool-btn" label="拍照 / 选择图片" onclick="document.getElementById('imgUpload').click()">
             <span>📸</span>
             <span>拍照 / 选择图片</span>
+          </button>
+          <button class="btn tool-btn" id="btnSelectRoi" disabled onclick="toggleRoiSelection()">
+            <span>✂️</span>
+            <span>框选统计区域</span>
+          </button>
+          <button class="btn btn-ghost tool-btn" id="btnClearRoi" disabled onclick="clearRoi()">
+            <span>↺</span>
+            <span>使用整张图片</span>
           </button>
           <button class="btn tool-btn" disabled title="开发中，敬请期待">
             <span>📑</span>
@@ -121,9 +152,9 @@
         <h2 class="card-title">🧠 本地 AI 分析</h2>
         <div class="tool-group-title">选择检测目标</div>
         <div class="action-buttons">
-          <button class="btn action-btn" id="btnPeople" disabled onclick="analyze('people')">👤 统计人数</button>
-          <button class="btn action-btn" id="btnCars" disabled onclick="analyze('cars')">🚗 统计车辆</button>
-          <button class="btn action-btn" id="btnCircles" disabled onclick="analyze('circles')">🎋 统计竹签</button>
+          <button class="btn action-btn" id="btnPeople" disabled onclick="analyze('people', this)">👤 统计人数</button>
+          <button class="btn action-btn" id="btnCars" disabled onclick="analyze('cars', this)">🚗 统计车辆</button>
+          <button class="btn action-btn" id="btnCircles" disabled onclick="analyze('circles', this)">🎋 统计竹签端面</button>
         </div>
       </div>
 
@@ -132,6 +163,7 @@
         <p style="font-size: 1.1rem; margin-top: 0.5rem;">
           检测到的数量: <span class="result-badge" id="resultCount">0</span>
         </p>
+        <p class="result-meta" id="resultMeta"></p>
       </div>
 
       <div class="card" id="debugCard" hidden>
@@ -150,6 +182,13 @@
     const placeholderText = document.getElementById('placeholderText');
     const resultCard = document.getElementById('resultCard');
     const resultCount = document.getElementById('resultCount');
+    const selectionLayer = document.getElementById('selectionLayer');
+    const selectionBox = document.getElementById('selectionBox');
+    const btnSelectRoi = document.getElementById('btnSelectRoi');
+    const btnClearRoi = document.getElementById('btnClearRoi');
+    let selectedRoi = null;
+    let dragStart = null;
+    let originalImageSrc = '';
     
     // 需要在图片上传后激活的按钮
     const actionBtns = [
@@ -166,10 +205,12 @@
       // 1. 本地预览
       const reader = new FileReader();
       reader.onload = function(e) {
+        originalImageSrc = e.target.result;
         previewImg.src = e.target.result;
         previewImg.style.display = 'block';
         placeholderText.style.display = 'none';
-        resultCard.hidden = true; // 换了新图，隐藏旧结果
+      resultCard.hidden = true; // 换了新图，隐藏旧结果
+        clearRoi();
       }
       reader.readAsDataURL(file);
 
@@ -189,24 +230,99 @@
         });
         const data = await res.json();
         
-        if (data.image_id) {
+        if (res.ok && data.image_id) {
           currentImageId = data.image_id;
           // 上传成功，展示预览，激活按钮
           previewImg.style.display = 'block';
           placeholderText.style.display = 'none';
           actionBtns.forEach(btn => btn.disabled = false);
+          btnSelectRoi.disabled = false;
+        } else {
+          throw new Error(data.error || '上传失败');
         }
       } catch (err) {
-        alert("上传失败，请检查网络或后端日志");
+        alert(err.message || "上传失败，请检查网络或后端日志");
         placeholderText.textContent = "上传失败";
       }
     });
 
+    function syncSelectionLayer() {
+      if (!previewImg.clientWidth || !previewImg.clientHeight) return;
+      selectionLayer.style.left = `${previewImg.offsetLeft}px`;
+      selectionLayer.style.top = `${previewImg.offsetTop}px`;
+      selectionLayer.style.width = `${previewImg.clientWidth}px`;
+      selectionLayer.style.height = `${previewImg.clientHeight}px`;
+    }
+
+    function toggleRoiSelection() {
+      const activate = !selectionLayer.classList.contains('active');
+      if (activate && originalImageSrc && previewImg.src !== originalImageSrc) {
+        previewImg.src = originalImageSrc;
+        resultCard.hidden = true;
+      }
+      requestAnimationFrame(() => {
+        syncSelectionLayer();
+        selectionLayer.classList.toggle('active', activate);
+        btnSelectRoi.classList.toggle('btn-primary', activate);
+      });
+    }
+
+    function clearRoi() {
+      selectedRoi = null;
+      dragStart = null;
+      selectionBox.hidden = true;
+      btnClearRoi.disabled = true;
+    }
+
+    function layerPoint(event) {
+      const rect = selectionLayer.getBoundingClientRect();
+      return {
+        x: Math.min(rect.width, Math.max(0, event.clientX - rect.left)),
+        y: Math.min(rect.height, Math.max(0, event.clientY - rect.top)),
+        width: rect.width,
+        height: rect.height
+      };
+    }
+
+    selectionLayer.addEventListener('pointerdown', event => {
+      dragStart = layerPoint(event);
+      selectionLayer.setPointerCapture(event.pointerId);
+      selectionBox.hidden = false;
+    });
+    selectionLayer.addEventListener('pointermove', event => {
+      if (!dragStart) return;
+      const point = layerPoint(event);
+      const left = Math.min(dragStart.x, point.x);
+      const top = Math.min(dragStart.y, point.y);
+      const width = Math.abs(point.x - dragStart.x);
+      const height = Math.abs(point.y - dragStart.y);
+      Object.assign(selectionBox.style, {
+        left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`
+      });
+    });
+    selectionLayer.addEventListener('pointerup', event => {
+      if (!dragStart) return;
+      const point = layerPoint(event);
+      const left = Math.min(dragStart.x, point.x);
+      const top = Math.min(dragStart.y, point.y);
+      const width = Math.abs(point.x - dragStart.x);
+      const height = Math.abs(point.y - dragStart.y);
+      dragStart = null;
+      if (width < 12 || height < 12) return clearRoi();
+      selectedRoi = {
+        x: left / point.width, y: top / point.height,
+        width: width / point.width, height: height / point.height
+      };
+      btnClearRoi.disabled = false;
+      selectionLayer.classList.remove('active');
+      btnSelectRoi.classList.remove('btn-primary');
+    });
+    window.addEventListener('resize', syncSelectionLayer);
+
     // 触发分析
-    async function analyze(targetType) {
+    async function analyze(targetType, btn) {
       if (!currentImageId) return;
 
-      const btn = event.currentTarget;
       const originalText = btn.innerHTML;
       btn.innerHTML = '⏳ 计算中...';
       actionBtns.forEach(b => b.disabled = true);
@@ -216,7 +332,7 @@
         const res = await fetch('/api/vision/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_id: currentImageId, target: targetType })
+          body: JSON.stringify({ image_id: currentImageId, target: targetType, roi: selectedRoi })
         });
         const data = await res.json();
 
@@ -226,6 +342,12 @@
           // 1. 更新主结果图和数量
           previewImg.src = data.image_base64;
           resultCount.textContent = data.count;
+          const details = data.details || {};
+          document.getElementById('resultMeta').textContent = details.roi_applied
+            ? '已仅分析框选区域；结果图显示该区域'
+            : details.tiles
+            ? `已进行 ${details.tiles} 个局部切片并合并去重`
+            : (targetType === 'circles' ? '绿色圆圈为已计入的可见竹签端面' : '框上数字为去重后的目标编号');
           resultCard.hidden = false;
 
           // 2. 渲染过程调试图片

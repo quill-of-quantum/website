@@ -22,8 +22,14 @@
   - boardgame.io Server（内部端口 `8000`）
 - **tracker_scheduler.service**
   - 物流追踪后台调度
+- **computation.service**
+  - 统一后台计算调度器；当前注册汇率采集与换汇分析任务
 - **email-service.service**
   - 独立 Spring Boot 邮件服务（内部端口 `8081`，由 `modules/mail/` 转发调用）
+
+管理员页面仅在“核心服务状态”展示 `website` 和 `nginx`，避免从网页关闭自身入口；
+`boardgame`、`tracker_scheduler`、`computation`、`email-service`、`gallery`、`frpc`、
+`cpolar` 与 `mihomo` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。
 
 Nginx 反代：
 - `/` → Flask（`/home/bbdwz/website.sock`）
@@ -47,6 +53,7 @@ Nginx 反代：
 - `/garden` 与 `/garden/<garden_id>`：菜地记录页面（`templates/garden.html`）
 - `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
 - `/aurora/`：极光信息页面（`templates/aurora.html`）
+- `/exchange`：一年期动态换汇优化与汇率监控（`templates/exchange.html`）
 - `/mail`：手动发送邮件页面（`templates/mail.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
@@ -62,6 +69,8 @@ Nginx 反代：
 ├── app.py                        # Flask 主入口（初始化与注册模块）
 ├── modules/                      # 后端功能模块
 │   ├── index/api.py              # 首页与首页数据接口
+│   ├── exchange/                 # 汇率数据、分析、换汇计划与缓存
+│   ├── computation/              # 统一后台计算任务注册、调度与运行状态
 │   ├── admin/api.py              # 管理后台
 │   ├── nas/api.py                # 局域网 USB 硬盘 Samba 共享
 │   ├── auth/api.py               # 登录状态与登录/退出
@@ -209,6 +218,17 @@ success 是 true
   - `append_reading`：写入暖气读数，触发 `modules/weather/analyze.py`
   - `get_latest`：获取最新读数
 
+### 换汇预判
+- `GET /exchange`：一年期动态换汇优化页面
+- `GET /api/exchange_rate`：首页与详情页汇率数据（兼容原接口）
+- `GET /api/exchange/analysis`：读取后台最后一次成功的分析快照
+- `GET /api/exchange/history?range=3m|6m|1y`：读取历史汇率与模型指标曲线
+- `GET /api/exchange/seasonality`：读取周期规律、样本外验证和年度高低点统计
+- `GET /api/exchange/pattern_model`：读取非线性隐空间形态预测与滚动验证结果
+- `GET / POST /api/exchange/plan`：读取或更新换汇目标
+- `GET / POST /api/exchange/executions`：读取或确认实际兑换记录
+- `GET /api/exchange/computation_status`：汇率后台任务状态
+
 ### 天气/能耗图表
 - `GET /weather/<filename>`：天气/能耗 CSV 或 SVG 文件
 - `GET /weather_chart/<filename>`：兼容旧图表 URL
@@ -221,6 +241,8 @@ success 是 true
 - `POST /api/cloud/clean_thumbnails`：清理孤立缩略图（需登录）
 - `GET /uploads/<filename>`：直链访问上传文件
 - `GET /thumbnails/<filename>`：直链访问缩略图
+
+云盘上传会在开始前检查磁盘空间，确保上传完成后仍至少保留5GB可用空间。网页关闭或刷新会中断当前上传；再次上传时将从头开始。
 
 ### 工具
 - `GET /clipboard`：剪贴板页面
