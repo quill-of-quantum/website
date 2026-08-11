@@ -32,9 +32,14 @@
       height: auto;
       border-radius: 8px;
     }
-    #exchange-container canvas {
-      width: 100% !important;
-      height: 220px !important;
+    #exchange-container .exchange-svg-chart {
+      width: 100%;
+      height: 220px;
+    }
+    #exchange-container .exchange-svg-chart .svg-line-chart {
+      display: block;
+      width: 100%;
+      height: 220px;
     }
     /* 工具分组标题 */
     .tool-group-title {
@@ -375,6 +380,7 @@
   <script src="/static/js/situation/maps.js"></script>
 
   <!-- JS 脚本 -->
+  <script src="/static/js/svg_line_chart.js"></script>
   <script>
     let situationLeafletMap = null;
     let situationLeafletMarker = null;
@@ -886,11 +892,11 @@
         container.innerHTML = `
           <div class="chart-grid">
             <div class="chart-item">
-              <canvas id="exchangeChartEur" height="180"></canvas>
+              <div id="exchangeChartEur" class="exchange-svg-chart"></div>
               <div id="exchange-stats-eur" style="margin-top:0.4rem; font-size:0.9rem; line-height:1.4;"></div>
             </div>
             <div class="chart-item">
-              <canvas id="exchangeChartUsd" height="180"></canvas>
+              <div id="exchangeChartUsd" class="exchange-svg-chart"></div>
               <div id="exchange-stats-usd" style="margin-top:0.4rem; font-size:0.9rem; line-height:1.4;"></div>
             </div>
           </div>
@@ -902,79 +908,46 @@
           return dateStr.slice(5);
         }
 
-        function buildChart(canvasId, label, series, minIdx, maxIdx, lineColor) {
+        function buildChart(canvasId, label, dates, series, minIdx, maxIdx, lineColor) {
           const pointRadius = series.map((_, i) => (i === minIdx || i === maxIdx ? 4 : 0));
           const pointColor = series.map((_, i) => (i === maxIdx ? "#e74c3c" : (i === minIdx ? "#2ecc71" : lineColor)));
-
-          const minMaxLabelPlugin = {
-            id: `minMaxLabel-${canvasId}`,
-            afterDatasetsDraw(chart) {
-              const ctx = chart.ctx;
-              ctx.save();
-              ctx.font = "12px sans-serif";
-              ctx.textBaseline = "middle";
-
-              function drawLabel(idx, labelText, color) {
-                const meta = chart.getDatasetMeta(0);
-                const point = meta.data[idx];
-                if (!point) return;
-                ctx.fillStyle = color;
-                const value = chart.data.datasets[0].data[idx];
-                ctx.fillText(`${labelText} ${value.toFixed(4)}`, point.x + 6, point.y - 8);
-              }
-
-              drawLabel(maxIdx, "Max", "#e74c3c");
-              drawLabel(minIdx, "Min", "#2ecc71");
-              ctx.restore();
-            }
-          };
-
-          const ctx = document.getElementById(canvasId).getContext("2d");
-          new Chart(ctx, {
-            type: "line",
-            data: {
-              labels: data.dates.map(formatDateNoYear),
-              datasets: [
-                {
-                  label,
-                  data: series,
-                  borderColor: lineColor,
-                  backgroundColor: "rgba(0,0,0,0)",
-                  tension: 0.25,
-                  pointRadius,
-                  pointBackgroundColor: pointColor,
-                  pointBorderColor: pointColor
-                }
-              ]
-            },
-            options: {
-              responsive: true,
-              interaction: { mode: "index", intersect: false },
-              plugins: {
-                legend: { position: "bottom" },
-                tooltip: {
-                  callbacks: {
-                    title: (items) => formatDateNoYear(data.dates[items[0].dataIndex])
-                  }
-                }
-              },
-              scales: {
-                x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }
-              }
-            },
-            plugins: [minMaxLabelPlugin]
+          SvgLineChart.render(canvasId, {
+            height: 250,
+            ariaLabel: `${label}最近180天汇率`,
+            labels: dates.map(formatDateNoYear),
+            maxXTicks: 8,
+            yLabel: label.replace(/[^A-Z/]/g, ''),
+            formatY: value => Number(value).toFixed(4),
+            tooltip: ({index, value}) => `${dates[index]}：${Number(value).toFixed(4)}`,
+            datasets: [{label, data: series, color: lineColor, pointRadius, pointColors: pointColor}],
+            annotations: [
+              {index: maxIdx, value: series[maxIdx], label: `Max ${series[maxIdx].toFixed(4)}`, color: '#e74c3c'},
+              {index: minIdx, value: series[minIdx], label: `Min ${series[minIdx].toFixed(4)}`, color: '#2ecc71'}
+            ]
           });
         }
 
-        const eurStats = data.stats?.eur || {};
-        const usdStats = data.stats?.usd || {};
-        const eurMinIdx = eurStats.min_idx ?? 0;
-        const eurMaxIdx = eurStats.max_idx ?? 0;
-        const usdMinIdx = usdStats.min_idx ?? 0;
-        const usdMaxIdx = usdStats.max_idx ?? 0;
+        const lastDate = new Date(`${data.dates[data.dates.length - 1]}T00:00:00`);
+        const cutoffDate = new Date(lastDate);
+        cutoffDate.setDate(cutoffDate.getDate() - 179);
+        const cutoff = cutoffDate.toISOString().slice(0, 10);
+        const startIndex = Math.max(0, data.dates.findIndex(date => date >= cutoff));
+        const dates180 = data.dates.slice(startIndex);
+        const eur180 = data.eur_cny.slice(startIndex).map(Number);
+        const usd180 = data.usd_cny.slice(startIndex).map(Number);
 
-        buildChart("exchangeChartEur", "🇪🇺 EUR/CNY 🇨🇳", data.eur_cny, eurMinIdx, eurMaxIdx, "rgba(54, 162, 235, 0.9)");
-        buildChart("exchangeChartUsd", "🇺🇸 USD/CNY 🇨🇳", data.usd_cny, usdMinIdx, usdMaxIdx, "rgba(75, 192, 192, 0.9)");
+        function calculateStats(series, dates) {
+          const min = Math.min(...series);
+          const max = Math.max(...series);
+          const minIdx = series.indexOf(min);
+          const maxIdx = series.indexOf(max);
+          return {min, max, min_idx:minIdx, max_idx:maxIdx, min_date:dates[minIdx], max_date:dates[maxIdx]};
+        }
+
+        const eurStats = calculateStats(eur180, dates180);
+        const usdStats = calculateStats(usd180, dates180);
+        buildChart("exchangeChartEur", "🇪🇺 EUR/CNY 🇨🇳", dates180, eur180, eurStats.min_idx, eurStats.max_idx, "#369fdc");
+        buildChart("exchangeChartUsd", "🇺🇸 USD/CNY 🇨🇳", dates180, usd180, usdStats.min_idx, usdStats.max_idx, "#2eb8ad");
 
         function renderStats(elId, label, stats, nowVal) {
           const minVal = stats.min ?? 0;
@@ -1010,8 +983,8 @@
           `;
         }
 
-        const eurNow = (data.latest_eur ?? data.eur_cny[data.eur_cny.length - 1]) || 0;
-        const usdNow = (data.latest_usd ?? data.usd_cny[data.usd_cny.length - 1]) || 0;
+        const eurNow = eur180[eur180.length - 1] || 0;
+        const usdNow = usd180[usd180.length - 1] || 0;
         renderStats("exchange-stats-eur", "🇪🇺 EUR/CNY 🇨🇳", eurStats, eurNow);
         renderStats("exchange-stats-usd", "🇺🇸 USD/CNY 🇨🇳", usdStats, usdNow);
       } catch {

@@ -1207,8 +1207,8 @@
                   最高海拔: <span id="max_ele_val" style="font-weight: bold; color: #e53e3e;">--</span> m
                 </div>
               </div>
-              <div style="position: relative; width: 100%; height: 200px;">
-                <canvas id="elevationChart"></canvas>
+              <div style="position: relative; width: 100%; height: 300px;">
+                <div id="elevationChart" style="width: 100%; height: 100%;"></div>
               </div>
             </div>
             
@@ -1508,6 +1508,8 @@ function resetRouteResults() {
     window.elevationChartInstance.destroy();
     window.elevationChartInstance = null;
   }
+  const elevationChart = document.getElementById('elevationChart');
+  if (elevationChart) elevationChart.innerHTML = '';
 
   const favoriteIcon = document.getElementById('favoriteIcon');
   const favoriteText = document.getElementById('favoriteText');
@@ -2226,9 +2228,6 @@ async function calculateRoute() {
     const t_geo_start = performance.now();
     
     const getGeocodeTask = async (val, inputEl, label) => {
-      if (inputEl && inputEl.dataset.coords && inputEl.value === val) {
-        return { status: "ok", coords: inputEl.dataset.coords, name: val };
-      }
       return await geocodeAddress(val);
     };
 
@@ -2590,18 +2589,161 @@ function displayStepsList(steps) {
   }).join('');
 }
 
+function formatDuration(minutes) {
+  const value = Number(minutes) || 0;
+  if (value >= 60) {
+    const hours = Math.floor(value / 60);
+    const mins = Math.floor(value % 60);
+    return `${hours}小时${mins}分钟`;
+  }
+  return `${Math.floor(value)}分钟`;
+}
+
+function renderElevationSvg(elevation) {
+  const container = document.getElementById('elevationChart');
+  const profile = (elevation.profile || [])
+    .map(pt => ({ x: Number(pt.distance_km), y: Number(pt.ele) }))
+    .filter(pt => Number.isFinite(pt.x) && Number.isFinite(pt.y));
+  if (!container || profile.length === 0) return;
+
+  const width = Math.max(520, Math.round(container.clientWidth || 760));
+  const height = 300;
+  const margin = { left: 48, right: 16, top: 96, bottom: 30 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const xMax = Math.max(...profile.map(pt => pt.x), 0.01);
+  const rawMinY = Math.min(...profile.map(pt => pt.y));
+  const rawMaxY = Math.max(...profile.map(pt => pt.y));
+  const yPadding = Math.max(10, (rawMaxY - rawMinY) * 0.08);
+  const yMin = rawMinY - yPadding;
+  const yMax = rawMaxY + yPadding;
+  const sx = value => margin.left + (Math.max(0, Math.min(xMax, Number(value))) / xMax) * plotWidth;
+  const sy = value => margin.top + (1 - (Number(value) - yMin) / (yMax - yMin || 1)) * plotHeight;
+  const escapeXml = value => String(value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  })[char]);
+  const shortDuration = minutes => {
+    const rounded = Math.max(0, Math.round(Number(minutes) || 0));
+    return rounded >= 60 ? `${Math.floor(rounded / 60)}时${rounded % 60}分` : `${rounded}分`;
+  };
+
+  function distributeLabels(items) {
+    const laneRightEdges = [];
+    [...items].sort((a, b) => a.target - b.target).forEach(item => {
+      const leftEdge = item.target - item.width / 2;
+      let lane = laneRightEdges.findIndex(rightEdge => leftEdge >= rightEdge + 4);
+      if (lane === -1) {
+        lane = laneRightEdges.length;
+        laneRightEdges.push(-Infinity);
+      }
+      item.lane = lane;
+      item.center = item.target;
+      laneRightEdges[lane] = item.target + item.width / 2;
+    });
+    return items;
+  }
+
+  const segments = (elevation.segments || []).map((segment, index) => {
+    const startX = sx(segment.start_distance_km);
+    const endX = sx(segment.end_distance_km);
+    const text = shortDuration(segment.duration_min);
+    return {
+      ...segment, index, startX, endX, text,
+      target: (startX + endX) / 2,
+      width: Math.max(28, text.length * 11 + 10)
+    };
+  }).filter(segment => segment.endX > segment.startX);
+  distributeLabels(segments);
+
+  const waypointLabels = (elevation.waypoints || []).map((waypoint, index) => {
+    const fullName = String(waypoint.name || `途经点 ${index + 1}`);
+    const shownName = fullName.length > 10 ? `${fullName.slice(0, 9)}…` : fullName;
+    return {
+      ...waypoint, index, fullName, shownName,
+      target: sx(waypoint.distance_km),
+      width: Math.min(128, Math.max(42, shownName.length * 12 + 10))
+    };
+  });
+  distributeLabels(waypointLabels);
+
+  const linePath = profile.map((pt, index) =>
+    `${index === 0 ? 'M' : 'L'} ${sx(pt.x).toFixed(2)} ${sy(pt.y).toFixed(2)}`
+  ).join(' ');
+  const areaPath = `${linePath} L ${sx(profile[profile.length - 1].x).toFixed(2)} ${margin.top + plotHeight} L ${sx(profile[0].x).toFixed(2)} ${margin.top + plotHeight} Z`;
+
+  let gridSvg = '';
+  for (let index = 0; index <= 4; index++) {
+    const yValue = yMin + (yMax - yMin) * index / 4;
+    const y = sy(yValue);
+    gridSvg += `<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#e2e8f0"/>`;
+    gridSvg += `<text x="${margin.left - 7}" y="${y + 4}" text-anchor="end" class="axis-label">${Math.round(yValue)}</text>`;
+  }
+  for (let index = 0; index <= 5; index++) {
+    const xValue = xMax * index / 5;
+    const x = sx(xValue);
+    gridSvg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${margin.top + plotHeight}" stroke="#edf2f7"/>`;
+    gridSvg += `<text x="${x}" y="${height - 8}" text-anchor="middle" class="axis-label">${xValue.toFixed(xMax < 10 ? 1 : 0)}km</text>`;
+  }
+
+  const segmentsSvg = segments.map(segment => {
+    const labelY = 48 + segment.lane * 14;
+    const bracketY = margin.top - 5;
+    return `
+      <g class="duration-annotation">
+        <title>${escapeXml(segment.start_name)} → ${escapeXml(segment.end_name)}：${escapeXml(formatDuration(Number(segment.duration_min) || 0))}</title>
+        <path d="M ${segment.startX} ${bracketY + 5} V ${bracketY} H ${segment.endX} V ${bracketY + 5}" fill="none" stroke="#718096"/>
+        <line x1="${segment.target}" y1="${bracketY}" x2="${segment.target}" y2="${labelY + 7}" stroke="#a0aec0"/>
+        <rect x="${segment.center - segment.width / 2}" y="${labelY - 7}" width="${segment.width}" height="14" rx="7" fill="white" stroke="#cbd5e0"/>
+        <text x="${segment.center}" y="${labelY + 4}" text-anchor="middle" class="duration-label">${escapeXml(segment.text)}</text>
+      </g>`;
+  }).join('');
+
+  const waypointsSvg = waypointLabels.map(waypoint => {
+    const labelY = 11 + waypoint.lane * 15;
+    const pointX = sx(waypoint.distance_km);
+    const pointY = sy(waypoint.ele);
+    return `
+      <g class="waypoint-annotation">
+        <title>${escapeXml(waypoint.fullName)} · ${Number(waypoint.distance_km).toFixed(2)}km · 海拔${Math.round(Number(waypoint.ele))}m</title>
+        <rect x="${waypoint.center - waypoint.width / 2}" y="${labelY - 8}" width="${waypoint.width}" height="15" rx="3" fill="white" fill-opacity=".94"/>
+        <text x="${waypoint.center}" y="${labelY + 3}" text-anchor="middle" class="waypoint-label">${escapeXml(waypoint.shownName)}</text>
+        <path d="M ${pointX} ${labelY + 7} V ${pointY - 7}" fill="none" stroke="#e53e3e" stroke-width="1.4" stroke-dasharray="4 3"/>
+        <path d="M ${pointX} ${pointY} l -4 -8 h 8 Z" fill="#e53e3e"/>
+      </g>`;
+  }).join('');
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="100%" role="img" aria-label="路线海拔、途经点和分段用时矢量图" xmlns="http://www.w3.org/2000/svg">
+      <title>路线海拔与坡度剖面</title>
+      <defs>
+        <linearGradient id="elevationStroke" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff0000"/><stop offset="22%" stop-color="#ffb000"/>
+          <stop offset="43%" stop-color="#00b83f"/><stop offset="65%" stop-color="#00bde3"/>
+          <stop offset="82%" stop-color="#2455ff"/><stop offset="100%" stop-color="#8b00ff"/>
+        </linearGradient>
+        <linearGradient id="elevationFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#f23824" stop-opacity=".68"/>
+          <stop offset="52%" stop-color="#00a985" stop-opacity=".52"/>
+          <stop offset="100%" stop-color="#4932c8" stop-opacity=".38"/>
+        </linearGradient>
+        <style>
+          .axis-label{font:10px sans-serif;fill:#718096}
+          .duration-label{font:600 10px sans-serif;fill:#4a5568}
+          .waypoint-label{font:600 11px sans-serif;fill:#c53030}
+        </style>
+      </defs>
+      ${gridSvg}
+      <path d="${areaPath}" fill="url(#elevationFill)"/>
+      <path d="${linePath}" fill="none" stroke="url(#elevationStroke)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      ${segmentsSvg}
+      ${waypointsSvg}
+      <text x="13" y="${margin.top + plotHeight / 2}" text-anchor="middle" transform="rotate(-90 13 ${margin.top + plotHeight / 2})" class="axis-label">海拔 (米)</text>
+    </svg>`;
+}
+
 // 显示结果
 function displayResults(data) {
   document.getElementById('result_distance').textContent = data.distance_km;
-  
-  function formatDuration(minutes) {
-    if (minutes >= 60) {
-      const hours = Math.floor(minutes / 60);
-      const mins = Math.floor(minutes % 60);
-      return `${hours}小时${mins}分钟`;
-    }
-    return `${Math.floor(minutes)}分钟`;
-  }
   
   document.getElementById('result_duration').textContent = formatDuration(data.duration_min);
   document.getElementById('result_toll').textContent = data.toll;
@@ -2614,29 +2756,47 @@ function displayResults(data) {
   document.getElementById('result_electric_total').textContent = data.electric_total_cost || '0.00';
 
   if (data.origin_detail && data.dest_detail) {
-    const originDetail = data.origin_detail;
-    const destDetail = data.dest_detail;
-    let addressHtml = `
-      <div style="margin-bottom: 24px; padding: 16px; background: #fffbe6; border-radius: 8px; font-size: 0.9em; border: 1px solid #ffe58f;">
-        <div style="margin-bottom: 12px;"><strong>📍 起点: ${originDetail.name || ''}</strong><br/>
-        <span style="color: #666;">${originDetail.province || ''}${originDetail.city || ''} ${originDetail.address || ''}</span></div>
-    `;
-
-    if (data.waypoints_detail && data.waypoints_detail.length > 0) {
-      data.waypoints_detail.forEach((wp, i) => {
-        addressHtml += `
-          <div style="margin-bottom: 12px;"><strong>📌 途径 ${i + 1}: ${wp.name || ''}</strong><br/>
-          <span style="color: #666;">${wp.province || ''}${wp.city || ''} ${wp.address || ''}</span></div>
-        `;
+    const waypointDetails = Array.isArray(data.waypoints_detail) ? data.waypoints_detail : [];
+    const routePoints = [
+      { ...data.origin_detail, role: '起点', icon: '📍' },
+      ...waypointDetails.map((wp, i) => ({ ...wp, role: `途经 ${i + 1}`, icon: '📌' })),
+      { ...data.dest_detail, role: '终点', icon: '🏁' }
+    ];
+    const routeSegments = Array.isArray(data.route_segments)
+      ? data.route_segments
+      : (data.elevation && Array.isArray(data.elevation.segments) ? data.elevation.segments : []);
+    const resolvedAddress = detail => {
+      const regions = [];
+      [detail.province, detail.city].filter(Boolean).forEach(region => {
+        if (!regions.includes(region)) regions.push(region);
       });
-    }
+      return `${regions.join('')} ${detail.address || ''}`.trim();
+    };
 
-    addressHtml += `
-        <div style="margin-bottom: 12px;"><strong>🏁 终点: ${destDetail.name || ''}</strong><br/>
-        <span style="color: #666;">${destDetail.province || ''}${destDetail.city || ''} ${destDetail.address || ''}</span></div>
-    `;
-    
-    addressHtml += `</div>`;
+    let addressHtml = '<div style="margin-bottom: 24px; padding: 16px; background: #fffbe6; border-radius: 8px; font-size: 0.9em; border: 1px solid #ffe58f;">';
+    routePoints.forEach((point, index) => {
+      addressHtml += `
+        <div style="padding: 4px 0;">
+          <strong>${point.icon} ${point.role}: ${point.name || ''}</strong><br/>
+          <span style="color: #666;">${resolvedAddress(point)}</span>
+        </div>
+      `;
+      const segment = routeSegments[index];
+      if (segment && index < routePoints.length - 1) {
+        const segmentDistance = Number.isFinite(Number(segment.distance_km))
+          ? Number(segment.distance_km)
+          : Math.max(0, Number(segment.end_distance_km || 0) - Number(segment.start_distance_km || 0));
+        addressHtml += `
+          <div style="display: flex; align-items: center; gap: 10px; margin: 7px 0 7px 10px; color: #4a5568;">
+            <span style="width: 2px; height: 28px; background: #d69e2e; border-radius: 2px;"></span>
+            <span style="padding: 4px 10px; background: rgba(255,255,255,0.78); border: 1px solid #ffe58f; border-radius: 999px; font-weight: 600;">
+              ${segmentDistance.toFixed(1)} km · ${formatDuration(Number(segment.duration_min) || 0)}
+            </span>
+          </div>
+        `;
+      }
+    });
+    addressHtml += '</div>';
     document.getElementById('addressDetails').innerHTML = addressHtml;
   } else {
     document.getElementById('addressDetails').innerHTML = '';
@@ -2695,12 +2855,21 @@ function displayResults(data) {
     
     // 绘制海拔图
     if (data.elevation.profile && data.elevation.profile.length > 0) {
+      renderElevationSvg(data.elevation);
+
+      // 保留旧 Canvas 实现作为短期回退路径；默认使用上面的 SVG。
+      if (false) {
       if (window.elevationChartInstance) {
         window.elevationChartInstance.destroy();
       }
       const ctx = document.getElementById('elevationChart').getContext('2d');
-      const labels = data.elevation.profile.map(pt => pt.distance_km + 'km');
-      const eleData = data.elevation.profile.map(pt => pt.ele);
+      const profileData = data.elevation.profile.map(pt => ({
+        x: Number(pt.distance_km),
+        y: Number(pt.ele)
+      }));
+      const eleData = profileData.map(pt => pt.y);
+      const profileWaypoints = Array.isArray(data.elevation.waypoints) ? data.elevation.waypoints : [];
+      const profileSegments = Array.isArray(data.elevation.segments) ? data.elevation.segments : [];
 
       const chartHeight = ctx.canvas.clientHeight || 200;
       // 创建渐变效果（根据Y轴海拔高度，顶部红，中间黄绿，底部蓝）
@@ -2723,13 +2892,85 @@ function displayResults(data) {
       bgGradient.addColorStop(0.8, 'rgba(0, 0, 255, 0.3)');
       bgGradient.addColorStop(1, 'rgba(139, 0, 255, 0.3)');
 
+      const routeAnnotationsPlugin = {
+        id: 'routeAnnotations',
+        afterDraw(chart) {
+          const {ctx: chartCtx, chartArea, scales} = chart;
+          if (!chartArea || !scales.x || !scales.y) return;
+
+          chartCtx.save();
+          chartCtx.font = '600 11px sans-serif';
+          chartCtx.textAlign = 'center';
+          chartCtx.textBaseline = 'middle';
+
+          profileSegments.forEach(segment => {
+            const startX = Math.max(chartArea.left, scales.x.getPixelForValue(segment.start_distance_km));
+            const endX = Math.min(chartArea.right, scales.x.getPixelForValue(segment.end_distance_km));
+            if (!Number.isFinite(startX) || !Number.isFinite(endX) || endX <= startX) return;
+
+            const bracketY = chartArea.top - 9;
+            chartCtx.strokeStyle = '#718096';
+            chartCtx.lineWidth = 1;
+            chartCtx.beginPath();
+            chartCtx.moveTo(startX, bracketY + 5);
+            chartCtx.lineTo(startX, bracketY);
+            chartCtx.lineTo(endX, bracketY);
+            chartCtx.lineTo(endX, bracketY + 5);
+            chartCtx.stroke();
+
+            const durationText = formatDuration(Math.round(Number(segment.duration_min) || 0));
+            const textWidth = chartCtx.measureText(durationText).width + 8;
+            chartCtx.fillStyle = 'rgba(255,255,255,0.9)';
+            chartCtx.fillRect((startX + endX - textWidth) / 2, bracketY - 7, textWidth, 14);
+            chartCtx.fillStyle = '#4a5568';
+            chartCtx.fillText(durationText, (startX + endX) / 2, bracketY);
+          });
+
+          profileWaypoints.forEach((waypoint, index) => {
+            const pointX = scales.x.getPixelForValue(waypoint.distance_km);
+            const pointY = scales.y.getPixelForValue(waypoint.ele);
+            if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) return;
+
+            const labelY = chartArea.top - 38 - (index % 2) * 14;
+            chartCtx.strokeStyle = '#e53e3e';
+            chartCtx.fillStyle = '#e53e3e';
+            chartCtx.lineWidth = 1.5;
+            chartCtx.setLineDash([4, 3]);
+            chartCtx.beginPath();
+            chartCtx.moveTo(pointX, labelY + 8);
+            chartCtx.lineTo(pointX, pointY - 7);
+            chartCtx.stroke();
+            chartCtx.setLineDash([]);
+
+            chartCtx.beginPath();
+            chartCtx.moveTo(pointX, pointY);
+            chartCtx.lineTo(pointX - 4, pointY - 8);
+            chartCtx.lineTo(pointX + 4, pointY - 8);
+            chartCtx.closePath();
+            chartCtx.fill();
+
+            const label = String(waypoint.name || '途经点');
+            let displayLabel = label;
+            while (displayLabel.length > 2 && chartCtx.measureText(displayLabel).width > 110) {
+              displayLabel = displayLabel.slice(0, -1);
+            }
+            if (displayLabel !== label) displayLabel += '…';
+            const labelWidth = chartCtx.measureText(displayLabel).width + 8;
+            chartCtx.fillStyle = 'rgba(255,255,255,0.92)';
+            chartCtx.fillRect(pointX - labelWidth / 2, labelY - 7, labelWidth, 14);
+            chartCtx.fillStyle = '#c53030';
+            chartCtx.fillText(displayLabel, pointX, labelY);
+          });
+          chartCtx.restore();
+        }
+      };
+
       window.elevationChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: labels,
           datasets: [{
             label: '海拔 (m)',
-            data: eleData,
+            data: profileData,
             borderColor: gradient,
             backgroundColor: bgGradient,
             borderWidth: 2,
@@ -2739,15 +2980,19 @@ function displayResults(data) {
             pointHoverRadius: 4       // hover时显示点
           }]
         },
+        plugins: [routeAnnotationsPlugin],
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          layout: {
+            padding: { top: profileWaypoints.length ? 58 : 22 }
+          },
           plugins: {
             legend: { display: false },
             tooltip: {
               callbacks: {
                 title: function(context) {
-                  return '距离: ' + context[0].label;
+                  return '距离: ' + context[0].parsed.x.toFixed(2) + 'km';
                 },
                 label: function(context) {
                   return '海拔: ' + context.parsed.y + ' m';
@@ -2757,6 +3002,8 @@ function displayResults(data) {
           },
           scales: {
             x: {
+              type: 'linear',
+              title: { display: true, text: '距离 (km)' },
               grid: { display: false },
               ticks: { maxTicksLimit: 10 }
             },
@@ -2768,6 +3015,7 @@ function displayResults(data) {
           }
         }
       });
+      }
     }
   } else {
     document.getElementById('elevationSection').style.display = 'none';

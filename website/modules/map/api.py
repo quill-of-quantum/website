@@ -669,6 +669,119 @@ def interpolate_line(points, interval=50):
         sampled.append(p2)
     return sampled
 
+def build_route_timeline(route_data):
+    """将百度路线折线转换为带累计里程和累计用时的时间轴。"""
+    timeline = []
+    total_distance_m = 0.0
+    total_duration_s = 0.0
+
+    for step in route_data.get("steps", []):
+        path_points = []
+        for raw_point in step.get("path", "").split(";"):
+            if not raw_point.strip():
+                continue
+            try:
+                lng, lat = (float(value) for value in raw_point.split(","))
+                if not path_points or path_points[-1] != (lng, lat):
+                    path_points.append((lng, lat))
+            except (TypeError, ValueError):
+                continue
+        if not path_points:
+            continue
+
+        if not timeline:
+            first_lng, first_lat = path_points[0]
+            timeline.append({"lng": first_lng, "lat": first_lat, "distance_m": 0.0, "elapsed_s": 0.0})
+        elif (timeline[-1]["lng"], timeline[-1]["lat"]) != path_points[0]:
+            path_points.insert(0, (timeline[-1]["lng"], timeline[-1]["lat"]))
+
+        segment_lengths = [
+            haversine_distance(path_points[i - 1][0], path_points[i - 1][1],
+                               path_points[i][0], path_points[i][1])
+            for i in range(1, len(path_points))
+        ]
+        geometry_distance = sum(segment_lengths)
+        step_duration = max(0.0, float(step.get("duration", 0) or 0))
+
+        for index, segment_distance in enumerate(segment_lengths, start=1):
+            total_distance_m += segment_distance
+            if geometry_distance > 0:
+                total_duration_s += step_duration * segment_distance / geometry_distance
+            lng, lat = path_points[index]
+            timeline.append({
+                "lng": lng, "lat": lat,
+                "distance_m": total_distance_m,
+                "elapsed_s": total_duration_s
+            })
+
+    route_duration = max(0.0, float(route_data.get("duration", 0) or 0))
+    if timeline and total_duration_s > 0 and route_duration > 0:
+        duration_scale = route_duration / total_duration_s
+        for point in timeline:
+            point["elapsed_s"] *= duration_scale
+    return timeline
+
+def build_profile_waypoints(route_data, waypoints, waypoint_addresses, elevation_profile):
+    """定位途经点在海拔剖面上的位置，并生成地点之间的分段用时。"""
+    timeline = build_route_timeline(route_data)
+    if not timeline:
+        return [], []
+
+    route_duration = max(0.0, float(route_data.get("duration", 0) or 0))
+    route_distance_km = timeline[-1]["distance_m"] / 1000
+    stops = [{"name": "起点", "distance_km": 0.0, "elapsed_s": 0.0}]
+
+    for index, waypoint in enumerate(waypoints or []):
+        coords = waypoint.get("coords") if isinstance(waypoint, dict) else waypoint
+        try:
+            lat, lng = (float(value) for value in str(coords).split(","))
+        except (TypeError, ValueError):
+            continue
+        nearest = min(
+            timeline,
+            key=lambda point: haversine_distance(lng, lat, point["lng"], point["lat"])
+        )
+        searched_name = waypoint.get("name") if isinstance(waypoint, dict) else None
+        submitted_name = (waypoint_addresses[index]
+                          if index < len(waypoint_addresses or []) else None)
+        name = searched_name or submitted_name or f"途经点 {index + 1}"
+        stops.append({
+            "name": name,
+            "distance_km": nearest["distance_m"] / 1000,
+            "elapsed_s": nearest["elapsed_s"]
+        })
+
+    stops.sort(key=lambda stop: stop["distance_km"])
+    stops.append({
+        "name": "终点",
+        "distance_km": route_distance_km,
+        "elapsed_s": route_duration or timeline[-1]["elapsed_s"]
+    })
+
+    chart_waypoints = []
+    for stop in stops[1:-1]:
+        if not elevation_profile:
+            break
+        nearest_profile = min(
+            elevation_profile,
+            key=lambda point: abs(float(point.get("distance_km", 0)) - stop["distance_km"])
+        )
+        chart_waypoints.append({
+            "name": stop["name"],
+            "distance_km": round(float(nearest_profile.get("distance_km", 0)), 2),
+            "ele": nearest_profile.get("ele", 0)
+        })
+
+    segments = [{
+        "start_name": start["name"],
+        "end_name": end["name"],
+        "start_distance_km": round(start["distance_km"], 2),
+        "end_distance_km": round(end["distance_km"], 2),
+        "distance_km": round(max(0.0, end["distance_km"] - start["distance_km"]), 2),
+        "duration_min": round(max(0.0, end["elapsed_s"] - start["elapsed_s"]) / 60, 1)
+    } for start, end in zip(stops, stops[1:])]
+    return chart_waypoints, segments
+
 import colorsys
 
 def check_and_clean_srtm_cache(cache_dir, limit_gb=10):
@@ -1356,7 +1469,7 @@ def geocode():
     
     coords = geocode_address(address)
     if coords:
-        return jsonify({"status": "ok", **coords, "address": address})
+        return jsonify({"status": "ok", **coords, "input_address": address})
     else:
         return jsonify({"error": "地理编码失败"}), 400
 
@@ -1595,6 +1708,10 @@ def route():
         if elevation_data_list:
             step_size = max(1, len(elevation_data_list) // 3000)
             chart_elevation_list = elevation_data_list[::step_size]
+
+        profile_waypoints, profile_segments = build_profile_waypoints(
+            route_data, waypoints_objs, waypoint_addresses, chart_elevation_list
+        )
         
         t_backend_total = time.time() - t_backend_start # 🟢 6. 计算后端总耗时
         
@@ -1618,8 +1735,11 @@ def route():
             "origin_detail": origin_obj if isinstance(origin_obj, dict) else {},
             "dest_detail": dest_obj if isinstance(dest_obj, dict) else {},
             "waypoints_detail": [wp for wp in waypoints_objs if isinstance(wp, dict)],
+            "route_segments": profile_segments,
             "elevation": {
                 "profile": chart_elevation_list,
+                "waypoints": profile_waypoints,
+                "segments": profile_segments,
                 "total_climb_m": round(total_climb, 1),
                 "max_ele_m": round(max_ele, 1),
                 "min_ele_m": round(min_ele, 1),
