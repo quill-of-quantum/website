@@ -34,12 +34,28 @@
     }
     #exchange-container .exchange-svg-chart {
       width: 100%;
-      height: 220px;
+      height: 260px;
     }
     #exchange-container .exchange-svg-chart .svg-line-chart {
       display: block;
       width: 100%;
-      height: 220px;
+      height: 260px;
+    }
+    #exchange-container .chart-item {
+      min-width: 0;
+    }
+    #exchange-container .exchange-stats-primary {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.55rem;
+      margin-bottom: 0.2rem;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    #exchange-container .exchange-stats-separator {
+      color: var(--border);
+      font-weight: 400;
     }
     /* 工具分组标题 */
     .tool-group-title {
@@ -146,6 +162,10 @@
     /* 📱 手机屏幕一列显示 */
     @media (max-width: 768px) {
       .chart-item { flex: 1 1 100%; }
+      #exchange-container .exchange-svg-chart,
+      #exchange-container .exchange-svg-chart .svg-line-chart {
+        height: 240px;
+      }
       .tool-buttons {
         flex-direction: column;
       }
@@ -380,7 +400,7 @@
   <script src="/static/js/situation/maps.js"></script>
 
   <!-- JS 脚本 -->
-  <script src="/static/js/svg_line_chart.js"></script>
+  <script src="/static/js/svg_line_chart.js?v=20260812-1"></script>
   <script>
     let situationLeafletMap = null;
     let situationLeafletMarker = null;
@@ -912,17 +932,18 @@
           const pointRadius = series.map((_, i) => (i === minIdx || i === maxIdx ? 4 : 0));
           const pointColor = series.map((_, i) => (i === maxIdx ? "#e74c3c" : (i === minIdx ? "#2ecc71" : lineColor)));
           SvgLineChart.render(canvasId, {
-            height: 250,
+            width: 520,
+            height: 260,
             ariaLabel: `${label}最近180天汇率`,
             labels: dates.map(formatDateNoYear),
             maxXTicks: 8,
             yLabel: label.replace(/[^A-Z/]/g, ''),
-            formatY: value => Number(value).toFixed(4),
-            tooltip: ({index, value}) => `${dates[index]}：${Number(value).toFixed(4)}`,
+            formatY: value => Number(value).toFixed(2),
+            tooltip: ({index, value}) => `${dates[index]}：${Number(value).toFixed(2)}`,
             datasets: [{label, data: series, color: lineColor, pointRadius, pointColors: pointColor}],
             annotations: [
-              {index: maxIdx, value: series[maxIdx], label: `Max ${series[maxIdx].toFixed(4)}`, color: '#e74c3c'},
-              {index: minIdx, value: series[minIdx], label: `Min ${series[minIdx].toFixed(4)}`, color: '#2ecc71'}
+              {index: maxIdx, value: series[maxIdx], label: `Max ${series[maxIdx].toFixed(2)}`, color: '#e74c3c'},
+              {index: minIdx, value: series[minIdx], label: `Min ${series[minIdx].toFixed(2)}`, color: '#2ecc71'}
             ]
           });
         }
@@ -978,7 +999,13 @@
 
           const el = document.getElementById(elId);
           el.innerHTML = `
-            <div><b>${label}</b> Max: <span style="color:#e74c3c;">${maxVal}</span> | Now: <b style="color:#000;">${nowVal.toFixed(4)}</b> | Min: <span style="color:#2ecc71;">${minVal}</span></div>
+            <div class="exchange-stats-primary">
+              <span style="color:#2ecc71;">${minVal.toFixed(2)}</span>
+              <span class="exchange-stats-separator">—</span>
+              <span style="color:var(--text);">${nowVal.toFixed(2)}</span>
+              <span class="exchange-stats-separator">—</span>
+              <span style="color:#e74c3c;">${maxVal.toFixed(2)}</span>
+            </div>
             <div>Max→Now: ${fmtDelta(maxToNow)} | Min→Now: ${fmtDelta(minToNow)} | ${seqLabel}: ${fmtDelta(seqDelta)}</div>
           `;
         }

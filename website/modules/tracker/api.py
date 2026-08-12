@@ -6,7 +6,12 @@ import json
 import shutil
 import subprocess
 from datetime import datetime
-from modules.tracker.browser import fetch_tracking, parse_tracking_result, compare_with_last
+from modules.tracker.browser import compare_with_last
+from modules.tracker.providers import (
+    DEFAULT_PROVIDER,
+    get_provider,
+    public_provider_list,
+)
 
 bp = Blueprint("tracker", __name__)
 
@@ -41,7 +46,23 @@ def db_conn():
     conn.row_factory = sqlite3.Row
     # 启用 WAL 模式避免锁定
     conn.execute("PRAGMA journal_mode=WAL")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tracker_tasks)")}
+    if "tracker_type" not in columns:
+        conn.execute(
+            "ALTER TABLE tracker_tasks ADD COLUMN tracker_type TEXT NOT NULL "
+            f"DEFAULT '{DEFAULT_PROVIDER}'"
+        )
+        conn.commit()
     return conn
+
+
+def _provider_for_task(task):
+    provider = get_provider(task["tracker_type"] or DEFAULT_PROVIDER)
+    if not provider:
+        raise ValueError("未知的追踪方式")
+    if not provider.configured:
+        raise ValueError(f"追踪方式“{provider.name}”尚未配置")
+    return provider
 
 
 @bp.route("/api/tracker/service/status")
@@ -73,18 +94,38 @@ def list_tasks():
         conn.close()
 
 
+@bp.route("/api/tracker/providers")
+def list_providers():
+    """返回追踪方式及其可用状态，供添加任务选项卡使用。"""
+    return jsonify(public_provider_list())
+
+
 # === 添加任务 ===
 @bp.route("/api/tracker/add", methods=["POST"])
 def add_task():
     """添加任务 - 不需要登录"""
-    data = request.json
-    num = data.get("tracking_number")
-    interval = int(data.get("interval", 60))
+    data = request.get_json(silent=True) or {}
+    num = str(data.get("tracking_number") or "").strip()
+    tracker_type = str(data.get("tracker_type") or DEFAULT_PROVIDER)
+    provider = get_provider(tracker_type)
+    if not num:
+        return jsonify({"error": "请输入物流号"}), 400
+    if not provider:
+        return jsonify({"error": "未知的追踪方式"}), 400
+    if not provider.configured:
+        return jsonify({"error": f"追踪方式“{provider.name}”尚未配置"}), 400
+    try:
+        interval = int(data.get("interval", 60))
+    except (TypeError, ValueError):
+        return jsonify({"error": "追踪周期必须是整数"}), 400
+    if interval < 5:
+        return jsonify({"error": "追踪周期不能少于 5 分钟"}), 400
     conn = db_conn()
     try:
         conn.execute(
-            "INSERT INTO tracker_tasks (tracking_number, interval_minutes) VALUES (?, ?)",
-            (num, interval),
+            "INSERT INTO tracker_tasks "
+            "(tracking_number, interval_minutes, tracker_type) VALUES (?, ?, ?)",
+            (num, interval, tracker_type),
         )
         conn.commit()
         return jsonify({"ok": True})
@@ -126,14 +167,19 @@ def run_task(task_id):
         if not task:
             return jsonify({"error": "not found"}), 404
 
+        try:
+            provider = _provider_for_task(task)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
         async def run():
             try:
                 # ✅ 增加总超时保护（90秒）
                 html = await asyncio.wait_for(
-                    fetch_tracking(task["tracking_number"]), 
+                    provider.fetch(task["tracking_number"]),
                     timeout=90
                 )
-                parsed = parse_tracking_result(html)
+                parsed = provider.parse(html)
 
                 # 为每条任务创建独立的 JSON 文件
                 info_path = f"{TRACKER_DATA_DIR}/tracker_data_{task_id}.json"

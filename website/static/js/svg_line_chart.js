@@ -30,7 +30,7 @@
       return;
     }
 
-    const width = 900;
+    const width = Number(options.width) || 900;
     const height = Number(options.height) || 300;
     const margin = {
       left: 58,

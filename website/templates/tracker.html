@@ -131,6 +131,42 @@
     margin: 0;
   }
 
+  .provider-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .provider-tab {
+    padding: 8px 14px;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    background: var(--c-card);
+    color: #374151;
+    cursor: pointer;
+  }
+
+  .provider-tab.active {
+    color: #fff;
+    border-color: var(--c-primary);
+    background: var(--c-primary);
+  }
+
+  .provider-tab:disabled {
+    color: #9ca3af;
+    border-color: #e5e7eb;
+    background: #f3f4f6;
+    cursor: not-allowed;
+    opacity: 0.75;
+  }
+
+  .provider-pill {
+    color: #1d4ed8;
+    background: #eff6ff;
+    border-color: #93c5fd;
+  }
+
   /* === 任务卡片 === */
   .tasks-container {
     display: flex;
@@ -436,6 +472,7 @@
 </div>
 
 <div class="toolbar">
+  <div id="providerTabs" class="provider-tabs" aria-label="选择追踪方式"></div>
   <div class="toolbar-content">
     <input id="num" placeholder="输入物流号" required>
     <input id="interval" type="number" value="60" min="5" title="间隔分钟"> 
@@ -456,6 +493,39 @@
 const $ = sel => document.querySelector(sel);
 const $tasks = $('#tasks');
 const HINT = $('#hint');
+const PROVIDER_TABS = $('#providerTabs');
+let providers = [];
+let selectedProvider = localStorage.getItem('tracker.selectedProvider') || 'transfer_1';
+
+function providerName(key){
+  return providers.find(p => p.key === key)?.name || key || '转运1';
+}
+
+async function loadProviders(){
+  const res = await fetch('/api/tracker/providers');
+  if (!res.ok) throw new Error(`追踪方式加载失败: HTTP ${res.status}`);
+  providers = await res.json();
+  const available = providers.find(p => p.key === selectedProvider && p.configured)
+    || providers.find(p => p.configured);
+  if (available) selectedProvider = available.key;
+  localStorage.setItem('tracker.selectedProvider', selectedProvider);
+  PROVIDER_TABS.innerHTML = '';
+  providers.forEach(provider => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `provider-tab${provider.key === selectedProvider ? ' active' : ''}`;
+    button.textContent = provider.name;
+    button.disabled = !provider.configured;
+    button.title = provider.configured ? `使用${provider.name}追踪` : '尚未配置';
+    button.onclick = () => {
+      selectedProvider = provider.key;
+      localStorage.setItem('tracker.selectedProvider', selectedProvider);
+      PROVIDER_TABS.querySelectorAll('.provider-tab').forEach(tab => tab.classList.remove('active'));
+      button.classList.add('active');
+    };
+    PROVIDER_TABS.appendChild(button);
+  });
+}
 
 function pillEnabled(v){ return `<span class="pill ${v? 'good':''}">${v? '已启用':'未启用'}</span>` }
 function pillRunning(v){ return `<span class="pill run">${v? '🟡 运行中':'⚪ 空闲'}</span>` }
@@ -466,6 +536,7 @@ function summaryLine(t){
   const brief = safe(t.last_status) || '—';
   return `
     <span class="title">📦 ${t.tracking_number}</span>
+    <span class="pill provider-pill">${providerName(t.tracker_type)}</span>
     ${pillEnabled(!!t.enabled)}
     ${pillRunning(!!t.running)}
     <span class="muted">${last}</span>
@@ -505,6 +576,8 @@ function renderTask(t){
         <h3>任务信息</h3>
         <p><b>ID：</b>${t.id}</p>
         <p><b>单号：</b>${t.tracking_number}</p>
+        <p><b>追踪方式：</b>${providerName(t.tracker_type)}</p>
+        <p><b>追踪周期：</b>${t.interval_minutes} 分钟</p>
         <p><b>启用：</b>${t.enabled ? '是' : '否'}</p>
         <p><b>运行中：</b>${t.running ? '是' : '否'}</p>
       </div>
@@ -724,11 +797,13 @@ $('#btnAdd').onclick = async () => {
   const num = $('#num').value.trim();
   const interval = parseInt($('#interval').value, 10) || 60;
   if(!num) return alert('请输入物流号');
-  await fetch('/api/tracker/add', {
+  const res = await fetch('/api/tracker/add', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tracking_number: num, interval })
+    body: JSON.stringify({ tracking_number: num, interval, tracker_type: selectedProvider })
   });
+  const data = await res.json();
+  if (!res.ok) return alert(data.error || '添加任务失败');
   $('#num').value = '';
   await loadTasks();
 };
@@ -741,7 +816,20 @@ if (window.authManager) {
   authManager.createLoginStatusWidget();
 }
 checkLoginStatus();
-loadTasks();
+const savedInterval = parseInt(localStorage.getItem('tracker.interval'), 10);
+if (savedInterval >= 5) $('#interval').value = savedInterval;
+$('#interval').addEventListener('change', event => {
+  const value = parseInt(event.target.value, 10);
+  if (value >= 5) localStorage.setItem('tracker.interval', value);
+});
+(async () => {
+  try {
+    await loadProviders();
+    await loadTasks();
+  } catch (e) {
+    HINT.textContent = e.message;
+  }
+})();
 setInterval(async () => {
   // 刷新任务列表
   await loadTasks();

@@ -252,6 +252,7 @@ success 是 true
 
 ### 物流追踪
 - `GET /api/tracker/list`：任务列表
+- `GET /api/tracker/providers`：追踪方式列表及配置状态
 - `POST /api/tracker/add`：添加任务
 - `POST /api/tracker/toggle/<task_id>`：启用/停用
 - `POST /api/tracker/run/<task_id>`：手动执行
@@ -330,6 +331,7 @@ success 是 true
 - 路线规划：`modules/map/api.py` 内置 Baidu Map AK/SK
 - 视觉检测模型：`modules/tools/models/yolov8n.pt`
 - 追踪数据库：`/home/bbdwz/projects/website/data/tracker/tracker.db`
+- 追踪方式：现有抓取器命名为“转运1”；“转运2 / 转运3”已预留但未配置，页面显示为禁用
 - 追踪数据文件：`/home/bbdwz/projects/website/data/tracker/tracker_data_<id>.json`
 - 追踪调度器：`tracker_scheduler.service` 直接启动 `modules/tracker/scheduler.py`
 - 天气分析脚本：`modules/weather/analyze.py`

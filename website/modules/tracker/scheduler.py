@@ -20,7 +20,8 @@ PROJECT_ROOT = "/home/bbdwz/projects/website"
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from modules.tracker.browser import fetch_tracking, parse_tracking_result, compare_with_last
+from modules.tracker.browser import compare_with_last
+from modules.tracker.providers import DEFAULT_PROVIDER, get_provider
 
 TRACKER_DATA_DIR = "/home/bbdwz/projects/website/data/tracker"
 DB_PATH = f"{TRACKER_DATA_DIR}/tracker.db"
@@ -28,6 +29,13 @@ DB_PATH = f"{TRACKER_DATA_DIR}/tracker.db"
 def db_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tracker_tasks)")}
+    if "tracker_type" not in columns:
+        conn.execute(
+            "ALTER TABLE tracker_tasks ADD COLUMN tracker_type TEXT NOT NULL "
+            f"DEFAULT '{DEFAULT_PROVIDER}'"
+        )
+        conn.commit()
     return conn
 
 
@@ -41,8 +49,12 @@ async def run_task(task):
     print(f"🚀 开始任务 {task['tracking_number']} ...")
 
     try:
-        html = await fetch_tracking(task["tracking_number"])
-        parsed = parse_tracking_result(html)
+        provider = get_provider(task["tracker_type"] or DEFAULT_PROVIDER)
+        if not provider or not provider.configured:
+            name = provider.name if provider else task["tracker_type"]
+            raise ValueError(f"追踪方式“{name}”尚未配置")
+        html = await provider.fetch(task["tracking_number"])
+        parsed = provider.parse(html)
 
         # 🧩 抓取失败时，不覆盖旧状态
         if not parsed:
