@@ -15,6 +15,8 @@ public class SendMailRequest {
     @NotBlank
     private String text;
 
+    private String html;
+
     public String getTo() {
         return to;
     }
@@ -37,5 +39,13 @@ public class SendMailRequest {
 
     public void setText(String text) {
         this.text = text;
+    }
+
+    public String getHtml() {
+        return html;
+    }
+
+    public void setHtml(String html) {
+        this.html = html;
     }
 }

@@ -105,6 +105,9 @@ app.register_blueprint(garden_bp)
 
 from modules.mail.api import bp as email_bp
 app.register_blueprint(email_bp)
+
+from modules.housing.api import bp as housing_bp
+app.register_blueprint(housing_bp)
 # ===============================
 # 基础配置
 # ===============================

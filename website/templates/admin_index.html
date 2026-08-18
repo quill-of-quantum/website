@@ -66,6 +66,7 @@
         <div class="toolbar">
           <a class="btn" href="/1/nas">NAS 管理</a>
           <a class="btn" href="/1/token">Token 管理</a>
+          <a class="btn" href="/1/housing">租房信息</a>
         </div>
         <button class="btn" onclick="authManager.doLogout()">退出登录</button>
       </div>
@@ -268,7 +269,8 @@
       mihomo: "Mihomo 代理",
       frpc: "FRP 隧道",
       cpolar: "Cpolar 隧道",
-      email: "邮件服务"
+      email: "邮件服务",
+      housing: "租房追踪服务"
     };
     return Object.keys(labels).map(key => {
       const item = services[key] || {};

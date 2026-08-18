@@ -34,6 +34,7 @@ MANAGED_SERVICE_UNITS = {
     "frpc": "frpc.service",
     "cpolar": "cpolar.service",
     "email": "email-service.service",
+    "housing": "housing_tracker.service",
 }
 
 def _get_lan_networks():

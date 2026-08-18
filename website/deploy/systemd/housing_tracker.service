@@ -1,0 +1,18 @@
+[Unit]
+Description=SW-KA Housing Tracker
+After=network-online.target email-service.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bbdwz
+WorkingDirectory=/home/bbdwz/projects/website
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bbdwz/miniconda3/envs/web/bin/python /home/bbdwz/projects/website/modules/housing/service.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

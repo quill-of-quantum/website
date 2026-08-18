@@ -9,6 +9,8 @@ import jakarta.mail.Session;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMultipart;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -32,7 +34,18 @@ public class MailSenderService {
             message.setFrom(new InternetAddress(properties.getAccount().getAddress()));
             message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(request.getTo()));
             message.setSubject(request.getSubject(), StandardCharsets.UTF_8.name());
-            message.setText(request.getText(), StandardCharsets.UTF_8.name());
+            if (request.getHtml() != null && !request.getHtml().isBlank()) {
+                MimeBodyPart plainPart = new MimeBodyPart();
+                plainPart.setText(request.getText(), StandardCharsets.UTF_8.name());
+                MimeBodyPart htmlPart = new MimeBodyPart();
+                htmlPart.setContent(request.getHtml(), "text/html; charset=UTF-8");
+                MimeMultipart alternatives = new MimeMultipart("alternative");
+                alternatives.addBodyPart(plainPart);
+                alternatives.addBodyPart(htmlPart);
+                message.setContent(alternatives);
+            } else {
+                message.setText(request.getText(), StandardCharsets.UTF_8.name());
+            }
             Transport.send(message);
         } catch (MessagingException e) {
             throw new IllegalStateException("Failed to send mail", e);

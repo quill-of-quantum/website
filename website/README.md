@@ -26,10 +26,12 @@
   - 统一后台计算调度器；当前注册汇率采集与换汇分析任务
 - **email-service.service**
   - 独立 Spring Boot 邮件服务（内部端口 `8081`，由 `modules/mail/` 转发调用）
+- **housing_tracker.service**
+  - SW-KA 租房信息无头追踪服务；Alle 总目录抓取后分类，分别按增量/全量周期检查
 
 管理员页面仅在“核心服务状态”展示 `website` 和 `nginx`，避免从网页关闭自身入口；
 `boardgame`、`tracker_scheduler`、`computation`、`email-service`、`gallery`、`frpc`、
-`cpolar` 与 `mihomo` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。
+`cpolar`、`mihomo` 与 `housing_tracker` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。
 
 Nginx 反代：
 - `/` → Flask（`/home/bbdwz/website.sock`）
@@ -57,6 +59,7 @@ Nginx 反代：
 - `/mail`：手动发送邮件页面（`templates/mail.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
+- `/1/housing`：SW-KA 租房追踪设置与最近结果（`templates/housing.html`）
 
 备注：`templates/login.html` 存在，但登录通过 `/api/auth/login` 进行。
 
@@ -72,6 +75,7 @@ Nginx 反代：
 │   ├── exchange/                 # 汇率数据、分析、换汇计划与缓存
 │   ├── computation/              # 统一后台计算任务注册、调度与运行状态
 │   ├── admin/api.py              # 管理后台
+│   ├── housing/                  # SW-KA 无头抓取、配置存储与后台调度服务
 │   ├── nas/api.py                # 局域网 USB 硬盘 Samba 共享
 │   ├── auth/api.py               # 登录状态与登录/退出
 │   ├── auth/user_store.py        # 本地账户存储与密码校验
@@ -305,7 +309,19 @@ success 是 true
 - `GET /aurora/api/ovation`：OVATION 极光数据
 - `GET /aurora/api/social`：社交/外部信息
 - `GET /aurora/api/location` / `POST /aurora/api/location`：读取/保存观测位置
-- `POST /api/mail/send`：转发邮件发送请求
+- `POST /api/mail/send`：转发邮件发送请求；除必填的 `to`、`subject`、`text` 外，可传 `html` 作为 HTML 邮件正文，纯文本作为不支持 HTML 客户端的回退
+
+### 租房追踪（管理员）
+- `GET /1/housing`：租房追踪设置页
+- `GET /1/api/housing`：读取脱敏配置和最近运行结果
+- `POST /1/api/housing`：保存频率、房型、登录账户及邮件设置
+- `POST /1/api/housing/run`：请求独立服务立即检查
+- `POST /1/api/housing/resend-notification`：不触发搜索，也不依赖邮件发送历史；从房源变化记录中向前查找最近一批符合当前通知房型设置的实际更新
+- `POST /1/api/housing/initialize`：管理员二次确认后清理房源、变化和运行历史，保留地理编码缓存与配置，执行全量抓取并建立全部为“未变化（复用）”的初始基准；初始化不发送通知
+
+调试阶段页面每秒读取一次运行状态，展示登录检查、浏览器启动、Alle 目录分页、已发现数量、数据库比较、通知及错误等步骤。可分别手动运行一次增量或全量搜索；若进程未启用或已有检查正在运行，接口会明确返回原因。
+
+抓取固定使用 Karlsruhe + `Zimmertyp: alle`，随后依据目录 `Art`/摘要分类为 WG、Einzelzimmer、xZimmer。增量和全量搜索有独立分钟间隔；邮件支持多个收件地址，并可分别选择三类房源的“新上架”和“新下架”通知。
 
 ### 字母棋识别
 - `GET /letter`：字母棋识别页面
@@ -334,6 +350,15 @@ success 是 true
 - 追踪方式：现有抓取器命名为“转运1”；“转运2 / 转运3”已预留但未配置，页面显示为禁用
 - 追踪数据文件：`/home/bbdwz/projects/website/data/tracker/tracker_data_<id>.json`
 - 追踪调度器：`tracker_scheduler.service` 直接启动 `modules/tracker/scheduler.py`
+- 租房追踪器：`housing_tracker.service` 直接启动 `modules/housing/service.py`；使用 Playwright Chromium 无头运行，不需要桌面或显示器
+- 租房配置：`data/housing/config.json` 权限为 `0600`，API 永不返回密码；该运行数据目录已由 `.gitignore` 排除
+- 租房数据库：`data/housing/housing.db` 持久保存房源当前状态、运行批次和上下架变化，不再按运行创建新目录
+- 房源的“新上架/重新上架/已更新/新下架”展示标签至少保留 8 小时；期间重复检查不会改成“未变化”也不会重复通知，满 8 小时后下一次无变化检查才转为“未变化（复用）”
+- 管理页面顶部“最近变化”直接读取同一套 8 小时展示窗口，不再只显示最后一轮搜索；后续无变化搜索不会将它清空
+- 租房任务按“目录立即提交 → 详情逐条提交 → 缺失坐标独立补全”执行；定位失败不会回滚目录或详情
+- Nominatim 默认明确使用本机 Mihomo `http://127.0.0.1:7890`，可用 `HOUSING_GEOCODE_PROXY` 覆盖；坐标按地址缓存在 SQLite
+- 邮件通知：复用 `email-service.service` 的 `POST /api/mail/send`，按多个收件地址和上下架房型选择发送；一轮变化合并成一封 HTML 表格邮件，每行一个房源，并在详情保存后按租客条件组、设备组和信息完整度生成“非常规提示”
+- 房源结果：`tests/housing/房源地图.html` 仅作界面样例；`/1/housing/result` 每次从 SQLite 生成运行页面到 `data/housing/房源地图.html`
 - 天气分析脚本：`modules/weather/analyze.py`
 - Git 忽略规则：`/home/bbdwz/projects/.gitignore` 统一管理 website、gallery、email-service 等项目的运行数据忽略规则
 
@@ -360,6 +385,25 @@ npm run build
 cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 ```
 
+### SW-KA 租房追踪服务（树莓派无显示器）
+
+服务使用当前 `web` Conda 环境。首次部署需确保该环境已安装 `playwright` 和 `requests`，并安装与树莓派架构匹配的 Chromium：
+
+```bash
+/home/bbdwz/miniconda3/envs/web/bin/pip install playwright requests
+/home/bbdwz/miniconda3/envs/web/bin/playwright install chromium
+sudo cp /home/bbdwz/projects/website/deploy/systemd/housing_tracker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now housing_tracker.service
+```
+
+之后在 `/1/housing` 设置检查间隔、房型、SW-KA 登录账户/密码和通知收件地址。也可在 `/1/` 的“进程开关”中启停。邮件通知打开时应先保证 `email-service.service` 已配置并运行。
+
+```bash
+systemctl status housing_tracker.service
+journalctl -u housing_tracker.service -n 200 --no-pager
+```
+
 ---
 
 ## 数据与文件输出
@@ -382,6 +426,10 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 - `data/admin/app_tokens.json`：App API Token 哈希与元数据
 - `data/admin/users.json`：本地账户哈希与角色；只有 `admin` 可进入 `/1/`
 - `data/nas/state.json`：局域网 USB 硬盘共享状态
+- `data/housing/config.json`：租房追踪敏感配置（含登录凭据，`0600`，不入 Git）
+- `data/housing/housing.db`：房源、运行批次和变化历史 SQLite 数据库
+- `data/housing/state.json`：当前进度、最近变化和调试日志
+- `data/housing/browser_profile/`：树莓派本机 Playwright 登录会话（敏感，不入 Git）
 - `data/geoip/GeoLite2-City.mmdb`：管理区访问统计的 IP 地理位置库
 - `data/tools/clipboard.txt`：网页剪贴板内容
 - `storage/cloud/uploads/`：云盘上传文件
@@ -403,6 +451,7 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
   - `journalctl -u website.service -n 200 --no-pager`
   - `journalctl -u boardgame.service -n 200 --no-pager`
   - `journalctl -u tracker_scheduler.service -n 200 --no-pager`
+  - `journalctl -u housing_tracker.service -n 200 --no-pager`
 
 ---
 
@@ -413,11 +462,13 @@ cp -f dist/* /home/bbdwz/projects/website/static/bgio/
 systemctl status website.service
 systemctl status boardgame.service
 systemctl status tracker_scheduler.service
+systemctl status housing_tracker.service
 
 # 重启服务
 sudo systemctl restart website.service
 sudo systemctl restart boardgame.service
 sudo systemctl restart tracker_scheduler.service
+sudo systemctl restart housing_tracker.service
 
 # Nginx 校验 & 重载
 sudo nginx -t

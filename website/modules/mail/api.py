@@ -20,6 +20,7 @@ def send_mail():
     to = (payload.get("to") or "").strip()
     subject = (payload.get("subject") or "").strip()
     text = (payload.get("text") or "").strip()
+    html = (payload.get("html") or "").strip()
 
     if not to or not subject or not text:
         return jsonify({"error": "to, subject and text are required"}), 400
@@ -27,7 +28,7 @@ def send_mail():
     try:
         response = requests.post(
             f"{EMAIL_SERVICE_URL}/api/mail/send",
-            json={"to": to, "subject": subject, "text": text},
+            json={"to": to, "subject": subject, "text": text, "html": html},
             timeout=20,
         )
     except requests.RequestException as exc:
