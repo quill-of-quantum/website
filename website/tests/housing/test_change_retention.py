@@ -40,7 +40,9 @@ def test_delisted_label_expires_during_a_later_search(tmp_path):
         housing_db.apply_catalog(room, "incremental", housing_db._now())
         current_time[0] = start + timedelta(minutes=1)
         housing_db.apply_catalog({}, "incremental", housing_db._now())
-        assert housing_db.list_rooms()[0]["record_change"] == "已下架"
+        delisted = housing_db.list_rooms()[0]
+        assert delisted["record_change"] == "已下架"
+        assert delisted["listing_duration_seconds"] == 60
         current_time[0] = start + timedelta(hours=8, minutes=2)
         housing_db.apply_catalog({}, "incremental", housing_db._now())
         assert housing_db.list_rooms()[0]["record_change"] == "未变化（复用）"

@@ -53,6 +53,10 @@ def map_ui():
     """路线规划页"""
     return render_template("map.html")
 
+def aggregate_map_search_ui():
+    """地图多关键词聚合搜索页。"""
+    return render_template("map_aggregate_search.html")
+
 
 def route_creator_ui():
     """路线创作页"""
@@ -165,6 +169,7 @@ def register_routes(app):
     app.add_url_rule("/vision", "vision_ui", vision_ui)
     app.add_url_rule("/viewer", "viewer", viewer)
     app.add_url_rule("/map", "map_ui", map_ui)
+    app.add_url_rule("/map/aggregate-search", "aggregate_map_search_ui", aggregate_map_search_ui)
     app.add_url_rule("/route_creator", "route_creator_ui", route_creator_ui)
     app.add_url_rule("/api/system", "system_info", system_info)
     app.add_url_rule("/weather_chart/<path:filename>", "weather_chart_file", weather_chart_file)

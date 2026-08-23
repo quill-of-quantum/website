@@ -47,6 +47,7 @@ Nginx 反代：
 - `/chat`：聊天大厅（`templates/chat.html`）
 - `/tracker`：物流追踪面板（`templates/tracker.html`）
 - `/map`：路线规划页面（`templates/map.html`）
+- `/map/aggregate-search`：地图多关键词聚合搜索（`templates/map_aggregate_search.html`）
 - `/route_creator`：路线创作页面（`templates/route_creator.html`）
 - `/viewer`：3D 模型预览（`templates/viewer.html`）
 - `/vision`：智能视觉检测页（`templates/tool_1.html`）
@@ -270,6 +271,7 @@ success 是 true
 - `GET /api/map/config` / `POST /api/map/config`：获取/保存配置
 - `GET /api/map/reverse_geocode`：逆地理编码
 - `POST /api/map/geocode`：地理编码
+- `POST /api/map/aggregate-search`：合并百度 Place 3.0 轻量与非轻量模式的同词检索结果，展开商场/园区主 POI 下带坐标的子 POI，并按 UID 及搜索半径去重过滤
 - `POST /api/map/topo`：地形/海拔数据
 - `POST /api/map/route`：路线规划 + 成本计算 + 交互式地图
 - `GET /api/map/history`：历史记录

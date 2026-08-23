@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>📍 聚合搜索</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body { height: 100%; }
+    body { overflow: hidden; }
+    .search-page { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+    .topbar {
+      display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border); z-index: 1000;
+    }
+    .topbar h1 { margin: 0; font-size: 20px; }
+    .topbar .muted { margin-left: auto; }
+    .workspace { display: grid; grid-template-columns: 340px 1fr; min-height: 0; }
+    .sidebar { overflow-y: auto; padding: 16px; background: var(--surface); border-right: 1px solid var(--border); }
+    .field { display: grid; gap: 6px; margin-bottom: 14px; }
+    .field label { font-weight: 600; }
+    .field small { color: var(--muted); }
+    textarea, select {
+      width: 100%; border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 10px; font: inherit; color: var(--text); background: var(--surface);
+    }
+    textarea { min-height: 116px; resize: vertical; }
+    .recent-searches { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+    .recent-label { width: 100%; color: var(--muted); font-size: 12px; }
+    .recent-keyword {
+      padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px;
+      background: #f8fafc; color: var(--text); cursor: pointer; font: inherit; font-size: 12px;
+    }
+    .recent-keyword:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-weak); }
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .actions .search-btn { grid-column: 1 / -1; }
+    .location-box {
+      margin: 14px 0; padding: 10px; border-radius: var(--r-sm);
+      background: var(--primary-weak); color: #1e3a8a; font-size: 13px;
+    }
+    #map { width: 100%; height: 100%; min-height: 420px; cursor: crosshair; }
+    .summary { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+    .summary-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
+    .color-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+    .summary-row .count { margin-left: auto; color: var(--muted); }
+    .error-text { color: var(--danger); font-size: 12px; margin-left: 20px; }
+    .poi-marker {
+      width: 28px; height: 28px; border: 2px solid white; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); box-shadow: 0 2px 7px rgba(0,0,0,.3);
+    }
+    .poi-marker span {
+      display: grid; place-items: center; width: 100%; height: 100%; transform: rotate(45deg);
+      color: white; font: 700 11px system-ui;
+    }
+    .leaflet-popup-content { line-height: 1.5; }
+    .popup-name { font-weight: 700; font-size: 14px; margin-bottom: 3px; }
+    @media (max-width: 720px) {
+      body { overflow: auto; }
+      .search-page { height: auto; min-height: 100vh; }
+      .topbar { flex-wrap: wrap; }
+      .topbar .muted { width: 100%; margin-left: 0; }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: auto 62vh; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="search-page">
+    <header class="topbar">
+      <a class="btn" href="/">← 工具区</a>
+      <a class="btn" href="/map">🗺️ 路线规划</a>
+      <h1>📍 聚合搜索</h1>
+      <span id="status" class="muted">先定位，再搜索</span>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="field">
+          <label for="keywords">搜索关键词</label>
+          <textarea id="keywords" placeholder="输入关键词，每行一个"></textarea>
+          <small>最多 8 个关键词，换行以区分。</small>
+          <div id="recentSearches" class="recent-searches"></div>
+        </div>
+        <div class="field">
+          <label for="radius">搜索半径</label>
+          <select id="radius">
+            <option value="1000">1 km</option>
+            <option value="3000">3 km</option>
+            <option value="5000" selected>5 km</option>
+            <option value="10000">10 km</option>
+            <option value="20000">20 km</option>
+            <option value="50000">50 km</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" type="button" onclick="useCurrentLocation()">🎯 自动定位</button>
+          <button class="btn" type="button" onclick="enableMapPick()">📍 地图选点</button>
+          <button class="btn" type="button" onclick="clearCenter()">✕ 清除选点</button>
+          <button id="searchButton" class="btn btn-primary search-btn" type="button" onclick="runSearch()">🔍 搜索并叠加显示</button>
+        </div>
+        <div id="locationBox" class="location-box">尚未选择中心点。也可直接点击右侧地图。</div>
+        <div id="summary" class="summary" hidden></div>
+      </aside>
+      <div id="map" aria-label="聚合搜索地图"></div>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const COLORS = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#4b5563'];
+    const map = L.map('map', { zoomControl: true }).setView([39.9042, 116.4074], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let centerPoint = null;
+    let centerMarker = null;
+    let radiusCircle = null;
+    let resultControl = null;
+    let resultLayers = [];
+    const RECENT_KEYWORDS_KEY = 'mapAggregateRecentKeywords';
+
+    map.on('click', event => {
+      if (!centerPoint) {
+        setCenter(event.latlng.lat, event.latlng.lng, '地图选点');
+      }
+    });
+
+    function setStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function setCenter(lat, lng, source) {
+      clearResults();
+      document.getElementById('summary').hidden = true;
+      centerPoint = { lat, lng };
+      if (centerMarker) centerMarker.remove();
+      if (radiusCircle) radiusCircle.remove();
+      centerMarker = L.marker([lat, lng], { draggable: true }).addTo(map).bindPopup('搜索中心').openPopup();
+      centerMarker.on('dragend', event => {
+        const point = event.target.getLatLng();
+        setCenter(point.lat, point.lng, '拖动选点');
+      });
+      map.getContainer().style.cursor = 'grab';
+      const radius = Number(document.getElementById('radius').value);
+      radiusCircle = L.circle([lat, lng], {
+        radius, color: '#2563eb', weight: 1, fillColor: '#60a5fa', fillOpacity: .08
+      }).addTo(map);
+      document.getElementById('locationBox').textContent = `${source}：${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      setStatus('中心点已确定');
+    }
+
+    function clearCenter() {
+      clearResults();
+      if (centerMarker) centerMarker.remove();
+      if (radiusCircle) radiusCircle.remove();
+      centerMarker = null;
+      radiusCircle = null;
+      centerPoint = null;
+      map.getContainer().style.cursor = 'crosshair';
+      document.getElementById('summary').hidden = true;
+      document.getElementById('locationBox').textContent = '尚未选择中心点。现在可以点击地图重新选点。';
+      setStatus('选点已清除');
+    }
+
+    document.getElementById('radius').addEventListener('change', () => {
+      if (centerPoint) setCenter(centerPoint.lat, centerPoint.lng, '已更新半径');
+    });
+
+    function useCurrentLocation() {
+      if (!navigator.geolocation) {
+        setStatus('当前浏览器不支持定位');
+        return;
+      }
+      setStatus('正在获取当前位置…');
+      navigator.geolocation.getCurrentPosition(position => {
+        const { latitude, longitude } = position.coords;
+        setCenter(latitude, longitude, '自动定位');
+        map.setView([latitude, longitude], 14);
+      }, error => setStatus(`定位失败：${error.message}`), {
+        enableHighAccuracy: true, timeout: 12000, maximumAge: 60000
+      });
+    }
+
+    function enableMapPick() {
+      setStatus(centerPoint ? '已有中心点；请拖动标记，或先清除选点' : '请点击地图选择搜索中心');
+      document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function parseKeywords() {
+      const seen = new Set();
+      return document.getElementById('keywords').value.split(/\n+/)
+        .map(value => value.trim())
+        .filter(value => value && !seen.has(value) && seen.add(value));
+    }
+
+    function getRecentKeywords() {
+      try {
+        const stored = JSON.parse(localStorage.getItem(RECENT_KEYWORDS_KEY) || '[]');
+        return Array.isArray(stored) ? stored.filter(value => typeof value === 'string').slice(0, 10) : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function renderRecentKeywords() {
+      const container = document.getElementById('recentSearches');
+      const recent = getRecentKeywords();
+      if (!recent.length) {
+        container.innerHTML = '';
+        return;
+      }
+      container.innerHTML = `<span class="recent-label">最近查找</span>${recent.map(keyword =>
+        `<button type="button" class="recent-keyword" data-keyword="${escapeHtml(keyword)}">${escapeHtml(keyword)}</button>`
+      ).join('')}`;
+      container.querySelectorAll('.recent-keyword').forEach(button => {
+        button.addEventListener('click', () => addRecentKeyword(button.dataset.keyword));
+      });
+    }
+
+    function addRecentKeyword(keyword) {
+      const textarea = document.getElementById('keywords');
+      const current = parseKeywords();
+      if (current.includes(keyword)) {
+        setStatus(`“${keyword}”已在搜索列表中`);
+        return;
+      }
+      if (current.length >= 8) {
+        setStatus('一次最多添加 8 个关键词');
+        return;
+      }
+      textarea.value = [...current, keyword].join('\n');
+      textarea.focus();
+    }
+
+    function saveRecentKeywords(keywords) {
+      const recent = [...keywords, ...getRecentKeywords()]
+        .filter((keyword, index, values) => values.indexOf(keyword) === index)
+        .slice(0, 10);
+      try {
+        localStorage.setItem(RECENT_KEYWORDS_KEY, JSON.stringify(recent));
+      } catch (error) {
+        // 隐私模式或存储被禁用时，不影响搜索。
+      }
+      renderRecentKeywords();
+    }
+
+    function escapeHtml(value) {
+      const node = document.createElement('div');
+      node.textContent = value == null ? '' : String(value);
+      return node.innerHTML;
+    }
+
+    function markerIcon(color, label) {
+      return L.divIcon({
+        className: '', iconSize: [28, 34], iconAnchor: [14, 34], popupAnchor: [0, -32],
+        html: `<div class="poi-marker" style="background:${color}"><span>${label}</span></div>`
+      });
+    }
+
+    function clearResults() {
+      resultLayers.forEach(layer => layer.remove());
+      resultLayers = [];
+      if (resultControl) {
+        map.removeControl(resultControl);
+        resultControl = null;
+      }
+    }
+
+    function renderResults(data) {
+      clearResults();
+      const overlays = {};
+      const bounds = centerPoint ? L.latLngBounds([[centerPoint.lat, centerPoint.lng]]) : L.latLngBounds([]);
+      const summary = document.getElementById('summary');
+      summary.hidden = false;
+      summary.innerHTML = '<strong>搜索结果</strong>';
+
+      data.groups.forEach((group, index) => {
+        const color = COLORS[index % COLORS.length];
+        const layer = L.layerGroup();
+        group.results.forEach((poi, poiIndex) => {
+          const marker = L.marker([poi.lat, poi.lng], { icon: markerIcon(color, index + 1) });
+          marker.bindPopup(`
+            <div class="popup-name">${escapeHtml(poi.name)}</div>
+            <div>${escapeHtml([poi.province, poi.city, poi.area, poi.address].filter(Boolean).join(' '))}</div>
+            ${poi.parent_name ? `<div>所在主地点：${escapeHtml(poi.parent_name)}</div>` : ''}
+            ${poi.status ? `<div>状态：${escapeHtml(poi.status)}</div>` : ''}
+            ${poi.telephone ? `<div>电话：${escapeHtml(poi.telephone)}</div>` : ''}
+            <div>距中心约 ${(poi.distance_m / 1000).toFixed(1)} km</div>
+          `);
+          marker.addTo(layer);
+          bounds.extend([poi.lat, poi.lng]);
+        });
+        layer.addTo(map);
+        resultLayers.push(layer);
+        overlays[`${index + 1}. ${group.keyword} (${group.results.length})`] = layer;
+        summary.insertAdjacentHTML('beforeend', `
+          <div class="summary-row"><span class="color-dot" style="background:${color}"></span>
+            <span>${escapeHtml(group.keyword)}</span><span class="count">合并显示 ${group.results.length} 个</span></div>
+          ${group.error ? `<div class="error-text">${escapeHtml(group.error)}</div>` : ''}
+        `);
+      });
+      if (Object.keys(overlays).length) resultControl = L.control.layers({}, overlays, { collapsed: false }).addTo(map);
+      if (bounds.isValid()) map.fitBounds(bounds.pad(.12), { maxZoom: 15 });
+    }
+
+    async function runSearch() {
+      if (!centerPoint) {
+        setStatus('请先自动定位或点击地图选点');
+        return;
+      }
+      const keywords = parseKeywords();
+      if (!keywords.length) {
+        setStatus('请至少输入一个关键词');
+        return;
+      }
+      if (keywords.length > 8) {
+        setStatus('一次最多搜索 8 个关键词');
+        return;
+      }
+      const button = document.getElementById('searchButton');
+      button.disabled = true;
+      setStatus(`正在聚合搜索 ${keywords.length} 个关键词…`);
+      try {
+        const response = await fetch('/api/map/aggregate-search', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: centerPoint.lat, lng: centerPoint.lng,
+            radius: Number(document.getElementById('radius').value), keywords
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '搜索失败');
+        saveRecentKeywords(keywords);
+        renderResults(data);
+        const total = data.groups.reduce((sum, group) => sum + group.results.length, 0);
+        setStatus(`已叠加 ${data.groups.length} 类，共 ${total} 个结果`);
+      } catch (error) {
+        setStatus(`搜索失败：${error.message}`);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    renderRecentKeywords();
+  </script>
+</body>
+</html>

@@ -45,3 +45,14 @@ def test_notification_contains_requested_columns_and_links():
     assert notification_title([{"change": "delisted"}]) == "SW-KA 房源下架通知"
     assert notification_title([{"change": "added"}, {"change": "delisted"}]) == "SW-KA 房源上架与下架通知"
     assert "SW-KA 房源变化通知" in text
+
+
+def test_delisted_card_contains_listing_duration():
+    changes = [{"id": "7", "change": "delisted", "rental_type": "wg", "recorded_at": "2026-08-20T10:00:00Z"}]
+    records = {"7": {
+        "rental_type": "wg", "url": "https://example.test/7", "listing_duration_seconds": 183720,
+        "detail": {"房型/面积": "WG", "可入住时间": "?", "冷租": "?", "暖租": "?"},
+    }}
+    text, rendered, _ = build_notification(changes, records)
+    assert "上架持续时间" in rendered and "2 天 3 小时 2 分钟" in rendered
+    assert "上架持续时间: 2 天 3 小时 2 分钟" in text

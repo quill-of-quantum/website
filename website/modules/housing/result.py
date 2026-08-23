@@ -2,7 +2,7 @@ import html
 import json
 from datetime import datetime
 
-from modules.housing.db import list_rooms
+from modules.housing.db import format_listing_duration, list_rooms
 from modules.housing.store import DATA_DIR
 
 
@@ -14,7 +14,7 @@ TYPE_STYLE = {
     "unknown": {"label": "未分类", "color": "#6b7280"},
 }
 DISPLAY_COLUMNS = [
-    "房源状态", "记录变化", "Eintrag vom", "房源分类", "地址", "房型/面积", "可入住时间",
+    "房源状态", "记录变化", "Eintrag vom", "上架持续时间", "房源分类", "地址", "房型/面积", "可入住时间",
     "冷租", "杂费", "暖租", "取暖费包含", "电费包含", "水费包含", "Wi-Fi费用包含",
     "网络接口", "嵌入式厨房", "灶台", "冰箱", "洗碗机", "洗衣机", "烘干机",
     "接受男性", "接受女性", "接受情侣", "接受非吸烟者", "家具", "房东姓名",
@@ -65,6 +65,9 @@ def generate_result_html():
         record_change = room.get("record_change") or "未变化（复用）"
         values = {
             **detail, "房源状态": status, "记录变化": record_change,
+            "上架持续时间": format_listing_duration(
+                room.get("listing_duration_seconds"), room.get("listing_started_source") == "website"
+            ) if status == "已下架" else "-",
             "房源分类": style["label"], "地址": room.get("address") or detail.get("地址"),
             "房型/面积": room.get("room_type_text") or detail.get("房型/面积"), "链接": room.get("url"),
         }
@@ -103,12 +106,13 @@ table{{border-collapse:collapse;font-size:13px;width:max-content}}th,td{{border:
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script><script>
 const data={json.dumps(markers, ensure_ascii=False)},map=L.map('map').setView([49.0069,8.4037],11);L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{attribution:'OpenStreetMap'}}).addTo(map);
 const rows=[...document.querySelectorAll('tbody tr')],rowById=new Map(rows.map(r=>[r.dataset.roomId,r])),layers=new Map();
+const searchInput=document.getElementById('search'),typeFilter=document.getElementById('type'),statusFilter=document.getElementById('status'),changeFilter=document.getElementById('change'),resetButton=document.getElementById('reset'),countElement=document.getElementById('count');
 for(const x of data){{const layer=L.circleMarker([x.lat,x.lon],{{radius:8,color:'#fff',weight:2,fillColor:x.color,fillOpacity:.92}}).bindTooltip(`${{x.label}} · ${{x.rent}} · ${{x.room}}`).bindPopup(`<strong>${{x.label}} · ID ${{x.id}}</strong><br>${{x.address}}<br><a target="_blank" href="${{x.url}}">打开原房源</a>`);layer.addTo(map);layer.on('mouseover',()=>highlight(x.id,true,true));layer.on('mouseout',()=>highlight(x.id,false));layers.set(String(x.id),layer)}}
 if(data.length>1)map.fitBounds(data.map(x=>[x.lat,x.lon]),{{padding:[25,25]}});
 function highlight(id,on,scroll=false){{const row=rowById.get(String(id)),layer=layers.get(String(id));if(row){{row.classList.toggle('linked-highlight',on);if(on&&scroll)row.scrollIntoView({{block:'nearest'}})}}if(layer)layer.setStyle({{radius:on?12:8,weight:on?4:2}})}}
 rows.forEach(row=>{{row.onmouseenter=()=>highlight(row.dataset.roomId,true);row.onmouseleave=()=>highlight(row.dataset.roomId,false)}});
-function apply(){{const q=search.value.trim().toLowerCase();let visible=0;for(const row of rows){{const changed=row.dataset.change!=='未变化（复用）';const show=(!q||row.innerText.toLowerCase().includes(q))&&(!type.value||row.dataset.type===type.value)&&(!status.value||row.dataset.status===status.value)&&(!change.value||(change.value==='changed'?changed:!changed));row.hidden=!show;const layer=layers.get(row.dataset.roomId);if(layer){{if(show&&!map.hasLayer(layer))layer.addTo(map);if(!show&&map.hasLayer(layer))map.removeLayer(layer)}}if(show)visible++}}count.textContent=`${{visible}} / ${{rows.length}} 个房源`}}
-[search,type,status,change].forEach(el=>el.addEventListener(el===search?'input':'change',apply));reset.onclick=()=>{{search.value='';type.value='';status.value='';change.value='';apply()}};apply();setTimeout(()=>map.invalidateSize(),0);
+function apply(){{const q=searchInput.value.trim().toLowerCase();let visible=0;for(const row of rows){{const changed=row.dataset.change!=='未变化（复用）';const show=(!q||row.innerText.toLowerCase().includes(q))&&(!typeFilter.value||row.dataset.type===typeFilter.value)&&(!statusFilter.value||row.dataset.status===statusFilter.value)&&(!changeFilter.value||(changeFilter.value==='changed'?changed:!changed));row.hidden=!show;const layer=layers.get(row.dataset.roomId);if(layer){{if(show&&!map.hasLayer(layer))layer.addTo(map);if(!show&&map.hasLayer(layer))map.removeLayer(layer)}}if(show)visible++}}countElement.textContent=`${{visible}} / ${{rows.length}} 个房源`}}
+searchInput.addEventListener('input',apply);[typeFilter,statusFilter,changeFilter].forEach(el=>el.addEventListener('change',apply));resetButton.addEventListener('click',()=>{{searchInput.value='';typeFilter.value='';statusFilter.value='';changeFilter.value='';apply()}});apply();setTimeout(()=>map.invalidateSize(),0);
 </script></body></html>'''
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     RESULT_PATH.write_text(document, encoding="utf-8")

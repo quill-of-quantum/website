@@ -3,12 +3,14 @@ from datetime import datetime
 from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
+from modules.housing.db import format_listing_duration
+
 
 TYPE_LABELS = {"wg": "WG", "einzelzimmer": "Einzelzimmer", "xzimmer": "xZimmer", "unknown": "未分类"}
 CHANGE_LABELS = {"added": "新上架", "delisted": "新下架", "relisted": "重新上架", "updated": "重新上架"}
 MAIL_COLUMNS = [
     "变化", "记录时间", "房源分类", "面积房型", "可入住时间", "冷租", "暖租", "房东姓名",
-    "邮箱", "电话", "手机", "地址", "备注", "网址", "非常规提示",
+    "邮箱", "电话", "手机", "地址", "上架持续时间", "备注", "网址", "非常规提示",
 ]
 
 
@@ -91,6 +93,9 @@ def build_notification(changes, room_records):
             "暖租": _value(detail.get("暖租")), "房东姓名": _value(detail.get("房东姓名")),
             "邮箱": email, "电话": _value(detail.get("房东电话")), "手机": _value(detail.get("房东手机")),
             "地址": _value(detail.get("地址") or room.get("address")),
+            "上架持续时间": format_listing_duration(
+                room.get("listing_duration_seconds"), room.get("listing_started_source") == "website"
+            ),
             "备注": _value(detail.get("备注")), "网址": url,
             "非常规提示": "；".join(unusual_notes(detail)) or "未发现明显非常规项",
         }
@@ -136,6 +141,7 @@ def build_notification(changes, room_records):
   <div class="card-body">
     <table class="facts primary-facts" role="presentation"><tr>{fact('面积房型', row['面积房型'])}{fact('可入住时间', row['可入住时间'])}</tr></table>
     <table class="facts price-facts" role="presentation"><tr>{fact('冷租', row['冷租'])}{fact('暖租', row['暖租'])}</tr></table>
+    {f'<div class="duration"><span class="label">上架持续时间</span><br><strong>{escaped(row["上架持续时间"])}</strong></div>' if is_down else ''}
     <div class="section"><span class="label">房东刊登地址</span><div class="address">{escaped(address)}</div>{map_button}</div>
     <div class="section"><span class="label">房东与联系方式</span><div class="contact"><strong>{escaped(row['房东姓名'])}</strong><br>{email_link}<br>电话：{escaped(row['电话'])}　手机：{escaped(row['手机'])}</div></div>
     <div class="section"><span class="label">备注</span><div>{escaped(row['备注'])}</div></div>
@@ -159,7 +165,7 @@ def build_notification(changes, room_records):
     summary = " · ".join(f"{label} {count}" for label, count in counts.items() if count)
     title = notification_title(changes)
     html_body = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{escaped(title)}</title><style>
-body{{margin:0;background:#f1f5f9;color:#1f2937;font-family:Arial,"Microsoft YaHei",sans-serif}}.shell{{max-width:680px;margin:auto;padding:24px 12px}}.intro{{background:#0f172a;color:#fff;padding:22px;border-radius:12px}}.intro h1{{font-size:22px;margin:0 0 8px}}.intro p{{margin:0;color:#cbd5e1}}.group-title{{font-size:17px;margin:24px 2px 10px}}.group-title span{{font-size:12px;background:#e2e8f0;padding:3px 8px;border-radius:999px}}.card{{background:#fff;border:1px solid #dbe3ec;border-left:5px solid;border-radius:10px;margin:0 0 14px;overflow:hidden;box-shadow:0 2px 5px #0f172a12}}.card-head{{padding:11px 14px}}.badge{{display:inline-block;color:#fff;font-size:12px;font-weight:bold;padding:4px 8px;border-radius:999px}}.type{{margin-left:8px}}.time{{float:right;color:#64748b;font-size:12px;padding-top:4px}}.card-body{{padding:15px}}.facts{{width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 10px}}.fact{{width:50%;background:#f8fafc;padding:11px;border-radius:7px}}.primary-facts .fact strong{{font-size:15px}}.price-facts .fact{{background:#ecfeff;border:1px solid #a5f3fc}}.price-facts .fact strong{{font-size:19px;color:#0f766e}}.label{{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em}}.section{{border-top:1px solid #e2e8f0;padding-top:11px;margin-top:11px;line-height:1.55}}.address{{font-weight:bold;margin:3px 0 8px}}.contact a{{color:#1d4ed8}}.map-button{{display:inline-block;color:#1d4ed8!important;background:#eff6ff;border:1px solid #bfdbfe;text-decoration:none;font-size:12px;font-weight:bold;padding:7px 10px;border-radius:6px}}.warning,.normal{{margin-top:13px;padding:10px;border-radius:7px;font-size:13px}}.warning{{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}}.normal{{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}}.action{{margin-top:16px}}.button{{display:inline-block;color:#fff!important;text-decoration:none;font-weight:bold;padding:10px 16px;border-radius:7px}}.raw-url{{margin-top:9px;color:#94a3b8;font-size:10px;word-break:break-all}}.foot{{color:#64748b;font-size:11px;line-height:1.5;margin:18px 4px}}
+body{{margin:0;background:#f1f5f9;color:#1f2937;font-family:Arial,"Microsoft YaHei",sans-serif}}.shell{{max-width:680px;margin:auto;padding:24px 12px}}.intro{{background:#0f172a;color:#fff;padding:22px;border-radius:12px}}.intro h1{{font-size:22px;margin:0 0 8px}}.intro p{{margin:0;color:#cbd5e1}}.group-title{{font-size:17px;margin:24px 2px 10px}}.group-title span{{font-size:12px;background:#e2e8f0;padding:3px 8px;border-radius:999px}}.card{{background:#fff;border:1px solid #dbe3ec;border-left:5px solid;border-radius:10px;margin:0 0 14px;overflow:hidden;box-shadow:0 2px 5px #0f172a12}}.card-head{{padding:11px 14px}}.badge{{display:inline-block;color:#fff;font-size:12px;font-weight:bold;padding:4px 8px;border-radius:999px}}.type{{margin-left:8px}}.time{{float:right;color:#64748b;font-size:12px;padding-top:4px}}.card-body{{padding:15px}}.facts{{width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 10px}}.fact{{width:50%;background:#f8fafc;padding:11px;border-radius:7px}}.primary-facts .fact strong{{font-size:15px}}.price-facts .fact{{background:#ecfeff;border:1px solid #a5f3fc}}.price-facts .fact strong{{font-size:19px;color:#0f766e}}.duration{{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:10px;border-radius:7px;margin:4px 0 12px}}.label{{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em}}.section{{border-top:1px solid #e2e8f0;padding-top:11px;margin-top:11px;line-height:1.55}}.address{{font-weight:bold;margin:3px 0 8px}}.contact a{{color:#1d4ed8}}.map-button{{display:inline-block;color:#1d4ed8!important;background:#eff6ff;border:1px solid #bfdbfe;text-decoration:none;font-size:12px;font-weight:bold;padding:7px 10px;border-radius:6px}}.warning,.normal{{margin-top:13px;padding:10px;border-radius:7px;font-size:13px}}.warning{{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}}.normal{{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}}.action{{margin-top:16px}}.button{{display:inline-block;color:#fff!important;text-decoration:none;font-weight:bold;padding:10px 16px;border-radius:7px}}.raw-url{{margin-top:9px;color:#94a3b8;font-size:10px;word-break:break-all}}.foot{{color:#64748b;font-size:11px;line-height:1.5;margin:18px 4px}}
 @media(max-width:520px){{.shell{{padding:10px 6px}}.intro{{border-radius:8px}}.time{{float:none;display:block;margin-top:7px}}.hero strong,.hero span{{display:block;text-align:left}}.hero span{{margin-top:6px}}.fact{{display:block;width:auto;margin-bottom:7px}}.facts tr{{display:block}}}}
 </style></head><body><div class="shell"><div class="intro"><h1>{escaped(title)}</h1><p>{escaped(summary or str(len(rows)) + ' 条变化')}</p></div>{''.join(groups)}<p class="foot">“非常规提示”使用同组相对判断：整组同值或全部未填写不会被机械判断为限制。此邮件来自单次搜索的新变化，与网页中保留 8 小时的变化标签相互独立。</p></div></body></html>'''
     return "\n".join(plain_lines), html_body, rows

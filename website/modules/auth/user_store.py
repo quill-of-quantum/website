@@ -21,20 +21,14 @@ def _default_users():
 
 def _load_users():
     if not os.path.exists(USER_STORE_PATH):
-        users = _default_users()
-        _save_users(users)
-        return users
+        return {}
     try:
         with open(USER_STORE_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("invalid users store")
     except Exception:
-        data = _default_users()
-    admin = data.get("admin")
-    if not isinstance(admin, dict) or admin.get("role") != "admin":
-        data["admin"] = _default_users()["admin"]
-        _save_users(data)
+        return {}
     return data
 
 

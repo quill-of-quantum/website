@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from flask import Flask, render_template, send_file, send_from_directory, url_for
 from PIL import Image, ImageOps
@@ -7,8 +8,27 @@ from admin import admin_bp
 from featured import get_featured_map, get_group_order
 from gallery_data import build_groups
 
+
+def _load_session_secret():
+    credential_dir = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credential_dir:
+        credential_path = Path(credential_dir) / "flask-session-secret"
+        try:
+            secret = credential_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError("无法读取 Gallery Session 凭据") from exc
+        if not secret:
+            raise RuntimeError("Gallery Session 凭据为空")
+        return secret
+    return os.environ.get("GALLERY_SECRET_KEY", "dev-secret-change-me")
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("GALLERY_SECRET_KEY", "dev-secret-change-me")
+app.secret_key = _load_session_secret()
+app.config.update(
+    SESSION_COOKIE_NAME="gallery_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 app.config["ADMIN_USERNAME"] = os.environ.get("GALLERY_ADMIN_USER", "admin")  # 登录名
 app.config["ADMIN_PASSWORD"] = os.environ.get("GALLERY_ADMIN_PASS", "bbdwz")  # 登录密码

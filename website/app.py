@@ -9,6 +9,21 @@ from datetime import date, timedelta
 import io, base64
 import io
 import base64
+from pathlib import Path
+
+
+def _load_session_secret():
+    credential_dir = os.environ.get("CREDENTIALS_DIRECTORY")
+    if credential_dir:
+        credential_path = Path(credential_dir) / "flask-session-secret"
+        try:
+            secret = credential_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError("无法读取主站 Session 凭据") from exc
+        if not secret:
+            raise RuntimeError("主站 Session 凭据为空")
+        return secret
+    return os.environ.get("WEBSITE_SECRET_KEY", "replace_this_with_a_strong_random_key")
 
 os.environ['TZ'] = 'Europe/Berlin'
 time.tzset()
@@ -17,7 +32,12 @@ time.tzset()
 # Flask 初始化
 # ===============================
 app = Flask(__name__)
-app.secret_key = "replace_this_with_a_strong_random_key"  # 请替换为随机长字符串
+app.secret_key = _load_session_secret()
+app.config.update(
+    SESSION_COOKIE_NAME="website_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 # 请求体大小由 Nginx 按路由限制；Cloud 使用流式直传并由磁盘余量检查控制。
 app.config['MAX_CONTENT_LENGTH'] = None
 

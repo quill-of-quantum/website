@@ -12,6 +12,7 @@ import sqlite3
 import shutil
 import branca.colormap as cm
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from datetime import datetime, timezone
 
@@ -652,6 +653,23 @@ def wgs84_to_gcj02(lng, lat):
     mglat = lat + dlat
     mglng = lng + dlng
     return mglat, mglng
+
+def gcj02_to_bd09(gcj_lat, gcj_lng):
+    """GCJ02 转换为百度 BD09 坐标。"""
+    x_pi = math.pi * 3000.0 / 180.0
+    z = math.sqrt(gcj_lng * gcj_lng + gcj_lat * gcj_lat) + 0.00002 * math.sin(gcj_lat * x_pi)
+    theta = math.atan2(gcj_lat, gcj_lng) + 0.000003 * math.cos(gcj_lng * x_pi)
+    return z * math.sin(theta) + 0.006, z * math.cos(theta) + 0.0065
+
+def wgs84_to_bd09(lat, lng):
+    """将 WGS84 转为 BD09，并用现有逆转换迭代校正门店点位偏差。"""
+    gcj_lat, gcj_lng = wgs84_to_gcj02(lng, lat)
+    bd_lat, bd_lng = gcj02_to_bd09(gcj_lat, gcj_lng)
+    for _ in range(4):
+        estimated_lat, estimated_lng = bd09_to_wgs84(bd_lat, bd_lng)
+        bd_lat += lat - estimated_lat
+        bd_lng += lng - estimated_lng
+    return bd_lat, bd_lng
 
 def interpolate_line(points, interval=50):
     if not points: return []
@@ -1472,6 +1490,141 @@ def geocode():
         return jsonify({"status": "ok", **coords, "input_address": address})
     else:
         return jsonify({"error": "地理编码失败"}), 400
+
+def search_nearby_pois(keyword, center_lat, center_lng, radius):
+    """合并 Place 3.0 非轻量/轻量模式，每种最多读取前 5 页。"""
+    bd_lat, bd_lng = wgs84_to_bd09(center_lat, center_lng)
+    api_path = "/place/v3/around"
+    pois = []
+    seen = set()
+    api_total = 0
+    mode_totals = {}
+    page_size = 20
+    for light_mode in ("false", "true"):
+        mode_top_level_seen = set()
+        mode_total = 0
+        for page_num in range(5):
+            params = {
+                "query": keyword,
+                "location": f"{bd_lat},{bd_lng}",
+                "radius": str(radius),
+                "radius_limit": "true",
+                "is_light_version": light_mode,
+                "coord_type": "3",
+                "scope": "2",
+                "page_size": str(page_size),
+                "page_num": str(page_num),
+                "output": "json",
+                "ak": AK,
+            }
+            sorted_params = sorted(params.items())
+            query_str = api_path + "?" + "&".join(f"{key}={value}" for key, value in sorted_params)
+            encoded_str = urllib.parse.quote(query_str, safe="/:=&?#+!$,;'@()*[]")
+            sn = hashlib.md5(urllib.parse.quote_plus(encoded_str + SK).encode()).hexdigest()
+            response = requests.get("https://api.map.baidu.com" + query_str + f"&sn={sn}", timeout=12)
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("status") != 0:
+                raise RuntimeError(payload.get("message") or f"百度搜索错误 {payload.get('status')}")
+
+            mode_total = max(mode_total, int(payload.get("total", 0) or 0))
+            page_results = payload.get("results", [])
+            for item in page_results:
+                top_level_key = item.get("uid") or (
+                    item.get("name", ""), json.dumps(item.get("location") or {}, sort_keys=True)
+                )
+                mode_top_level_seen.add(top_level_key)
+                detail_info = item.get("detail_info") or {}
+                candidates = [(item, None)]
+                candidates.extend((child, item) for child in (item.get("children") or []))
+                for candidate, parent in candidates:
+                    location = candidate.get("location") or {}
+                    if location.get("lat") is None or location.get("lng") is None:
+                        continue
+                    unique_key = candidate.get("uid") or (
+                        candidate.get("name", ""),
+                        round(float(location["lat"]), 6),
+                        round(float(location["lng"]), 6)
+                    )
+                    if unique_key in seen:
+                        continue
+                    seen.add(unique_key)
+                    wgs_lat, wgs_lng = bd09_to_wgs84(float(location["lat"]), float(location["lng"]))
+                    distance_m = round(haversine_distance(center_lng, center_lat, wgs_lng, wgs_lat))
+                    if distance_m > radius:
+                        continue
+                    pois.append({
+                        "uid": candidate.get("uid", ""),
+                        "name": candidate.get("name") or candidate.get("show_name", ""),
+                        "address": candidate.get("address") or item.get("address", ""),
+                        "province": candidate.get("province") or item.get("province", ""),
+                        "city": candidate.get("city") or item.get("city", ""),
+                        "area": candidate.get("area") or candidate.get("district") or item.get("area", ""),
+                        "telephone": candidate.get("telephone") or item.get("telephone", ""),
+                        "status": candidate.get("status") or item.get("status", ""),
+                        "brand": candidate.get("brand") or detail_info.get("brand", ""),
+                        "new_alias": candidate.get("new_alias") or detail_info.get("new_alias", ""),
+                        "parent_name": parent.get("name", "") if parent else "",
+                        "lat": round(wgs_lat, 7),
+                        "lng": round(wgs_lng, 7),
+                        "distance_m": distance_m,
+                    })
+            if not page_results or (mode_total and len(mode_top_level_seen) >= mode_total):
+                break
+        mode_totals[light_mode] = mode_total
+        api_total = max(api_total, mode_total)
+    pois.sort(key=lambda poi: poi["distance_m"])
+    return {"results": pois, "api_total": api_total, "mode_totals": mode_totals}
+
+@bp.route('/aggregate-search', methods=['POST'])
+def aggregate_search():
+    """在同一中心点周边并发搜索多个 POI 关键词。"""
+    data = request.get_json() or {}
+    try:
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+        radius = int(data.get("radius", 5000))
+    except (TypeError, ValueError):
+        return jsonify({"error": "中心点或搜索半径无效"}), 400
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return jsonify({"error": "中心点坐标超出范围"}), 400
+    radius = max(100, min(radius, 50000))
+
+    raw_keywords = data.get("keywords") or []
+    if not isinstance(raw_keywords, list):
+        return jsonify({"error": "关键词格式无效"}), 400
+    keywords = []
+    for raw_keyword in raw_keywords:
+        keyword = str(raw_keyword).strip()
+        if keyword and keyword not in keywords:
+            keywords.append(keyword[:40])
+    if not keywords:
+        return jsonify({"error": "请至少输入一个关键词"}), 400
+    if len(keywords) > 8:
+        return jsonify({"error": "一次最多搜索 8 个关键词"}), 400
+
+    groups = {keyword: {"keyword": keyword, "results": [], "error": None} for keyword in keywords}
+    with ThreadPoolExecutor(max_workers=min(4, len(keywords))) as executor:
+        futures = {
+            executor.submit(search_nearby_pois, keyword, lat, lng, radius): keyword
+            for keyword in keywords
+        }
+        for future in as_completed(futures):
+            keyword = futures[future]
+            try:
+                search_result = future.result()
+                groups[keyword]["results"] = search_result["results"]
+                groups[keyword]["api_total"] = search_result["api_total"]
+                groups[keyword]["mode_totals"] = search_result.get("mode_totals", {})
+            except Exception as exc:
+                groups[keyword]["error"] = str(exc)
+
+    return jsonify({
+        "status": "ok",
+        "center": {"lat": lat, "lng": lng},
+        "radius": radius,
+        "groups": [groups[keyword] for keyword in keywords]
+    })
 
 @bp.route('/topo', methods=['POST'])
 def get_topo():

@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from modules.housing.store import DATA_DIR, load_state
 
@@ -12,6 +13,17 @@ CHANGE_DISPLAY_RETENTION = timedelta(hours=8)
 
 def _now():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _entry_started_at(detail_json):
+    try:
+        value = json.loads(detail_json or "{}").get("Eintrag vom")
+        local_midnight = datetime.strptime(str(value), "%d.%m.%Y").replace(
+            tzinfo=ZoneInfo("Europe/Berlin")
+        )
+        return local_midnight.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return ""
 
 
 def connect():
@@ -51,9 +63,46 @@ def connect():
         "geocode_result": "TEXT NOT NULL DEFAULT ''", "coordinate_accuracy": "TEXT NOT NULL DEFAULT ''",
         "record_change": "TEXT NOT NULL DEFAULT '未变化（复用）'",
         "record_change_at": "TEXT NOT NULL DEFAULT ''",
+        "listing_started_at": "TEXT NOT NULL DEFAULT ''",
+        "listing_duration_seconds": "INTEGER",
+        "listing_started_source": "TEXT NOT NULL DEFAULT 'observed'",
     }.items():
         if name not in columns:
             db.execute(f"ALTER TABLE rooms ADD COLUMN {name} {declaration}")
+    db.execute("UPDATE rooms SET listing_started_at=first_seen_at WHERE listing_started_at='' AND first_seen_at!=''")
+    # 幂等迁移旧数据：只转换仍以首次发现时间为起点的 observed 记录。
+    # 转换成功后 source=website，后续连接不会再次处理。
+    for row in db.execute(
+        """SELECT id,detail_json,status,delisted_at FROM rooms
+           WHERE listing_started_source='observed' AND listing_started_at=first_seen_at AND detail_json!='{}'"""
+    ).fetchall():
+        website_start = _entry_started_at(row["detail_json"])
+        if not website_start:
+            continue
+        duration = None
+        if row["status"] == "delisted" and row["delisted_at"]:
+            try:
+                started = datetime.fromisoformat(website_start.replace("Z", "+00:00"))
+                ended = datetime.fromisoformat(row["delisted_at"].replace("Z", "+00:00"))
+                duration = max(0, int((ended - started).total_seconds()))
+            except (TypeError, ValueError):
+                pass
+        db.execute(
+            "UPDATE rooms SET listing_started_at=?,listing_started_source='website',listing_duration_seconds=COALESCE(?,listing_duration_seconds) WHERE id=?",
+            (website_start, duration, row["id"]),
+        )
+    for row in db.execute(
+        "SELECT id,listing_started_at,delisted_at FROM rooms WHERE status='delisted' AND listing_duration_seconds IS NULL AND listing_started_at!='' AND delisted_at!=''"
+    ).fetchall():
+        try:
+            started = datetime.fromisoformat(row["listing_started_at"].replace("Z", "+00:00"))
+            ended = datetime.fromisoformat(row["delisted_at"].replace("Z", "+00:00"))
+            db.execute(
+                "UPDATE rooms SET listing_duration_seconds=? WHERE id=?",
+                (max(0, int((ended - started).total_seconds())), row["id"]),
+            )
+        except (TypeError, ValueError):
+            pass
     db.execute("CREATE INDEX IF NOT EXISTS idx_rooms_address ON rooms(address)")
     if change_timestamp_added:
         # 一次性兼容已有数据库：从变化历史恢复最近一次变化时间及仍在展示期内的标签。
@@ -129,11 +178,13 @@ def apply_catalog(current, mode, started_at, baseline=False):
                 display_label = "未变化（复用）" if baseline else "新上架"
                 display_at = "" if baseline else now
                 db.execute("""INSERT INTO rooms(id,rental_type,url,summary,status,first_seen_at,last_seen_at,updated_at,
-                    detail_json,address,room_type_text,latitude,longitude,geocode_result,coordinate_accuracy,record_change,record_change_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    detail_json,address,room_type_text,latitude,longitude,geocode_result,coordinate_accuracy,record_change,record_change_at,
+                    listing_started_at,listing_duration_seconds)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (room_id, room["rental_type"], room["url"], room.get("summary", ""), "active", now, now, now,
                      json.dumps(room.get("detail") or {}, ensure_ascii=False), room.get("address", ""), room.get("room_type_text", ""),
-                     room.get("latitude"), room.get("longitude"), room.get("geocode_result", ""), room.get("coordinate_accuracy", ""), display_label, display_at))
+                     room.get("latitude"), room.get("longitude"), room.get("geocode_result", ""), room.get("coordinate_accuracy", ""),
+                     display_label, display_at, now, None))
             else:
                 if old["status"] != "active":
                     change = "relisted"
@@ -149,13 +200,17 @@ def apply_catalog(current, mode, started_at, baseline=False):
                     latitude=COALESCE(?,latitude),longitude=COALESCE(?,longitude),
                     geocode_result=CASE WHEN ?!='' THEN ? ELSE geocode_result END,
                     coordinate_accuracy=CASE WHEN ?!='' THEN ? ELSE coordinate_accuracy END,
-                    record_change=?,record_change_at=? WHERE id=?""",
+                    record_change=?,record_change_at=?,
+                    listing_started_at=CASE WHEN ? THEN ? ELSE listing_started_at END,
+                    listing_duration_seconds=CASE WHEN ? THEN NULL ELSE listing_duration_seconds END,
+                    listing_started_source=CASE WHEN ? THEN 'observed' ELSE listing_started_source END WHERE id=?""",
                     (room["rental_type"], room["url"], room.get("summary", ""), now, now if change else old["updated_at"],
                      json.dumps(room.get("detail") or {}, ensure_ascii=False), json.dumps(room.get("detail") or {}, ensure_ascii=False),
                      room.get("address", ""), room.get("address", ""), room.get("room_type_text", ""), room.get("room_type_text", ""),
                      room.get("latitude"), room.get("longitude"), room.get("geocode_result", ""), room.get("geocode_result", ""),
                      room.get("coordinate_accuracy", ""), room.get("coordinate_accuracy", ""),
-                     display_change, display_change_at, room_id),
+                     display_change, display_change_at,
+                     change == "relisted", now, change == "relisted", change == "relisted", room_id),
                 )
             if change:
                 item = {**room, "change": change, "recorded_at": now}
@@ -164,9 +219,15 @@ def apply_catalog(current, mode, started_at, baseline=False):
                            (room_id, change, room["rental_type"], now, json.dumps(item, ensure_ascii=False)))
         for room_id, old in existing.items():
             if room_id not in current and old["status"] == "active":
-                item = {"id": room_id, "url": old["url"], "rental_type": old["rental_type"], "summary": old["summary"], "change": "delisted", "recorded_at": now}
+                try:
+                    started = datetime.fromisoformat((old.get("listing_started_at") or old["first_seen_at"]).replace("Z", "+00:00"))
+                    ended = datetime.fromisoformat(now.replace("Z", "+00:00"))
+                    duration_seconds = max(0, int((ended - started).total_seconds()))
+                except (TypeError, ValueError):
+                    duration_seconds = None
+                item = {"id": room_id, "url": old["url"], "rental_type": old["rental_type"], "summary": old["summary"], "change": "delisted", "recorded_at": now, "listing_duration_seconds": duration_seconds}
                 changes.append(item)
-                db.execute("UPDATE rooms SET status='delisted',delisted_at=?,updated_at=?,record_change='已下架',record_change_at=? WHERE id=?", (now, now, now, room_id))
+                db.execute("UPDATE rooms SET status='delisted',delisted_at=?,updated_at=?,record_change='已下架',record_change_at=?,listing_duration_seconds=? WHERE id=?", (now, now, now, duration_seconds, room_id))
                 db.execute("INSERT INTO changes(room_id,change_type,rental_type,happened_at,snapshot_json) VALUES(?,?,?,?,?)",
                            (room_id, "delisted", old["rental_type"], now, json.dumps(item, ensure_ascii=False)))
         # 展示标签只在正常搜索时顺便过期，不运行额外计时器；也覆盖长期保持下架的房源。
@@ -189,6 +250,25 @@ def apply_catalog(current, mode, started_at, baseline=False):
 def list_rooms():
     with connect() as db:
         return [dict(row) for row in db.execute("SELECT * FROM rooms ORDER BY status, updated_at DESC")]
+
+
+def format_listing_duration(seconds, approximate=False):
+    if seconds is None:
+        return "?"
+    try:
+        total_minutes = max(0, int(seconds) // 60)
+    except (TypeError, ValueError):
+        return "?"
+    days, remaining = divmod(total_minutes, 24 * 60)
+    hours, minutes = divmod(remaining, 60)
+    parts = []
+    if days:
+        parts.append(f"{days} 天")
+    if hours or days:
+        parts.append(f"{hours} 小时")
+    parts.append(f"{minutes} 分钟")
+    rendered = " ".join(parts)
+    return f"约 {rendered}" if approximate else rendered
 
 
 def recent_display_changes():
@@ -230,11 +310,15 @@ def put_geocode_cache(address, result):
 
 def save_room_detail(room_id, parsed):
     detail_json = json.dumps(parsed.get("detail") or {}, ensure_ascii=False)
+    website_start = _entry_started_at(detail_json)
     with connect() as db:
-        db.execute("""UPDATE rooms SET detail_json=?,address=?,room_type_text=?,rental_type=?,updated_at=?
+        db.execute("""UPDATE rooms SET detail_json=?,address=?,room_type_text=?,rental_type=?,updated_at=?,
+                      listing_started_at=CASE WHEN ?!='' THEN ? ELSE listing_started_at END,
+                      listing_started_source=CASE WHEN ?!='' THEN 'website' ELSE listing_started_source END
                       WHERE id=?""", (
             detail_json, parsed.get("address", ""), parsed.get("room_type_text", ""),
-            parsed.get("rental_type") or "unknown", _now(), room_id,
+            parsed.get("rental_type") or "unknown", _now(),
+            website_start, website_start, website_start, room_id,
         ))
 
 
