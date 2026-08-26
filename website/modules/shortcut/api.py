@@ -37,14 +37,14 @@ def shortcut_run():
             f.flush()
             os.fsync(f.fileno())
 
-        py_env = "/home/bbdwz/miniconda3/envs/web/bin/python"
-        analyze_script = "/home/bbdwz/projects/website/modules/weather/analyze.py"
-
         try:
-            subprocess.Popen([py_env, analyze_script])
-            msg = f"✅ 已记录读数 {v} 于 {t}。\n→ 已启动 analyze_weather.py 更新图表。"
+            from modules.weather.db import import_legacy_readings
+            from modules.weather.store import start_analysis
+            import_legacy_readings()
+            start_analysis("new_reading")
+            msg = f"✅ 已记录读数 {v} 于 {t}。\n→ 已立即启动天气与用量分析。"
         except Exception as e:
-            msg = f"⚠️ 已记录读数 {v} 于 {t}，但分析脚本执行失败：{e}"
+            msg = f"⚠️ 已记录读数 {v} 于 {t}，但分析任务提交失败：{e}"
 
         return jsonify({
             "success": True,

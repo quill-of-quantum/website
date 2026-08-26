@@ -34,7 +34,7 @@ app.config["ADMIN_USERNAME"] = os.environ.get("GALLERY_ADMIN_USER", "admin")  # 
 app.config["ADMIN_PASSWORD"] = os.environ.get("GALLERY_ADMIN_PASS", "bbdwz")  # 登录密码
 app.config["GALLERY_ALLOWED_EXTENSIONS"] = {"jpg", "jpeg"}
 app.config["GALLERY_PHOTOS_ROOT"] = os.path.join(os.path.dirname(__file__), "photos")
-app.config["GALLERY_DB_PATH"] = os.path.join(os.path.dirname(__file__), "featured.db")
+app.config["GALLERY_DB_PATH"] = os.path.join(os.path.dirname(__file__), "data", "featured.db")
 app.register_blueprint(admin_bp)
 
 

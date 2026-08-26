@@ -26,7 +26,8 @@ SYSINFO_COLLECTOR_STARTED = False
 
 def index():
     """主页"""
-    return render_template("index.html")
+    from modules.weather.store import get_config
+    return render_template("index.html", weather_homepage_visible=get_config()["homepage_visible"])
 
 
 def cloud():
@@ -152,6 +153,14 @@ def _weather_base_dir(filename):
 
 
 def _send_weather_file(filename):
+    allowed = {
+        "usage_cumulative.svg", "usage_forecast.svg", "usage_hourly.svg",
+        "usage_daily.svg", "usage_pattern.svg", "usage_pattern_polar.svg",
+        "usage_heatmap.svg", "forecast_usage.csv", "daily_usage.csv",
+        "hourly_usage.csv",
+    }
+    if filename not in allowed:
+        return "File not found", 404
     base_dir = _weather_base_dir(filename)
     full_path = os.path.join(base_dir, filename)
     if not os.path.exists(full_path):

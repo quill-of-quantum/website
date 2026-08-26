@@ -21,14 +21,26 @@
     <main class="container" style="max-width:760px;">
       <div class="page-header">
         <h1>✉️ 新建邮件</h1>
-        <p>通过已配置的邮箱账户发送纯文本邮件</p>
+        <p>选择已配置的邮箱账户发送邮件</p>
       </div>
 
       <section class="card">
         <form id="mail-form" class="mail-form">
           <div class="field">
+            <label for="account">发件邮箱</label>
+            <input id="account" class="input" value="正在加载默认邮箱…" readonly>
+          </div>
+          <div class="field">
             <label for="recipient">收件人</label>
-            <input id="recipient" name="to" class="input" type="email" autocomplete="email" placeholder="name@example.com" required>
+            <input id="recipient" name="to" class="input" autocomplete="email" placeholder="多个地址用逗号分隔" required>
+          </div>
+          <div class="field">
+            <label for="cc">抄送</label>
+            <input id="cc" name="cc" class="input" placeholder="可选，多个地址用逗号分隔">
+          </div>
+          <div class="field">
+            <label for="bcc">密送</label>
+            <input id="bcc" name="bcc" class="input" placeholder="可选，多个地址用逗号分隔">
           </div>
           <div class="field">
             <label for="subject">主题</label>
@@ -52,10 +64,24 @@
     const form = document.getElementById('mail-form');
     const sendButton = document.getElementById('send-button');
     const statusElement = document.getElementById('mail-status');
+    const accountElement = document.getElementById('account');
 
     function showStatus(message, type) {
       statusElement.textContent = message;
       statusElement.className = `mail-status ${type || 'muted'}`;
+    }
+
+    async function loadAccounts() {
+      try {
+        const response = await fetch('/api/mail/accounts', { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || '邮箱加载失败');
+        const account = (result.accounts || {})[result.defaultAccountId];
+        accountElement.value = account ? `${account.displayName}（${account.address}）` : '没有可用的默认邮箱';
+      } catch (error) {
+        accountElement.value = '邮箱服务不可用';
+        showStatus(`加载失败：${error.message}`, 'error');
+      }
     }
 
     form.addEventListener('submit', async event => {
@@ -66,6 +92,8 @@
 
       const payload = {
         to: form.elements.to.value.trim(),
+        cc: form.elements.cc.value.trim(),
+        bcc: form.elements.bcc.value.trim(),
         subject: form.elements.subject.value.trim(),
         text: form.elements.text.value.trim()
       };
@@ -77,7 +105,7 @@
           body: JSON.stringify(payload)
         });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
+        if (!response.ok || !result.success) {
           const detail = typeof result.detail === 'string' ? result.detail : result.error;
           throw new Error(detail || '邮件发送失败');
         }
@@ -90,6 +118,8 @@
         sendButton.textContent = '发送邮件';
       }
     });
+
+    loadAccounts();
   </script>
 </body>
 </html>

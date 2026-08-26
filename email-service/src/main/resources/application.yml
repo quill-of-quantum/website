@@ -1,29 +1,52 @@
 server:
+  address: 127.0.0.1
   port: 8081
 
 spring:
   application:
     name: email-service
+  config:
+    import: optional:file:./config/accounts.yml
 
 mail:
-  provider: ${MAIL_PROVIDER:imap-smtp}
-  account:
-    address: ${MAIL_ADDRESS:your_email@example.com}
-    username: ${MAIL_USERNAME:your_email@example.com}
-    password: ${MAIL_PASSWORD:your_app_password}
-  imap:
-    host: ${MAIL_IMAP_HOST:outlook.office365.com}
-    port: ${MAIL_IMAP_PORT:993}
-    ssl: ${MAIL_IMAP_SSL:true}
-    folder: ${MAIL_IMAP_FOLDER:INBOX}
-  smtp:
-    host: ${MAIL_SMTP_HOST:smtp-mail.outlook.com}
-    port: ${MAIL_SMTP_PORT:587}
-    ssl: ${MAIL_SMTP_SSL:false}
-    starttls: ${MAIL_SMTP_STARTTLS:true}
-    auth-mechanisms: ${MAIL_SMTP_AUTH_MECHANISMS:LOGIN}
-  receiver:
-    enabled: ${MAIL_RECEIVER_ENABLED:true}
+  forwarding-config: ${MAIL_FORWARDING_CONFIG:data/forwarding.json}
+  accounts:
+    qq:
+      enabled: true
+      display-name: QQ 邮箱
+      address: ${MAIL_ADDRESS:your_email@example.com}
+      username: ${MAIL_USERNAME:your_email@example.com}
+      password: ${MAIL_PASSWORD:your_app_password}
+      imap:
+        host: ${MAIL_IMAP_HOST:imap.qq.com}
+        port: ${MAIL_IMAP_PORT:993}
+        ssl: ${MAIL_IMAP_SSL:true}
+        folder: ${MAIL_IMAP_FOLDER:INBOX}
+        receiver-enabled: ${MAIL_RECEIVER_ENABLED:true}
+      smtp:
+        host: ${MAIL_SMTP_HOST:smtp.qq.com}
+        port: ${MAIL_SMTP_PORT:465}
+        ssl: ${MAIL_SMTP_SSL:true}
+        starttls: ${MAIL_SMTP_STARTTLS:false}
+        auth-mechanisms: ${MAIL_SMTP_AUTH_MECHANISMS:LOGIN}
+    lmu:
+      enabled: ${LMU_MAIL_ENABLED:false}
+      display-name: LMU 邮箱
+      address: ${LMU_MAIL_ADDRESS:}
+      username: ${LMU_MAIL_USERNAME:}
+      password: ${LMU_MAIL_PASSWORD:}
+      imap:
+        host: ${LMU_MAIL_IMAP_HOST:studlmu.lrz-muenchen.de}
+        port: ${LMU_MAIL_IMAP_PORT:993}
+        ssl: ${LMU_MAIL_IMAP_SSL:true}
+        folder: ${LMU_MAIL_IMAP_FOLDER:INBOX}
+        receiver-enabled: ${LMU_MAIL_RECEIVER_ENABLED:true}
+      smtp:
+        host: ${LMU_MAIL_SMTP_HOST:postout.lrz.de}
+        port: ${LMU_MAIL_SMTP_PORT:587}
+        ssl: ${LMU_MAIL_SMTP_SSL:false}
+        starttls: ${LMU_MAIL_SMTP_STARTTLS:true}
+        auth-mechanisms: ${LMU_MAIL_SMTP_AUTH_MECHANISMS:LOGIN}
 
 logging:
   level:

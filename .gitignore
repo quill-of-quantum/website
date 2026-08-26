@@ -16,6 +16,8 @@ logs/
 *.pem
 *.key
 application-local.yml
+email-service/config/accounts.yml
+email-service/data/
 
 # Databases
 *.db

@@ -1043,7 +1043,7 @@ def admin_command():
     """管理员接口：记录命令日志"""
     data = request.json or {}
     cmd = data.get("cmd", "")
-    with open("/home/bbdwz/admin_commands.log", "a") as f:
+    with open(os.path.join(PROJECT_ROOT, "logs", "admin_commands.log"), "a") as f:
         f.write(f"[{time.ctime()}] {cmd}\n")
     return jsonify({"status": "ok", "received": cmd})
 

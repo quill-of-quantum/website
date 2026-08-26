@@ -10,6 +10,7 @@ analyze_weather.py
 """
 
 import os, sys, requests
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -18,9 +19,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from modules.weather.db import active_period
+from modules.weather.history import load_historical_weather
+
 # ----------------------------- 基础设置 -----------------------------
-DATA_DIR = "/home/bbdwz/projects/website/data/weather"
-OUTPUT_DIR = "/home/bbdwz/projects/website/data/weather"
+DATA_DIR = os.environ.get("WEATHER_DATA_DIR", "/home/bbdwz/projects/website/data/weather")
+OUTPUT_DIR = os.environ.get("WEATHER_OUTPUT_DIR", DATA_DIR)
 TXT_FILE = os.path.join(DATA_DIR, "number.txt")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -77,10 +85,23 @@ if not records:
 
 df = pd.DataFrame(records, columns=['ts', 'cum']).sort_values('ts').reset_index(drop=True)
 
+# 管理员可选择非自然年周期；不设置时保持原有全量行为。
+period_start = os.environ.get("WEATHER_PERIOD_START", "").strip()
+if period_start:
+    try:
+        period_start_dt = pd.Timestamp(period_start)
+        df = df[df['ts'] >= period_start_dt].reset_index(drop=True)
+    except ValueError:
+        print(f"❌ 无效周期开始日期: {period_start}")
+        sys.exit(2)
+    if len(df) < 2:
+        print(f"❌ 周期 {period_start} 内至少需要两条读数")
+        sys.exit(2)
+
 # ----------------------------- 2️⃣ 插值生成小时数据 (修正版) -----------------------------
 start_hour = df['ts'].iloc[0].replace(minute=0, second=0, microsecond=0)
 end_hour = df['ts'].iloc[-1].replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-hour_edges = pd.date_range(start=start_hour, end=end_hour, freq='H')
+hour_edges = pd.date_range(start=start_hour, end=end_hour, freq='h')
 
 x = df['ts'].astype(np.int64) / 1e9
 y = df['cum'].to_numpy()
@@ -97,9 +118,9 @@ interp_df = pd.DataFrame({'datetime': hour_edges, 'cumulative_total': c_edge}).s
 interp_df['hourly_usage'] = interp_df['cumulative_total'].diff()
 
 # 修正第一个点的 NaN (可选)
-interp_df['hourly_usage'].iloc[0] = 0 
+interp_df.loc[interp_df.index[0], 'hourly_usage'] = 0
 
-hourly = interp_df.iloc[1:]
+hourly = interp_df.iloc[1:].copy()
 hourly.to_csv(os.path.join(DATA_DIR, "hourly_usage.csv"), float_format='%.3f', encoding='utf-8-sig')
 
 # ----------------------------- 3️⃣ 计算每日用量 -----------------------------
@@ -108,49 +129,20 @@ daily['cumulative_total'] = interp_df['cumulative_total'].resample('D').last()
 daily['daily_usage'] = interp_df['hourly_usage'].resample('D').sum()
 daily.to_csv(os.path.join(DATA_DIR, "daily_usage.csv"), float_format='%.3f', encoding='utf-8-sig')
 
-# ----------------------------- 4️⃣ 获取慕尼黑气温 -----------------------------
-print("🌡️ 正在获取慕尼黑气温数据...")
+# ----------------------------- 4️⃣ 获取并缓存当前周期地点的历史气温 -----------------------------
+period = active_period()
+print(f"🌡️ 正在读取 {period['location_name']} 历史气温（{period['latitude']}, {period['longitude']}）...")
 try:
-    # Forecast API only allows a limited time window; clamp to avoid empty results.
-    today = datetime.now().date()
-    min_date = today - timedelta(days=30)
-    max_date = today + timedelta(days=16)
-    req_start = max(df['ts'].iloc[0].date(), min_date)
-    req_end = min(df['ts'].iloc[-1].date(), max_date)
-
-    if req_start > req_end:
-        print(f"⚠️ 气温请求范围超出 forecast 可用窗口 ({min_date} ~ {max_date})，跳过天气请求")
-        weather_df, weather_daily = pd.DataFrame(), pd.DataFrame()
-        raise RuntimeError("weather range out of forecast window")
-
-    if req_start != df['ts'].iloc[0].date() or req_end != df['ts'].iloc[-1].date():
-        print(f"ℹ️ 已裁剪气温请求范围为 {req_start} ~ {req_end}")
-
-    start_date = req_start.isoformat()
-    end_date = req_end.isoformat()
-    url = (
-        "https://api.open-meteo.com/v1/forecast?"
-        "latitude=48.14&longitude=11.58&hourly=temperature_2m"
-        "&daily=temperature_2m_max,temperature_2m_min"
-        f"&start_date={start_date}&end_date={end_date}"
-        "&timezone=Europe%2FBerlin"
+    weather_df, weather_daily, fetched = load_historical_weather(
+        period, df['ts'].iloc[0], df['ts'].iloc[-1]
     )
-    r = requests.get(url, timeout=15)
-    w = r.json()
-    weather_df = pd.DataFrame({
-        "datetime": pd.to_datetime(w["hourly"]["time"]),
-        "temperature": w["hourly"]["temperature_2m"]
-    }).set_index("datetime")
-
-    weather_daily = pd.DataFrame({
-        "date": pd.to_datetime(w["daily"]["time"]),
-        "tmin": w["daily"]["temperature_2m_min"],
-        "tmax": w["daily"]["temperature_2m_max"]
-    }).set_index("date")
-
-    print(f"✅ 获取到气温数据：{len(weather_df)} 小时 / {len(weather_daily)} 天")
+    print(
+        f"✅ 历史天气：缓存共 {len(weather_df)} 小时 / {len(weather_daily)} 天；"
+        f"本次新增 {fetched['hourly']} 小时 / {fetched['daily']} 天，"
+        f"Archive {fetched['archive_ranges']} 段，Forecast {fetched['forecast_ranges']} 段"
+    )
 except Exception as e:
-    print(f"⚠️ 无法获取气温数据：{e}")
+    print(f"⚠️ 无法读取或补全历史气温：{e}")
     weather_df, weather_daily = pd.DataFrame(), pd.DataFrame()
 
 # ----------------------------- 未来真实 14 天气温（future_temp_api） -----------------------------
@@ -158,10 +150,10 @@ print("🌡️ 正在获取未来 14 天气温...")
 try:
     url_future = (
         "https://api.open-meteo.com/v1/forecast?"
-        "latitude=48.14&longitude=11.58"
+        f"latitude={period['latitude']}&longitude={period['longitude']}"
         "&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean"
         "&forecast_days=14"
-        "&timezone=Europe%2FBerlin"
+        f"&timezone={period['timezone']}"
     )
     rf = requests.get(url_future, timeout=15)
     wf = rf.json()
@@ -202,7 +194,7 @@ future_end = datetime(
 )
 
 # 使用 7 日平均外推未来用量
-future_hours = pd.date_range(df['ts'].iloc[-1], future_end, freq='H')
+future_hours = pd.date_range(df['ts'].iloc[-1], future_end, freq='h')
 recent_rate = interp_df['hourly_usage'].iloc[-24 * 7:].mean()
 future_usage = interp_df['cumulative_total'].iloc[-1] + np.cumsum(
     np.full(len(future_hours), recent_rate)

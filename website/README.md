@@ -28,10 +28,12 @@
   - 独立 Spring Boot 邮件服务（内部端口 `8081`，由 `modules/mail/` 转发调用）
 - **housing_tracker.service**
   - SW-KA 租房信息无头追踪服务；Alle 总目录抓取后分类，分别按增量/全量周期检查
+- **weather.service**
+  - 按需启动的天气与能耗图表 oneshot 任务；仅在新读数或管理员手动请求时存在，完成后退出
 
 管理员页面仅在“核心服务状态”展示 `website` 和 `nginx`，避免从网页关闭自身入口；
 `boardgame`、`tracker_scheduler`、`computation`、`email-service`、`gallery`、`frpc`、
-`cpolar`、`mihomo` 与 `housing_tracker` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。
+`cpolar`、`mihomo` 与 `housing_tracker` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。天气分析是按需 oneshot 任务，不列入常驻进程开关。
 
 Nginx 反代：
 - `/` → Flask（`/home/bbdwz/website.sock`）
@@ -57,10 +59,12 @@ Nginx 反代：
 - `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
 - `/aurora/`：极光信息页面（`templates/aurora.html`）
 - `/exchange`：一年期动态换汇优化与汇率监控（`templates/exchange.html`）
-- `/mail`：手动发送邮件页面（`templates/mail.html`）
+- `/mail`：使用管理员指定的默认邮箱发送邮件（`templates/mail.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
 - `/1/housing`：SW-KA 租房追踪设置与最近结果（`templates/housing.html`）
+- `/1/weather`：天气/用量图表、运行状态、API 检查与记录周期管理（`templates/weather.html`）
+- `/1/mail`：多邮箱状态、默认账户、任意账户收发、多条本机转发规则与执行记录（`templates/mail_admin.html`）
 
 备注：`templates/login.html` 存在，但登录通过 `/api/auth/login` 进行。
 
@@ -93,7 +97,7 @@ Nginx 反代：
 │   ├── letter_league/api.py      # 字母棋识别/推荐
 │   ├── aurora/api.py             # 极光信息
 │   ├── weather/analyze.py        # 天气/能耗分析脚本
-│   └── mail/api.py               # 邮件转发 API
+│   └── mail/api.py               # 登录保护的多邮箱代理与管理员接口
 ├── data/                         # SQLite / JSON / 日志状态数据
 │   ├── tracker/
 │   ├── map/
@@ -237,6 +241,11 @@ success 是 true
 ### 天气/能耗图表
 - `GET /weather/<filename>`：天气/能耗 CSV 或 SVG 文件
 - `GET /weather_chart/<filename>`：兼容旧图表 URL
+- `GET /1/api/weather`：管理员设置、周期、服务与最近分析状态
+- `POST /1/api/weather/run`：立即启动一次按需分析
+- `POST /1/api/weather/check`：检查分析使用的 Open-Meteo 接口
+- `POST /1/api/weather/periods`：新建并启用非自然年记录周期；默认继承当前周期地图位置
+- `POST /1/api/weather/periods/<id>/location`：保存地图点击/拖动选点；内部保存经纬度并自动选择当地时区，仅清除该周期旧地点天气缓存
 
 ### 云盘文件
 - `POST /api/cloud/upload`：上传文件
@@ -361,7 +370,8 @@ success 是 true
 - Nominatim 默认明确使用本机 Mihomo `http://127.0.0.1:7890`，可用 `HOUSING_GEOCODE_PROXY` 覆盖；坐标按地址缓存在 SQLite
 - 邮件通知：复用 `email-service.service` 的 `POST /api/mail/send`，按多个收件地址和上下架房型选择发送；一轮变化合并成一封 HTML 表格邮件，每行一个房源，并在详情保存后按租客条件组、设备组和信息完整度生成“非常规提示”
 - 房源结果：`tests/housing/房源地图.html` 仅作界面样例；`/1/housing/result` 每次从 SQLite 生成运行页面到 `data/housing/房源地图.html`
-- 天气分析脚本：`modules/weather/analyze.py`
+- 天气分析：新读数或手动操作通过 oneshot `weather.service` 启动 `modules/weather/analyze.py`，完成后服务退出；`data/weather/weather.db` 保存主页开关、非自然年周期及周期地点、旧读数索引、历史天气缓存和运行历史，原 `number.txt` 保留
+- 历史天气缓存：较早日期通过 Open-Meteo Archive API 补齐，近期日期通过 Forecast API 补齐；分析只请求 SQLite 中缺失或小时数不完整的日期，已完整保存的历史不重复下载
 - Git 忽略规则：`/home/bbdwz/projects/.gitignore` 统一管理 website、gallery、email-service 等项目的运行数据忽略规则
 
 ---
@@ -406,6 +416,16 @@ systemctl status housing_tracker.service
 journalctl -u housing_tracker.service -n 200 --no-pager
 ```
 
+### 天气与用量分析服务（树莓派无显示器）
+
+```bash
+sudo cp /home/bbdwz/projects/website/deploy/systemd/weather.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start weather.service  # 仅用于手动运维测试，正常由写入/API 事件启动
+```
+
+管理员可在 `/1/weather` 控制主页图表显示、手动运行、检查天气 API，并以任意日期新建或切换记录周期。每个周期独立保存地图选点；经纬度在页面内部处理，时区由天气 API 根据位置自动选择。切换周期不会删除旧读数，需再运行一次分析刷新当前图表。没有任务时 `weather.service` 为 inactive，不驻留后台进程。
+
 ---
 
 ## 数据与文件输出
@@ -415,6 +435,7 @@ journalctl -u housing_tracker.service -n 200 --no-pager
 - `data/tracker/tracker_result.html`、`data/tracker/tracker_last.json`：抓取/解析临时与最后结果
 - `data/weather/*.csv`、`data/weather/number.txt`：能耗原始数据与 CSV 数据
 - `data/weather/*.svg`：能耗图表输出
+- `data/weather/weather.db`：天气/能耗配置、周期及地点、读数索引、小时/每日历史天气缓存与分析运行历史
 - `data/index/exchange_rate.json`：首页汇率走势后台缓存
 - `data/chat/lobby.json`：聊天大厅设备身份、头像与消息记录
 - `data/map/history.json`：路线历史

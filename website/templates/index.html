@@ -326,6 +326,7 @@
         </div>
       </div>
 
+      {% if weather_homepage_visible %}
       <!-- 用量图表 -->
       <section class="chart-section card">
         <h2 class="card-title">Usage Charts</h2>
@@ -384,6 +385,7 @@
 
         </div>
       </section>
+      {% endif %}
 
       <!-- 系统状态 -->
       <div class="card auth-only" hidden>
@@ -902,7 +904,7 @@
       }
     }
 
-    loadForecastCSV();
+    if (document.getElementById('forecast-body')) loadForecastCSV();
   </script>
 
   <script>

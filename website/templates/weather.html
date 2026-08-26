@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天气与用量分析</title><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <style>
+    .status{white-space:pre-wrap;word-break:break-word}.ok{color:#166534}.error{color:#991b1b}.running{color:#b45309}
+    .period{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+    .log{max-height:320px;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px;font:12px/1.55 ui-monospace,monospace;white-space:pre-wrap}
+    .checks{display:grid;gap:8px}.check{padding:10px;border:1px solid var(--border);border-radius:6px}
+    #locationMap{height:420px;border:1px solid var(--border);border-radius:8px;margin-top:12px}
+    .weather-map-marker{width:24px;height:24px;border:3px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 1px 6px rgba(0,0,0,.55)}
+  </style>
+</head>
+<body><div class="page"><div class="container">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center"><div><h1>天气与用量分析</h1><p>管理主页图表、分析任务、天气 API 与非自然年周期</p></div><a class="btn" href="/1/">返回管理面板</a></div>
+  <div class="card"><h2 class="card-title">显示与运行</h2>
+    <label><input id="homepageVisible" type="checkbox"> 在主页显示 Usage Charts</label>
+    <div class="toolbar" style="margin-top:14px"><button class="btn btn-primary" onclick="saveSettings()">保存显示设置</button><button class="btn" onclick="runNow()">手动运行一次分析</button><button class="btn" onclick="checkApis()">检查所有天气 API</button></div>
+    <div id="service" class="muted" style="margin-top:12px">读取任务状态...</div><div id="run" class="status muted" style="margin-top:8px"></div><div id="note" class="muted" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><h2 class="card-title">记录周期</h2><p class="muted">新建周期只改变分析起点，不删除旧读数；切换周期后请手动运行分析以刷新主页图表。</p>
+    <div class="grid-2"><div><label>周期名称</label><input id="periodName" class="input" placeholder="例如 2025/26 暖气季" style="margin-top:6px"></div><div><label>开始日期</label><input id="periodStart" class="input" type="date" style="margin-top:6px"></div></div>
+    <p class="muted">新周期会继承当前周期的位置，可在创建后通过下方地图调整。</p><button class="btn" style="margin-top:12px" onclick="createPeriod()">新建并启用周期</button><div id="periods" style="margin-top:12px"></div>
+  </div>
+  <div class="card"><h2 class="card-title">当前周期位置</h2><p class="muted">点击地图或拖动标记选点。保存后会自动使用该位置的当地时区，并清除本周期旧位置的天气缓存。</p>
+    <div id="locationSummary" class="muted"></div><div id="locationMap"></div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="saveLocation()">保存地图位置</button>
+  </div>
+  <div class="card"><h2 class="card-title">天气 API 检查</h2><div id="checks" class="checks muted">尚未检查</div></div>
+  <div class="card"><h2 class="card-title">最近分析日志</h2><div id="log" class="log">尚无运行记录</div></div>
+</div></div><script src="/static/js/auth.js"></script><script src="/static/vendor/leaflet/leaflet.js"></script><script>
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function note(text,error=false){const n=document.getElementById('note');n.textContent=text;n.style.color=error?'#991b1b':'#6b7280'}
+async function api(url,method='GET',body=null){const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):null});const data=await response.json();if(!data.ok)throw Object.assign(new Error(data.error||'操作失败'),{data});return data}
+let editing=false,locationEditing=false,currentPeriodId=null,pendingLatitude=null,pendingLongitude=null,map=null,marker=null;
+function setMapPoint(lat,lon,center=false){pendingLatitude=Number(lat);pendingLongitude=Number(lon);if(!map){map=L.map('locationMap').setView([lat,lon],12);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);const icon=L.divIcon({className:'weather-map-marker',iconSize:[24,24],iconAnchor:[12,12]});marker=L.marker([lat,lon],{draggable:true,icon}).addTo(map);map.on('click',e=>{locationEditing=true;setMapPoint(e.latlng.lat,e.latlng.lng)});marker.on('dragend',()=>{locationEditing=true;const p=marker.getLatLng();setMapPoint(p.lat,p.lng)});}else{marker.setLatLng([lat,lon]);if(center)map.setView([lat,lon],map.getZoom());}locationSummary.textContent=`已选位置：${pendingLatitude.toFixed(5)}, ${pendingLongitude.toFixed(5)} · 时区自动识别`;}
+function render(data){const c=data.config,r=data.run||{},s=data.service||{},active=c.active_period||{};currentPeriodId=active.id;if(!editing)homepageVisible.checked=!!c.homepage_visible;if(!locationEditing&&active.latitude!=null)setMapPoint(active.latitude,active.longitude,true);service.innerHTML=`分析任务：<strong class="${s.active?'running':'ok'}">${esc(s.status||'未知')}</strong>`;run.className=`status ${r.status||''}`;run.textContent=`状态：${r.status||'never'}\n触发方式：${r.trigger||'-'}\n开始：${r.started_at||'-'}\n结束：${r.finished_at||'-'}\n错误：${r.error||'-'}`;log.textContent=r.log_tail||'尚无运行记录';periods.innerHTML=(c.periods||[]).map(p=>`<div class="period"><div><strong>${esc(p.name)}</strong>${p.active?' <span class="ok">（当前）</span>':''}<br><span class="muted">从 ${esc(p.starts_at)} · 周期独立位置 · 时区${p.timezone==='auto'?'自动识别':esc(p.timezone)}<br>天气缓存：${esc((p.weather_cache||{}).hourly||0)} 小时 / ${esc((p.weather_cache||{}).daily||0)} 天</span></div>${p.active?'':`<button class="btn" onclick="activatePeriod(${Number(p.id)})">启用</button>`}</div>`).join('')}
+async function load(){try{render(await api('/1/api/weather'))}catch(e){note(e.message,true)}}
+async function saveSettings(){try{await api('/1/api/weather/settings','POST',{homepage_visible:homepageVisible.checked});editing=false;note('主页显示设置已保存');await load()}catch(e){note(e.message,true)}}
+async function runNow(){try{const d=await api('/1/api/weather/run','POST',{});note(d.message);await load()}catch(e){note(e.message,true)}}
+async function createPeriod(){try{await api('/1/api/weather/periods','POST',{name:periodName.value,starts_at:periodStart.value});periodName.value='';locationEditing=false;note('新周期已继承当前位置并启用，请运行一次分析刷新图表');await load()}catch(e){note(e.message,true)}}
+async function activatePeriod(id){try{await api(`/1/api/weather/periods/${id}/activate`,'POST',{});note('已切换活动周期，请运行一次分析刷新图表');await load()}catch(e){note(e.message,true)}}
+async function saveLocation(){if(!currentPeriodId||pendingLatitude==null)return;try{const d=await api(`/1/api/weather/periods/${currentPeriodId}/location`,'POST',{latitude:pendingLatitude,longitude:pendingLongitude});locationEditing=false;note(d.message+'，请运行一次分析');await load()}catch(e){note(e.message,true)}}
+async function checkApis(){checks.textContent='检查中...';try{const response=await fetch('/1/api/weather/check',{method:'POST'});const d=await response.json();checks.innerHTML=(d.checks||[]).map(x=>`<div class="check"><strong class="${x.ok?'ok':'error'}">${x.ok?'正常':'失败'} · ${esc(x.name)}</strong><br><span class="muted">${esc(x.duration_ms)} ms${x.status_code?' · HTTP '+esc(x.status_code):''}${x.error?' · '+esc(x.error):''}</span></div>`).join('');note(d.ok?'所有天气 API 正常':'有天气 API 检查失败',!d.ok)}catch(e){checks.textContent=e.message;note(e.message,true)}}
+homepageVisible.addEventListener('change',()=>editing=true);load();setInterval(load,2000);
+</script></body></html>

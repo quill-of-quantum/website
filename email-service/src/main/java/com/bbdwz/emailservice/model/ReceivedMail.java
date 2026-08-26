@@ -4,11 +4,12 @@ import java.time.Instant;
 import java.util.List;
 
 public record ReceivedMail(
+        String accountId,
         String from,
         List<String> to,
         String subject,
         String text,
         Instant receivedAt,
-        String messageId
-) {
-}
+        String messageId,
+        boolean locallyForwarded
+) {}

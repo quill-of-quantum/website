@@ -1,0 +1,22 @@
+# Copy to config/accounts.yml. The real file is ignored by Git.
+# Never commit passwords. LMU login uses the LRZ username, not the mail address.
+mail:
+  accounts:
+    lmu:
+      enabled: true
+      display-name: LMU 邮箱
+      address: your-address@campus.lmu.de
+      username: your-lrz-id
+      password: your-campus-password
+      imap:
+        host: studlmu.lrz-muenchen.de
+        port: 993
+        ssl: true
+        folder: INBOX
+        receiver-enabled: true
+      smtp:
+        host: postout.lrz.de
+        port: 587
+        ssl: false
+        starttls: true
+        auth-mechanisms: LOGIN

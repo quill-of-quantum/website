@@ -1,0 +1,14 @@
+[Unit]
+Description=Website weather and usage analysis worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bbdwz
+Group=bbdwz
+WorkingDirectory=/home/bbdwz/projects/website
+Environment="PATH=/home/bbdwz/miniconda3/envs/web/bin:/usr/local/bin:/usr/bin:/bin"
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bbdwz/miniconda3/envs/web/bin/python /home/bbdwz/projects/website/modules/weather/service.py
+TimeoutStopSec=20

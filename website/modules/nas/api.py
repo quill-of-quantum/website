@@ -18,6 +18,7 @@ NAS_STATE_PATH = "/home/bbdwz/projects/website/data/nas/state.json"
 LEGACY_NAS_STATE_PATH = "/home/bbdwz/projects/website/nas_state.json"
 NAS_MANAGED_CONF_PATH = "/etc/samba/smb.conf.d/website-nas.conf"
 NAS_SMB_CONF_PATH = "/etc/samba/smb.conf"
+ADMIN_HELPER_PATH = "/usr/local/sbin/website-admin-helper"
 
 
 def login_required(f):
@@ -120,6 +121,10 @@ def _run_root_cmd(args, input_text=None):
     return _run_cmd([sudo_path, "-n"] + args, input_text=input_text)
 
 
+def _run_admin_helper(args, input_text=None):
+    return _run_root_cmd([ADMIN_HELPER_PATH] + list(args), input_text=input_text)
+
+
 def _read_root_file(path):
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -132,6 +137,9 @@ def _read_root_file(path):
 
 
 def _write_root_file(path, content):
+    if path == NAS_MANAGED_CONF_PATH:
+        ok, _, err = _run_admin_helper(["nas-write-managed"], input_text=content)
+        return ok, err if not ok else None
     if os.geteuid() == 0:
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -341,19 +349,7 @@ def _ensure_samba_include():
         return False, f"read-smbconf-failed: {err}"
     if include_line.lower() in content.lower():
         return True, "already"
-    lines = content.splitlines()
-    inserted = False
-    for idx, line in enumerate(lines):
-        if line.strip().lower() == "[global]":
-            lines.insert(idx + 1, include_line)
-            inserted = True
-            break
-    if not inserted:
-        lines.append("")
-        lines.append("[global]")
-        lines.append(include_line)
-    new_content = "\n".join(lines).rstrip() + "\n"
-    ok, err = _write_root_file(NAS_SMB_CONF_PATH, new_content)
+    ok, _, err = _run_admin_helper(["nas-ensure-include"])
     if not ok:
         return False, f"write-smbconf-failed: {err}"
     return True, "added"
@@ -411,10 +407,7 @@ def nas_simple_enable():
     mount_point = device.get("mountpoint")
     if not mount_point:
         mount_point = os.path.join("/mnt/website-nas", _safe_mount_name(device))
-        ok, out, err = _run_root_cmd(["mkdir", "-p", mount_point])
-        if not ok:
-            return _json_error("mkdir-failed", detail=err or out)
-        ok, out, err = _run_root_cmd(["mount", selected_device, mount_point])
+        ok, out, err = _run_admin_helper(["nas-mount", selected_device, mount_point])
         if not ok:
             return _json_error("mount-failed", detail=err or out)
 
@@ -427,11 +420,9 @@ def nas_simple_enable():
     if not ok:
         return _json_error("include-failed", detail=msg)
 
-    _run_root_cmd(["chmod", "0777", mount_point])
-
     for unit in ("smbd.service", "nmbd.service"):
-        _run_root_cmd(["systemctl", "enable", unit])
-        ok, out, err = _run_root_cmd(["systemctl", "restart", unit])
+        _run_admin_helper(["nas-service", "enable", unit])
+        ok, out, err = _run_admin_helper(["nas-service", "restart", unit])
         if unit == "smbd.service" and not ok:
             return _json_error("samba-start-failed", detail=err or out)
 
@@ -459,8 +450,8 @@ def nas_simple_disable():
     if not ok:
         return _json_error("write-smbconf-failed", detail=err)
     for unit in ("smbd.service", "nmbd.service"):
-        _run_root_cmd(["systemctl", "disable", unit])
-        _run_root_cmd(["systemctl", "stop", unit])
+        _run_admin_helper(["nas-service", "disable", unit])
+        _run_admin_helper(["nas-service", "stop", unit])
     state = _load_nas_state()
     simple = state.get("simple_share") or {}
     simple["enabled"] = False
