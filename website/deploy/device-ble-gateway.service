@@ -1,0 +1,24 @@
+[Unit]
+Description=ESP32 BLE device gateway
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+User=bbdwz
+Group=bbdwz
+SupplementaryGroups=bluetooth
+WorkingDirectory=/home/bbdwz/projects/website
+Environment=PYTHONPATH=/home/bbdwz/projects/website
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bbdwz/miniconda3/envs/web/bin/python -m modules.devices.ble_gateway
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bbdwz/projects/website/data/devices
+
+[Install]
+WantedBy=multi-user.target

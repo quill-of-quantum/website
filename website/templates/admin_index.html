@@ -69,6 +69,7 @@
           <a class="btn" href="/1/housing">租房信息</a>
           <a class="btn" href="/1/weather">天气与用量</a>
           <a class="btn" href="/1/mail">邮件配置</a>
+          <a class="btn" href="/1/devices">设备管理</a>
         </div>
         <button class="btn" onclick="authManager.doLogout()">退出登录</button>
       </div>
@@ -272,7 +273,8 @@
       frpc: "FRP 隧道",
       cpolar: "Cpolar 隧道",
       email: "邮件服务",
-      housing: "租房追踪服务"
+      housing: "租房追踪服务",
+      ble_gateway: "ESP32 BLE Gateway"
     };
     return Object.keys(labels).map(key => {
       const item = services[key] || {};
@@ -574,7 +576,9 @@
       mihomo: "Mihomo 代理",
       frpc: "FRP 隧道",
       cpolar: "Cpolar 隧道",
-      email: "邮件服务"
+      email: "邮件服务",
+      housing: "租房追踪服务",
+      ble_gateway: "ESP32 BLE Gateway"
     };
     const label = labels[service] || service;
     const message = action === "disable"

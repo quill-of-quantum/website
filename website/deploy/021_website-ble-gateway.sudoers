@@ -1,0 +1,2 @@
+website-svc ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now device-ble-gateway.service
+website-svc ALL=(root) NOPASSWD: /usr/bin/systemctl disable --now device-ble-gateway.service

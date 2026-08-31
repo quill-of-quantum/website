@@ -28,12 +28,14 @@
   - 独立 Spring Boot 邮件服务（内部端口 `8081`，由 `modules/mail/` 转发调用）
 - **housing_tracker.service**
   - SW-KA 租房信息无头追踪服务；Alle 总目录抓取后分类，分别按增量/全量周期检查
+- **device-ble-gateway.service**
+  - 使用 BlueZ/Bleak 持续扫描已批准 ESP32-S3；BLE 优先承载配置、状态、遥测和小于配置上限的 JPEG，失败由固件回退 Wi-Fi
 - **weather.service**
   - 按需启动的天气与能耗图表 oneshot 任务；仅在新读数或管理员手动请求时存在，完成后退出
 
 管理员页面仅在“核心服务状态”展示 `website` 和 `nginx`，避免从网页关闭自身入口；
 `boardgame`、`tracker_scheduler`、`computation`、`email-service`、`gallery`、`frpc`、
-`cpolar`、`mihomo` 与 `housing_tracker` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。天气分析是按需 oneshot 任务，不列入常驻进程开关。
+`cpolar`、`mihomo`、`housing_tracker` 与 `device-ble-gateway` 统一在“进程开关”展示状态并提供启停控制，不重复出现在状态区。天气分析是按需 oneshot 任务，不列入常驻进程开关。
 
 Nginx 反代：
 - `/` → Flask（`/home/bbdwz/website.sock`）
@@ -63,6 +65,11 @@ Nginx 反代：
 - `/1/`：管理员面板（`templates/admin_index.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
 - `/1/housing`：SW-KA 租房追踪设置与最近结果（`templates/housing.html`）
+- `/1/devices`：通用外设注册、批准、状态与配置管理（`templates/devices.html`）
+- `/1/devices/database`：按设备数据包查看和删除照片、温度、湿度等历史数据（`templates/device_database.html`）
+
+设备通信协议见 `docs/device-protocol-v1.md`。
+BLE 优先通信协议见 `docs/device-ble-protocol-v1.md`。
 - `/1/weather`：天气/用量图表、运行状态、API 检查与记录周期管理（`templates/weather.html`）
 - `/1/mail`：多邮箱状态、默认账户、任意账户收发、多条本机转发规则与执行记录（`templates/mail_admin.html`）
 
@@ -84,6 +91,7 @@ Nginx 反代：
 │   ├── nas/api.py                # 局域网 USB 硬盘 Samba 共享
 │   ├── auth/api.py               # 登录状态与登录/退出
 │   ├── auth/user_store.py        # 本地账户存储与密码校验
+│   ├── devices/                  # 通用外设注册、设备状态、遥测与配置
 │   ├── cloud/                    # 云盘上传/下载/缩略图
 │   ├── tracker/                  # 物流追踪 API、抓取逻辑与调度器
 │   ├── map/api.py                # 路线规划 API

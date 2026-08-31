@@ -129,6 +129,9 @@ app.register_blueprint(email_bp)
 from modules.housing.api import bp as housing_bp
 app.register_blueprint(housing_bp)
 
+from modules.devices.api import bp as devices_bp
+app.register_blueprint(devices_bp)
+
 from modules.weather.api import bp as weather_bp
 app.register_blueprint(weather_bp)
 # ===============================
