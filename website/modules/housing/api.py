@@ -152,9 +152,11 @@ def resend_notification():
     for recipient in recipients:
         try:
             response = requests.post(
-                f"{EMAIL_SERVICE_URL}/api/mail/send",
+                f"{EMAIL_SERVICE_URL}/api/mail/send/default",
                 json={
-                    "to": recipient,
+                    "to": [recipient],
+                    "cc": [],
+                    "bcc": [],
                     "subject": f"{notification_title(selected)}（重发 · {len(selected)} 条）",
                     "text": text,
                     "html": html,

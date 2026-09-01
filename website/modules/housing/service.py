@@ -50,9 +50,11 @@ def _notify(config, changes):
     plain_text, html_table, _ = build_notification(selected, room_records)
     for recipient in config["notification_emails"]:
         response = requests.post(
-            f"{EMAIL_SERVICE_URL}/api/mail/send",
+            f"{EMAIL_SERVICE_URL}/api/mail/send/default",
             json={
-                "to": recipient,
+                "to": [recipient],
+                "cc": [],
+                "bcc": [],
                 "subject": f"{notification_title(selected)}（{len(selected)} 条）",
                 "text": plain_text,
                 "html": html_table,

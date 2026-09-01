@@ -6,6 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=bbdwz
+Group=website-app
+UMask=0007
 WorkingDirectory=/home/bbdwz/projects/website
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/bbdwz/miniconda3/envs/web/bin/python /home/bbdwz/projects/website/modules/housing/service.py
