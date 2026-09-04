@@ -4,6 +4,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Logs
 *.log
@@ -13,11 +16,20 @@ logs/
 # Local env / secrets
 .env
 .env.*
+!.env.example
+!**/.env.example
 *.pem
 *.key
 application-local.yml
 email-service/config/accounts.yml
 email-service/data/
+
+# OS/editor temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
 
 # Databases
 *.db
@@ -25,6 +37,11 @@ email-service/data/
 *.sqlite3
 *.db-wal
 *.db-shm
+*.pid
+*.pid.lock
+
+# Local IP geolocation databases (large, locally updated datasets)
+*.mmdb
 
 # Node/build artifacts
 node_modules/

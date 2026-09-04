@@ -1,0 +1,221 @@
+:root {
+  --weather-surface: rgba(255, 255, 255, .86);
+  --weather-border: rgba(255, 255, 255, .55);
+}
+
+html {
+  min-height: 100%;
+  background: #b8d9f1;
+}
+
+html[data-weather-day="false"] {
+  background: #142c4b;
+}
+
+body.weather-active {
+  min-height: 100vh;
+  background: transparent !important;
+  --surface: var(--weather-surface);
+  --border: rgba(148, 163, 184, .28);
+  --shadow-sm: 0 8px 30px rgba(42, 61, 86, .10);
+  isolation: isolate;
+}
+
+.weather-background {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(180deg, #78b9e7 0%, #b8ddf3 53%, #ecf3f5 100%);
+  transition: opacity .8s ease, background 1.5s ease;
+  contain: strict;
+}
+
+body.weather-active > .page,
+body.weather-active > main,
+body.weather-active > .container,
+body.weather-active > .map-page,
+body.weather-active > .search-page,
+body.weather-active > .site-shell-spacer {
+  position: relative;
+  z-index: 2;
+}
+
+/* The clipboard uses direct flex children instead of the shared .page wrapper. */
+body.weather-active.clipboard-page > .header,
+body.weather-active.clipboard-page > .clipboard-container,
+body.weather-active.clipboard-page > .btn-group {
+  position: relative;
+  z-index: 2;
+}
+
+body.weather-active.weather-night.clipboard-page > .header {
+  color: #f8fafc;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .48);
+}
+
+body.weather-active.weather-night.clipboard-page > .header .status {
+  color: rgba(241, 245, 249, .82);
+}
+
+body.weather-active.weather-night .page-header h1,
+body.weather-active.weather-night .page-header p {
+  color: #f8fafc;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .48);
+}
+
+body.weather-active.weather-night .site-shell {
+  --site-shell-text: #f8fafc;
+  --site-shell-muted: rgba(241, 245, 249, .82);
+  --site-shell-border: rgba(255, 255, 255, .32);
+}
+
+body.weather-active.weather-night .site-shell__auth {
+  --site-auth-text: #1f2937;
+  --site-auth-muted: #64748b;
+}
+
+.weather-background.is-ready { opacity: 1; }
+
+.weather-background[data-day="false"] {
+  --weather-glow: rgba(151, 184, 255, .16);
+  background: linear-gradient(180deg, #071426 0%, #142c4b 56%, #38556e 100%);
+}
+
+.weather-background[data-weather="cloudy"][data-day="true"] {
+  background: linear-gradient(180deg, #829bad 0%, #b5c4cd 58%, #e3e8e9 100%);
+}
+
+.weather-background[data-weather="rain"][data-day="true"],
+.weather-background[data-weather="thunder"][data-day="true"],
+.weather-background[data-weather="hail"][data-day="true"] {
+  background: linear-gradient(180deg, #3d5267 0%, #728799 55%, #adb9c1 100%);
+}
+
+.weather-background[data-weather="snow"][data-day="true"] {
+  background: linear-gradient(180deg, #9eb6c9 0%, #d7e2e9 56%, #f5f7f8 100%);
+}
+
+.weather-background[data-weather="fog"][data-day="true"] {
+  background: linear-gradient(180deg, #aebbc1 0%, #d8dedf 52%, #f1f2f0 100%);
+}
+
+.weather-background[data-day="false"][data-weather="cloudy"] {
+  background: linear-gradient(180deg, #0b1727 0%, #25384c 57%, #53636e 100%);
+}
+
+.weather-background[data-day="false"][data-weather="rain"],
+.weather-background[data-day="false"][data-weather="thunder"],
+.weather-background[data-day="false"][data-weather="hail"] {
+  background: linear-gradient(180deg, #030a13 0%, #142537 58%, #344553 100%);
+}
+
+.weather-background[data-day="false"][data-weather="snow"] {
+  background: linear-gradient(180deg, #101b30 0%, #2c4160 58%, #8292a3 100%);
+}
+
+.weather-background[data-day="false"][data-weather="fog"] {
+  background: linear-gradient(180deg, #1a2531 0%, #485766 58%, #78838b 100%);
+}
+
+.weather-background__canvas,
+.weather-background__wash,
+.weather-background__flash {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.weather-background__wash {
+  background:
+    radial-gradient(ellipse 90% 48% at 50% 110%, rgba(255,255,255,.42), transparent 68%),
+    linear-gradient(90deg, rgba(255,255,255,.06), transparent 34%, rgba(255,255,255,.08));
+}
+
+.weather-background__sun,
+.weather-background__moon {
+  position: absolute;
+  left: var(--celestial-x, 72%);
+  top: var(--celestial-y, 16%);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  transition: left 2s ease, top 2s ease, opacity 1.2s ease;
+}
+
+.weather-background__sun {
+  width: clamp(78px, 12vw, 150px);
+  aspect-ratio: 1;
+  opacity: .9;
+  background: radial-gradient(circle, rgba(255,253,224,.98) 0 20%, rgba(255,238,151,.58) 35%, rgba(255,224,112,.13) 59%, transparent 72%);
+  box-shadow: 0 0 80px 26px rgba(255, 231, 135, .18);
+  animation: weather-sun-breathe 7s ease-in-out infinite alternate;
+}
+
+.weather-background__moon {
+  width: clamp(46px, 7vw, 82px);
+  aspect-ratio: 1;
+  opacity: 0;
+  background: radial-gradient(circle at 38% 35%, #fffdf1 0 12%, #e9edf0 48%, #aebdca 100%);
+  box-shadow: 0 0 40px 12px rgba(193, 217, 255, .18);
+}
+
+.weather-background[data-day="false"] .weather-background__sun { opacity: 0; }
+.weather-background[data-day="false"] .weather-background__moon { opacity: .88; }
+.weather-background[data-weather="rain"] .weather-background__sun,
+.weather-background[data-weather="thunder"] .weather-background__sun,
+.weather-background[data-weather="fog"] .weather-background__sun { opacity: .16; }
+
+.weather-background__flash {
+  opacity: 0;
+  background: rgba(225, 238, 255, .92);
+}
+
+.weather-background__flash.is-flashing {
+  animation: weather-lightning-flash .48s ease-out;
+}
+
+body.weather-active .card,
+body.weather-active .auth-card,
+body.weather-active .login-status {
+  backdrop-filter: blur(13px) saturate(112%);
+  -webkit-backdrop-filter: blur(13px) saturate(112%);
+}
+
+@keyframes weather-sun-breathe {
+  from { transform: translate(-50%, -50%) scale(.97); filter: brightness(.98); }
+  to { transform: translate(-50%, -50%) scale(1.04); filter: brightness(1.06); }
+}
+
+@keyframes weather-lightning-flash {
+  0%, 100% { opacity: 0; }
+  8% { opacity: .72; }
+  18% { opacity: .08; }
+  28% { opacity: .46; }
+  48% { opacity: 0; }
+}
+
+@media (max-width: 640px) {
+  body.weather-active {
+    --weather-surface: rgba(255, 255, 255, .90);
+  }
+
+  body.weather-active .card,
+  body.weather-active .auth-card,
+  body.weather-active .login-status {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-background,
+  .weather-background__sun,
+  .weather-background__moon,
+  .weather-background__flash {
+    animation: none !important;
+    transition: none !important;
+  }
+}
