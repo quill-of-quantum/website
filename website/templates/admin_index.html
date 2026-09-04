@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>管理员面板</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .status-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; }
     .status-ok { background:#e7f7ee; color:#1f7a3f; }
@@ -56,6 +58,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <div class="container">
       <div class="page-header">
@@ -71,7 +74,6 @@
           <a class="btn" href="/1/mail">邮件配置</a>
           <a class="btn" href="/1/devices">设备管理</a>
         </div>
-        <button class="btn" onclick="authManager.doLogout()">退出登录</button>
       </div>
 
       <div class="card">
@@ -108,12 +110,20 @@
           <input id="account_username" class="input" placeholder="用户名">
           <input id="account_password" class="input" type="password" placeholder="密码">
         </div>
+        <div style="margin-top:10px; max-width:320px;">
+          <label class="muted" for="account_role">账户类型</label>
+          <select id="account_role" class="input" style="width:100%; margin-top:4px;">
+            <option value="guest">游客（仅固定身份）</option>
+            <option value="member">专属用户（Situation + 云盘删除）</option>
+          </select>
+        </div>
         <div class="toolbar" style="margin-top:10px;">
           <button class="btn btn-primary" onclick="createAccount()">新增账户</button>
           <button class="btn" onclick="updateAccountPassword()">修改密码</button>
+          <button class="btn" onclick="updateAccountRole()">修改权限</button>
           <button class="btn btn-danger" onclick="deleteAccount()">删除账户</button>
         </div>
-        <div id="account_note" class="muted" style="margin-top:8px;">普通账户不能进入 /1/，但会触发首页登录后内容和普通登录权限。</div>
+        <div id="account_note" class="muted" style="margin-top:8px;">游客仅绑定固定身份；专属用户可查看 Situation 并删除云盘文件；只有 admin 可进入 /1/。</div>
       </div>
 
       <div class="card">
@@ -164,10 +174,8 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js"></script>
   <script>
   document.addEventListener('DOMContentLoaded', function() {
-    authManager.createLoginStatusWidget();
     authManager.checkLoginStatus();
 
     initStatusStream();
@@ -206,15 +214,23 @@
 
   function renderAccounts(users) {
     const rows = (users || []).map(user => {
-      const role = user.role === 'admin' ? '<span class="status-pill status-ok">admin</span>' : '<span class="status-pill status-unknown">user</span>';
-      return `<tr><td>${user.username}</td><td>${role}</td></tr>`;
+      const labels = { admin: '管理员', member: '专属用户', guest: '游客' };
+      const roleClass = user.role === 'admin' ? 'status-ok' : (user.role === 'member' ? 'status-warn' : 'status-unknown');
+      const selectButton = user.role === 'admin' ? '' : `<button class="btn btn-sm" onclick="selectAccount('${escapeHtml(user.username)}','${escapeHtml(user.role)}')">选择</button>`;
+      return `<tr><td>${escapeHtml(user.username)}</td><td>${escapeHtml(user.email || '—')}</td><td><span class="status-pill ${roleClass}">${labels[user.role] || escapeHtml(user.role)}</span></td><td>${selectButton}</td></tr>`;
     }).join('');
     document.getElementById('account_list').innerHTML = `
       <table class="table">
-        <thead><tr><th>用户名</th><th>角色</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="2">暂无账户</td></tr>'}</tbody>
+        <thead><tr><th>用户名</th><th>邮箱</th><th>账户类型</th><th>操作</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4">暂无账户</td></tr>'}</tbody>
       </table>
     `;
+  }
+
+  function selectAccount(username, role) {
+    document.getElementById('account_username').value = username;
+    document.getElementById('account_role').value = role;
+    document.getElementById('account_password').value = '';
   }
 
   async function loadAccounts() {
@@ -229,8 +245,9 @@
   async function createAccount() {
     const username = document.getElementById('account_username').value.trim();
     const password = document.getElementById('account_password').value;
+    const role = document.getElementById('account_role').value;
     try {
-      const payload = await adminApi('/1/api/users/create', 'POST', { username, password });
+      const payload = await adminApi('/1/api/users/create', 'POST', { username, password, role });
       renderAccounts(payload.users);
       accountNote('账户已新增');
     } catch (err) {
@@ -247,6 +264,18 @@
       accountNote('密码已更新');
     } catch (err) {
       accountNote('修改失败：' + err.message, true);
+    }
+  }
+
+  async function updateAccountRole() {
+    const username = document.getElementById('account_username').value.trim();
+    const role = document.getElementById('account_role').value;
+    try {
+      const payload = await adminApi('/1/api/users/role', 'POST', { username, role });
+      renderAccounts(payload.users);
+      accountNote('账户权限已更新');
+    } catch (err) {
+      accountNote('权限修改失败：' + err.message, true);
     }
   }
 

@@ -1,9 +1,11 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>字母游戏 - Letter League</title>
+    <link rel="stylesheet" href="/static/css/site-shell.css">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -99,6 +101,7 @@
     </style>
 </head>
 <body>
+    {{ site_shell('/', '返回首页', 'home') }}
     <div class="container">
         <h1>字母游戏助手</h1>
         <p style="text-align: center; color: #444; font-weight: 600;">用于计算 Discord letter league game solution</p>

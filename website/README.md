@@ -50,8 +50,8 @@ Nginx 反代：
 - `/clipboard`：网页剪贴板（`templates/tool_2.html`）
 - `/chat`：聊天大厅（`templates/chat.html`）
 - `/tracker`：物流追踪面板（`templates/tracker.html`）
-- `/map`：路线规划页面（`templates/map.html`）
-- `/map/aggregate-search`：地图多关键词聚合搜索（`templates/map_aggregate_search.html`）
+- `/map/1/`：路线规划页面（`templates/map.html`）
+- `/map/2/`：地图多关键词聚合搜索（`templates/map_aggregate_search.html`）
 - `/route_creator`：路线创作页面（`templates/route_creator.html`）
 - `/viewer`：3D 模型预览（`templates/viewer.html`）
 - `/vision`：智能视觉检测页（`templates/tool_1.html`）
@@ -61,8 +61,10 @@ Nginx 反代：
 - `/situation` 与 `/situation/map`：状态记录与地图（`templates/situation.html`, `templates/situation_map.html`）
 - `/aurora/`：极光信息页面（`templates/aurora.html`）
 - `/exchange`：一年期动态换汇优化与汇率监控（`templates/exchange.html`）
-- `/mail`：使用管理员指定的默认邮箱发送邮件（`templates/mail.html`）
+- `/mail`：公开使用管理员指定的默认邮箱发送邮件（`templates/mail.html`）
+- `/url-probe`：URL 连通性、速度与子域检查（`templates/url_probe.html`）
 - `/1/`：管理员面板（`templates/admin_index.html`）
+- `/1/nas`：局域网 USB 存储共享管理（`templates/nas.html`）
 - `/1/token`：App Token 管理（`templates/token.html`）
 - `/1/housing`：SW-KA 租房追踪设置与最近结果（`templates/housing.html`）
 - `/1/devices`：通用外设注册、批准、状态与配置管理（`templates/devices.html`）
@@ -73,7 +75,111 @@ BLE 优先通信协议见 `docs/device-ble-protocol-v1.md`。
 - `/1/weather`：天气/用量图表、运行状态、API 检查与记录周期管理（`templates/weather.html`）
 - `/1/mail`：多邮箱状态、默认账户、任意账户收发、多条本机转发规则与执行记录（`templates/mail_admin.html`）
 
-备注：`templates/login.html` 存在，但登录通过 `/api/auth/login` 进行。
+备注：登录没有独立页面，由全站顶栏通过 `/api/auth/login` 完成。`/map` 和 `/map/aggregate-search` 不保留兼容路由。
+
+---
+
+## 页面 UI 统一模板
+
+全站页面顶部统一为“左上方层级导航 + 页面右上角登录状态”，业务内容与配色仍由各页面自行定义。返回与登录都属于页面内容，会随页面一起滚动；公共组件不绘制通栏背景或分隔线，不在视觉上单独占据一整行。
+
+相关文件：
+
+- `templates/page_base.html`：新标准页面直接继承的 Jinja 基础模板。
+- `templates/_site_shell.html`：全站顶栏宏，供特殊布局页面单独调用。
+- `static/css/site-shell.css`：顶栏、层级返回、登录区和移动端布局。
+- `static/js/auth.js`：登录状态、登录对话框和退出操作。
+
+### 导航层级规则
+
+1. 从主页直接进入的一级页面，左上角使用醒目的“返回首页”，`back_kind` 为 `home`。
+2. 二级或更深页面只返回直接父级，文案写明父级名称，`back_kind` 为 `parent`。
+3. 不使用 `history.back()`；必须填写确定的 `href`，保证刷新、书签和外部直达时也能回到正确层级。
+4. “刷新”、“保存”、“打开数据库”等是业务操作，留在页面内的 toolbar，不与层级返回并列。
+5. 平级页面不互相标记为“返回”。例如 `/map/1/` 与 `/map/2/` 平级，两者都返回首页。
+6. 登录区位于页面右上角，使用有边框的实色容器保证可见性，但不固定在视口，会随页面滚动离开。窄屏会截断过长用户名，未登录时只保留“登录”按钮。
+
+### 新建普通页面
+
+新页面优先继承 `page_base.html`，不要重复写 HTML 外壳、顶栏或登录初始化。一级页面的最小模板：
+
+```jinja2
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}新页面{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>新页面</h1>
+    <p>页面说明</p>
+  </header>
+
+  <section class="card">
+    <h2 class="card-title">内容标题</h2>
+    <p>页面内容</p>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/example.js"></script>
+{% endblock %}
+```
+
+二级页面只需替换三个层级参数：
+
+```jinja2
+{% set back_href = "/1/devices" %}
+{% set back_label = "返回设备管理" %}
+{% set back_kind = "parent" %}
+```
+
+主页或真正不需要左侧导航的页面显式设为：
+
+```jinja2
+{% set back_href = none %}
+{% set back_label = none %}
+```
+
+个性配色通过 CSS 变量覆盖，不要复制顶栏 CSS：
+
+```jinja2
+{% block head %}
+  <style>
+    :root {
+      --site-shell-bg: #132238;
+      --site-shell-text: #f8fafc;
+      --site-shell-border: #29415f;
+      --site-shell-accent: #38bdf8;
+      --site-shell-accent-text: #082f49;
+    }
+  </style>
+{% endblock %}
+```
+
+### 特殊全屏页面
+
+地图、聊天、游戏、3D 查看器等需要保留自己的 `<body>` 和高度管理时，不必强行继承 `page_base.html`，但必须复用同一顶栏：
+
+```jinja2
+{% from "_site_shell.html" import site_shell %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
+</head>
+<body class="site-full-height">
+  {{ site_shell('/', '返回首页', 'home') }}
+  <!-- 页面自有的全屏布局 -->
+</body>
+</html>
+```
+
+`site_shell()` 已经输出并初始化公共登录脚本；页面不得再次引入 `/static/js/auth.js` 或重复调用 `createLoginStatusWidget()`。
 
 ---
 
@@ -133,8 +239,11 @@ BLE 优先通信协议见 `docs/device-ble-protocol-v1.md`。
 │       │   └── package.json
 │       └── boardgame.io/         # 官方示例仓库（参考）
 ├── templates/                    # 所有页面模板
+│   ├── page_base.html          # 新页面可直接继承的统一外壳
+│   └── _site_shell.html        # 层级导航与登录顶栏宏
 ├── static/
 │   ├── bgio/                     # boardgame.io 构建产物
+│   ├── css/site-shell.css       # 全站顶栏与移动端布局
 │   └── js/socket.io.min.js       # Socket.IO 客户端本地备份
 ├── letter_league/                # 字母棋词库与示例图片
 ├── tests/                        # 迁移后的测试/验证脚本
@@ -260,11 +369,17 @@ success 是 true
 - `GET /api/cloud/files`：列出文件 + 磁盘用量
 - `POST /api/cloud/delete/<name>`：删除文件（需登录）
 - `GET /api/cloud/download/<filename>`：下载文件
+- `POST /api/cloud/share`：为一个或多个文件生成临时分享链接（无需登录，可选1小时/1天/7天/30天，默认7天）
+- `GET /api/cloud/shares`：查看分享记录（需登录）
+- `DELETE /api/cloud/shares/<share_id>`：撤销分享链接（需登录）
+- `GET /s/cloud/<token>`：通过临时分享链接下载文件
 - `POST /api/cloud/clean_thumbnails`：清理孤立缩略图（需登录）
 - `GET /uploads/<filename>`：直链访问上传文件
 - `GET /thumbnails/<filename>`：直链访问缩略图
 
-云盘上传会在开始前检查磁盘空间，确保上传完成后仍至少保留5GB可用空间。网页关闭或刷新会中断当前上传；再次上传时将从头开始。
+云盘上传会在开始前检查磁盘空间，确保上传完成后仍至少保留5GB可用空间。网页支持拖入单个或多个文件直接上传；关闭或刷新会中断当前上传，再次上传时将从头开始。任何访问者均可生成1小时、1天、7天或30天有效的随机令牌分享链接，默认7天；查看记录和撤销链接需要登录。
+
+分享页面支持单独下载或依次下载全部文件。分享结果始终将FRP列为主地址，并列出所有可发现的cpolar网站隧道作为备用地址；每次创建分享或打开分享管理时，通过受限的只读发现命令即时读取实际FRP/cpolar配置及cpolar运行状态，不创建常驻服务或定时器，也不在应用代码中写死域名。
 
 ### 工具
 - `GET /clipboard`：剪贴板页面

@@ -1,15 +1,16 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>邮件配置</title><link rel="stylesheet" href="/static/css/base.css">
+  <title>邮件配置</title><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .account-grid,.rule-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.box{border:1px solid var(--border);border-radius:var(--r);padding:14px}.head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.title{font-weight:700;font-size:17px}.meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}.pill{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px}.ok{color:#166534;background:#dcfce7}.bad{color:#991b1b;background:#fee2e2}.form-grid{display:grid;gap:12px}.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:grid;gap:5px}.field label{font-weight:600;font-size:13px}textarea.input{min-height:170px;resize:vertical;font-family:inherit}.mail-table{width:100%;border-collapse:collapse;font-size:13px}.mail-table th,.mail-table td{border-bottom:1px solid var(--border);padding:8px;text-align:left;vertical-align:top}.mail-table th{color:var(--muted)}.error-text{color:var(--danger)}@media(max-width:720px){.grid-3{grid-template-columns:1fr}}
   </style>
 </head>
-<body><div class="page"><main class="container">
+<body>{{ site_shell('/1/', '返回管理员面板', 'parent') }}<div class="page"><main class="container">
   <div class="page-header"><h1>邮件配置</h1><p>凭据仅保存在服务端，本页面不会显示或修改密码</p></div>
-  <div class="toolbar" style="margin-bottom:16px"><a class="btn" href="/1/">返回管理员面板</a><a class="btn" href="/mail">打开主页写信页</a><button class="btn" onclick="loadAll()">刷新</button></div>
+  <div class="toolbar" style="margin-bottom:16px"><a class="btn" href="/mail">打开主页写信页</a><button class="btn" onclick="loadAll()">刷新</button></div>
 
   <section class="card"><h2 class="card-title">邮箱状态</h2><div id="accounts" class="account-grid">加载中…</div></section>
 

@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>菜地规划</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .garden-shell {
       display: grid;
@@ -401,6 +403,11 @@
   </style>
 </head>
 <body>
+  {% if garden_id is defined and garden_id %}
+    {{ site_shell('/garden', '返回菜地列表', 'parent') }}
+  {% else %}
+    {{ site_shell('/', '返回首页', 'home') }}
+  {% endif %}
   <main class="page">
     <div class="container garden-shell">
       <div class="page-header">
@@ -449,7 +456,6 @@
         <div class="toolbar-grid">
           <div class="status-line" id="statusLine">加载中...</div>
           <div class="toolbar-actions">
-            <a class="btn btn-ghost" href="/garden">返回菜地列表</a>
             <button class="btn btn-ghost" id="compareBtn" type="button">查看上一轮</button>
             <button class="btn btn-ghost" id="compareTwoBtn" type="button">查看前两轮</button>
           </div>

@@ -24,9 +24,17 @@ class MailApiTests(unittest.TestCase):
             session["logged_in"] = True
             session["user"] = "admin"
 
-    def test_send_requires_login(self):
-        response = self.client.post("/api/mail/send", json={})
-        self.assertEqual(response.status_code, 403)
+    @patch("modules.mail.api.requests.request")
+    def test_public_send_uses_default_account(self, request_mock):
+        upstream = Mock(status_code=200, content=b"{}")
+        upstream.json.return_value = {"status": "sent", "accountId": "qq"}
+        request_mock.return_value = upstream
+        response = self.client.post("/api/mail/send", json={
+            "accountId": "lmu", "to": "one@example.com", "subject": "subject", "text": "body"
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("accountId", request_mock.call_args.kwargs["json"])
+        self.assertTrue(request_mock.call_args.args[1].endswith("/api/mail/send/default"))
 
     @patch("modules.mail.api.is_admin_user", return_value=False)
     @patch("modules.mail.api.user_exists", return_value=True)
@@ -38,11 +46,13 @@ class MailApiTests(unittest.TestCase):
             "id": "qq", "address": "private@example.com", "lastError": "private detail"
         }}, "forwardingRules": [{"recipients": ["target@example.com"]}], "forwardingExecutions": []}
         request_mock.return_value = upstream
+        upstream.json.return_value["defaultAccountId"] = "qq"
         payload = self.client.get("/api/mail/accounts").get_json()
         self.assertEqual(payload["accounts"]["qq"]["address"], "pr***@example.com")
         self.assertNotIn("lastError", payload["accounts"]["qq"])
         self.assertNotIn("forwardingRules", payload)
         self.assertNotIn("forwardingExecutions", payload)
+        self.assertEqual(list(payload["accounts"]), ["qq"])
 
     @patch("modules.mail.api.is_admin_user", return_value=True)
     @patch("modules.mail.api.user_exists", return_value=True)

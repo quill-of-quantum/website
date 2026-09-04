@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Token 管理</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .badge-ok { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
     .badge-warn { background:#fef3c7; color:#92400e; border-color:#fde68a; }
@@ -17,6 +19,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/1/', '返回管理员面板', 'parent') }}
   <div class="page">
     <div class="container">
       <div class="page-header">
@@ -26,10 +29,8 @@
 
       <div class="toolbar" style="justify-content:space-between;">
         <div class="toolbar">
-          <a class="btn" href="/1/">返回管理面板</a>
           <button class="btn" onclick="loadTokens()">刷新</button>
         </div>
-        <button class="btn" onclick="authManager.doLogout()">退出登录</button>
       </div>
 
       <div class="card">
@@ -69,7 +70,6 @@ Authorization: Bearer wst_xxx</pre>
     </div>
   </div>
 
-  <script src="/static/js/auth.js"></script>
   <script>
     function note(msg, isError=false) {
       const el = document.getElementById('status_note');
@@ -185,7 +185,6 @@ Authorization: Bearer wst_xxx</pre>
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-      authManager.createLoginStatusWidget();
       authManager.checkLoginStatus();
       loadTokens();
     });

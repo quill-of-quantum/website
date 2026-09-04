@@ -1,0 +1,33 @@
+{% from "_site_shell.html" import site_shell %}
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>临时文件分享</title>
+  <link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/css/site-shell.css">
+  <style>
+    .share-list{margin-top:16px}.share-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#f8fafc;border:1px solid var(--border);border-radius:var(--r);margin:6px 0}.share-info{min-width:0;overflow-wrap:anywhere}.share-icon{font-size:1.5rem}.btn-download{background:#16a34a;border-color:#16a34a;color:#fff}.btn-download:hover{background:#15803d}.expiry{padding:10px 12px;border-radius:var(--r);background:#f3f6ff;color:var(--muted)}
+    @media(max-width:600px){.share-item{align-items:flex-start;flex-direction:column}.share-item .btn{width:100%}}
+  </style>
+</head>
+<body>
+  {{ site_shell(None, None, 'parent', False) }}
+  <main class="page"><section class="container card">
+    <div class="page-header"><h1>📦 临时文件分享</h1><p>分享了 {{ files|length }} 个文件，可全部下载或单独下载。</p></div>
+    <div class="toolbar"><button class="btn btn-download" id="downloadAll">⬇️ 全部下载</button></div>
+    <div class="expiry">链接有效至：<span id="expires"></span></div>
+    <div class="share-list">
+      {% for file in files %}
+      <div class="share-item"><div class="share-info"><span class="share-icon">📄</span> {{ file.display_name }}</div><a class="btn btn-download file-download" href="{{ url_for('cloud.download_shared_file_item', token=token, file_index=loop.index0) }}">下载</a></div>
+      {% endfor %}
+    </div>
+  </section></main>
+  <script>
+    document.getElementById("expires").textContent=new Date({{ expires_at }}*1000).toLocaleString();
+    document.getElementById("downloadAll").addEventListener("click",()=>{
+      document.querySelectorAll(".file-download").forEach((link,index)=>setTimeout(()=>{
+        const anchor=document.createElement("a");anchor.href=link.href;document.body.appendChild(anchor);anchor.click();anchor.remove();
+      },index*600));
+    });
+  </script>
+</body></html>

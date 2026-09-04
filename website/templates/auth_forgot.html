@@ -1,0 +1,58 @@
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}找回账户{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="/static/css/auth-pages.css?v=20260904-1">{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+    <div class="auth-eyebrow">Account recovery</div>
+    <h1>找回账户与密码</h1>
+    <p class="auth-lead">输入注册邮箱。如果账户存在，我们会发送包含用户名和一次性密码重置链接的邮件。</p>
+    <form id="forgotForm" class="auth-form">
+      <div class="auth-field">
+        <label for="forgotEmail">注册邮箱</label>
+        <input id="forgotEmail" type="email" autocomplete="email" maxlength="254" required autofocus>
+      </div>
+      <button id="forgotSubmit" class="btn btn-primary auth-submit" type="submit">发送找回邮件</button>
+      <div id="forgotStatus" class="auth-status" role="status" aria-live="polite"></div>
+    </form>
+    <div class="auth-links"><a href="/register">注册新账户</a></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('forgotForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('forgotSubmit');
+    const status = document.getElementById('forgotStatus');
+    button.disabled = true;
+    button.textContent = '正在发送…';
+    status.className = 'auth-status';
+    status.textContent = '';
+    try {
+      const response = await fetch('/api/auth/password/forgot', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email: document.getElementById('forgotEmail').value.trim()})
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '发送失败');
+      status.className = 'auth-status is-success';
+      status.textContent = payload.message;
+      document.getElementById('forgotEmail').value = '';
+    } catch (error) {
+      status.className = 'auth-status is-error';
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = '发送找回邮件';
+    }
+  });
+</script>
+{% endblock %}

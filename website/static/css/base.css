@@ -227,13 +227,6 @@ a:hover {
   gap: 12px;
 }
 
-.login-status {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 999;
-}
-
 .login-status .btn {
   padding: 6px 10px;
   font-size: 13px;
@@ -248,8 +241,4 @@ a:hover {
     grid-template-columns: 1fr;
   }
 
-  .login-status {
-    top: 12px;
-    right: 12px;
-  }
 }

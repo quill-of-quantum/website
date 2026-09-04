@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>新建邮件</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .mail-form { display:grid; gap:16px; }
     .field { display:grid; gap:6px; }
@@ -17,6 +19,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <main class="container" style="max-width:760px;">
       <div class="page-header">
@@ -51,7 +54,6 @@
             <textarea id="body" name="text" class="input mail-body" placeholder="请输入邮件正文" required></textarea>
           </div>
           <div class="mail-actions">
-            <a class="btn" href="/">返回首页</a>
             <button id="send-button" class="btn btn-primary" type="submit">发送邮件</button>
           </div>
           <div id="mail-status" class="mail-status muted" role="status" aria-live="polite"></div>

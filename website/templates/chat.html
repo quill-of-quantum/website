@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,11 +6,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>聊天大厅</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     html, body { height: 100%; overflow: hidden; }
     body { background: #f4f6fb; }
-    .page {
+    body.site-full-height {
+      height: 100vh;
       height: 100dvh;
+    }
+    body.site-full-height > .page {
+      height: calc(100vh - var(--site-shell-height) - env(safe-area-inset-top));
+      height: calc(100dvh - var(--site-shell-height) - env(safe-area-inset-top));
+      min-height: 0;
       overflow: hidden;
       box-sizing: border-box;
     }
@@ -174,7 +182,8 @@
     }
   </style>
 </head>
-<body>
+<body class="site-full-height">
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <div class="container chat-shell">
       <header class="chat-header">
@@ -194,7 +203,6 @@
             <span id="meName" class="me-name">分配中...</span>
           </div>
           <button class="btn" id="shuffleBtn" type="button">换一个</button>
-          <a class="btn" href="/">返回首页</a>
         </div>
       </header>
 
@@ -358,6 +366,7 @@
     }
 
     function applyState(payload) {
+      if (payload.device_id) deviceId = payload.device_id;
       if (payload.me) updateMe(payload.me);
       updatePresence(payload);
       messages = [];
@@ -367,6 +376,7 @@
     }
 
     function applySync(payload) {
+      if (payload.device_id) deviceId = payload.device_id;
       if (payload.me) updateMe(payload.me);
       const wasAtBottom = shouldStickToBottom();
       const beforeIds = new Set(messages.map(msg => msg.id));

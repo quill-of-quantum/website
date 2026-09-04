@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>📂 云盘 - 文件上传</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/modern-normalize/modern-normalize.min.css">
   <style>
     .file-list {
@@ -130,9 +132,59 @@
       color: #fff;
       border-color: var(--primary);
     }
+    .drop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(3px);
+      pointer-events: none;
+    }
+    .drop-overlay.visible { display: flex; }
+    .drop-message {
+      width: min(620px, 90vw);
+      padding: 54px 24px;
+      border: 3px dashed #bfdbfe;
+      border-radius: 22px;
+      background: rgba(37, 99, 235, 0.92);
+      color: #fff;
+      text-align: center;
+      font-size: clamp(1.25rem, 4vw, 2rem);
+      font-weight: 700;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    }
+    .drop-message small {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.9rem;
+      font-weight: 400;
+      opacity: 0.86;
+    }
+    .btn-share { background:#16a34a; border-color:#16a34a; color:#fff; }
+    .btn-share:hover { background:#15803d; }
+    .share-dialog { width:min(720px,92vw); border:0; border-radius:16px; padding:20px; }
+    .share-dialog::backdrop { background:rgba(15,23,42,.55); }
+    .share-record { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+    .share-duration-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:16px; }
+    .share-duration-options .default { background:var(--primary); border-color:var(--primary); color:#fff; }
+    .usage-notice {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.65;
+    }
+    .usage-notice strong { color: #475569; }
+    .usage-notice p { margin: 0.35rem 0 0; }
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
 
   <div class="page">
     <div class="container card">
@@ -145,7 +197,7 @@
         <input type="file" id="fileInput" multiple style="display:none;" />
         <button class="btn btn-primary" id="uploadBtn">选择文件</button>
         <button class="btn" id="cancelUploadBtn" type="button" hidden>✖ 取消上传</button>
-        <a class="btn btn-ghost" href="/">🏠 返回首页</a>
+        <button class="btn" id="manageSharesBtn" data-permission="cloud:delete" type="button" hidden>管理分享</button>
       </div>
 
       <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
@@ -168,11 +220,39 @@
       <p class="selection-help">提示：单击选择；Ctrl/⌘ 点击多选；Shift 点击连续选择；在列表空白处拖动可框选。</p>
     
       <div id="fileList" class="file-list" role="listbox" aria-multiselectable="true"></div>
+
+      <aside class="usage-notice" aria-label="使用说明与责任提示">
+        <strong>使用说明与责任提示</strong>
+        <p>本服务仅供本人及受邀熟人临时存储、传输具有合法来源和合法用途的文件，不作为面向公众的开放式网盘。使用者应确保上传、分享及下载的内容不侵犯他人的著作权、隐私权、个人信息权益及其他合法权益，且不包含法律法规禁止传播的内容，并对其操作及内容承担相应责任。</p>
+        <p>本服务原则上不主动查看或审查私人文件；收到合法有效的投诉、通知，或发现内容涉嫌违法、侵权、危害网络安全时，有权立即停止分享、限制访问或删除相关文件，并依法配合有关机关处理。请勿上传国家秘密、敏感个人信息、重要数据或其他不适合通过公共网络传输的内容，并请妥善保管分享链接。</p>
+      </aside>
     </div>
   </div>
 
+  <div id="dropOverlay" class="drop-overlay" aria-hidden="true">
+    <div class="drop-message">拖拽到此处以上传<small>支持单个或多个文件</small></div>
+  </div>
+  <dialog id="shareDialog" class="share-dialog">
+    <div class="toolbar"><h2 style="margin:0;flex:1">分享链接管理</h2><button class="btn btn-sm" onclick="shareDialog.close()">关闭</button></div>
+    <div id="shareRecords" style="margin-top:12px">正在加载…</div>
+  </dialog>
+  <dialog id="shareResultDialog" class="share-dialog">
+    <div class="toolbar"><h2 style="margin:0;flex:1">分享地址</h2><button class="btn btn-sm" onclick="shareResultDialog.close()">关闭</button></div>
+    <p class="muted">FRP为主地址，cpolar隧道作为备用地址。</p>
+    <div id="shareResultLinks" class="stack"></div>
+  </dialog>
+  <dialog id="shareDurationDialog" class="share-dialog">
+    <div class="toolbar"><h2 style="margin:0;flex:1">选择分享时间</h2><button class="btn btn-sm" onclick="cancelShareDuration()">取消</button></div>
+    <p class="muted">分享链接到期后会自动失效。</p>
+    <div class="share-duration-options">
+      <button class="btn" onclick="confirmShareDuration(3600)">1小时</button>
+      <button class="btn" onclick="confirmShareDuration(86400)">1天</button>
+      <button class="btn default" onclick="confirmShareDuration(604800)">7天（默认）</button>
+      <button class="btn" onclick="confirmShareDuration(2592000)">30天</button>
+    </div>
+  </dialog>
+
   <!-- 引入统一的认证模块 -->
-  <script src="/static/js/auth.js"></script>
 
   <script>
   const statusDiv = document.getElementById("uploadStatus");
@@ -180,6 +260,7 @@
   const progressBar = document.getElementById("progressBar");
   const speedText = document.getElementById("speedText");
   const cancelUploadBtn = document.getElementById("cancelUploadBtn");
+  const dropOverlay = document.getElementById("dropOverlay");
   let activeUploadXhr = null;
   let uploadCanceled = false;
   localStorage.removeItem("cloudResumableUploadsV1");
@@ -192,13 +273,20 @@
   let selectionAnchor = null;
   let marqueeState = null;
   let suppressItemClick = false;
+  let canDeleteCloud = false;
 
   let currentSort = "time";
   let currentOrder = "desc";
 
   // 初始化认证系统
   document.addEventListener('DOMContentLoaded', function() {
-    authManager.createLoginStatusWidget();
+    authManager.onAuthChange(function() {
+      const allowed = authManager.hasPermission('cloud:delete');
+      if (allowed !== canDeleteCloud) {
+        canDeleteCloud = allowed;
+        loadFiles();
+      }
+    });
     authManager.checkLoginStatus();
   });
 
@@ -448,8 +536,9 @@
       <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem;">
         <button class="btn btn-sm" id="selectAllBtn">全选</button>
         <button class="btn btn-sm" id="clearSelectBtn">取消全选</button>
-        <button class="btn btn-sm btn-danger" id="batchDeleteBtn">批量删除</button>
+        ${canDeleteCloud ? '<button class="btn btn-sm btn-danger" id="batchDeleteBtn">批量删除</button>' : ''}
         <button class="btn btn-sm" id="batchDownloadBtn">批量下载</button>
+        <button class="btn btn-sm btn-share" id="batchShareBtn">批量分享</button>
         <span id="selectionInfo" style="margin-left:auto;font-size:0.9rem;color:#444;">未选择文件</span>
       </div>
     `;
@@ -504,7 +593,8 @@
             ? `<a href="javascript:void(0);" onclick="openImageViewer(${imageFiles.findIndex(im=>im.stored_name===storedName)})">查看</a>`
             : `<a href="/uploads/${encodeURIComponent(storedName)}" target="_blank">查看</a>`
           }
-          <button class="btn btn-sm btn-danger" onclick="deleteFile('${storedName}','${displayName.replace(/'/g, "\\'")}')">删除</button>
+          <button class="btn btn-sm btn-share" onclick="shareFile('${storedName}')">分享</button>
+          ${canDeleteCloud ? `<button class="btn btn-sm btn-danger" onclick="deleteFile('${storedName}','${displayName.replace(/'/g, "\\'")}')">删除</button>` : ''}
         </span>`;
       list.appendChild(div);
       div.addEventListener("click", event => {
@@ -552,8 +642,10 @@
       updateSelectionInfo();
     };
 
-    document.getElementById("batchDeleteBtn").onclick = batchDelete;
+    const batchDeleteBtn = document.getElementById("batchDeleteBtn");
+    if (batchDeleteBtn) batchDeleteBtn.onclick = batchDelete;
     document.getElementById("batchDownloadBtn").onclick = batchDownload;
+    document.getElementById("batchShareBtn").onclick = batchShare;
 
     updateSelectionInfo();
     list.addEventListener("pointerdown", beginMarquee);
@@ -577,7 +669,7 @@
 
   // --- 批量删除 ---
   async function batchDelete() {
-    if (!authManager.requireLogin()) return;
+    if (!authManager.requirePermission('cloud:delete', '只有专属用户或管理员可以删除云盘文件')) return;
     
     if (selectedFiles.size === 0) {
       alert("⚠️ 请先选择要删除的文件！");
@@ -591,9 +683,9 @@
         const res = await fetch(`/api/cloud/delete/${encodeURIComponent(name)}`, { method: "POST" });
         const data = await res.json();
         
-        if (res.status === 403 && data.require_login) {
-          alert('需要登录后才能删除文件');
-          authManager.showLoginModal();
+        if (res.status === 403) {
+          alert(data.error || '当前账户没有删除权限');
+          if (data.require_login) authManager.showLoginModal();
           return;
         }
       } catch (e) {
@@ -680,9 +772,9 @@
   }
 
   // --- 上传入口 ---
-  async function uploadFile() {
+  async function uploadFile(filesOverride = null) {
     const input = document.getElementById("fileInput");
-    const files = Array.from(input.files);
+    const files = filesOverride ? Array.from(filesOverride) : Array.from(input.files);
     if (!files.length) {
       statusDiv.textContent = "⚠️ 请先选择文件。";
       return;
@@ -723,9 +815,231 @@
     if (activeUploadXhr) activeUploadXhr.abort();
   });
 
+  async function shareFile(name) {
+    return shareFiles([name]);
+  }
+
+  async function batchShare() {
+    if (!selectedFiles.size) {
+      alert("请先选择要分享的文件。");
+      return;
+    }
+    return shareFiles([...selectedFiles.keys()]);
+  }
+
+  async function shareFiles(names) {
+    pendingShareFiles = names;
+    shareDurationDialog.showModal();
+  }
+
+  const shareDurationDialog = document.getElementById("shareDurationDialog");
+  let pendingShareFiles = [];
+  function cancelShareDuration() {
+    pendingShareFiles = [];
+    shareDurationDialog.close();
+  }
+
+  async function confirmShareDuration(seconds) {
+    const names = pendingShareFiles;
+    pendingShareFiles = [];
+    shareDurationDialog.close();
+    if (!names.length) return;
+    try {
+      const response = await fetch("/api/cloud/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: names, expires_in: seconds })
+      });
+      let data;
+      try {
+        data = await response.json();
+      } catch (_) {
+        throw new Error(`服务器返回异常 (${response.status})`);
+      }
+      if (!response.ok || !data.success) throw new Error(data.error || "生成分享链接失败");
+      showShareLinks(data.data.links, data.data.path);
+      const durationLabels = {3600:"1小时",86400:"1天",604800:"7天",2592000:"30天"};
+      statusDiv.textContent = `🔗 ${names.length} 个文件的分享页面已生成，有效期 ${durationLabels[seconds] || "7天"}。`;
+    } catch (error) {
+      statusDiv.textContent = `❌ ${error.message}`;
+    }
+  }
+
+  const shareDialog = document.getElementById("shareDialog");
+  const shareResultDialog = document.getElementById("shareResultDialog");
+  function showShareLinks(discoveredLinks, fallbackPath) {
+    const links = discoveredLinks && discoveredLinks.length
+      ? discoveredLinks
+      : [{ label: "当前访问地址", url: new URL(fallbackPath, window.location.origin).href }];
+    const container = document.getElementById("shareResultLinks");
+    container.innerHTML = "";
+    links.forEach(link => {
+      const row = document.createElement("div");
+      row.className = "share-record";
+      const info = document.createElement("div");
+      info.innerHTML = `<strong>${escapeHtml(link.label)}</strong><div class="muted" style="overflow-wrap:anywhere">${escapeHtml(link.url)}</div>`;
+      const button = document.createElement("button");
+      button.className = "btn btn-sm btn-share";
+      button.textContent = "复制";
+      button.addEventListener("click", async () => {
+        if (await copyManagedShare(link.url)) {
+          const original = button.textContent;
+          button.textContent = "✓ 已复制";
+          setTimeout(() => { button.textContent = original; }, 1600);
+        }
+      });
+      row.append(info, button);
+      container.appendChild(row);
+    });
+    shareResultDialog.showModal();
+  }
+
+  async function loadShareRecords() {
+    if (!authManager.requirePermission('cloud:delete', '只有专属用户或管理员可以管理分享记录')) return;
+    const records = document.getElementById("shareRecords");
+    shareDialog.showModal();
+    records.textContent = "正在加载…";
+    const response = await fetch("/api/cloud/shares");
+    const data = await response.json();
+    if (!response.ok) {
+      records.textContent = data.error || "加载失败";
+      return;
+    }
+    const shares = data.data.shares;
+    records.innerHTML = shares.length ? shares.map(item => {
+      const names = item.files.map(file => escapeHtml(file.display_name)).join("、");
+      const state = item.active ? `有效至 ${new Date(item.expires_at * 1000).toLocaleString()}` : "已失效";
+      const links = item.links && item.links.length ? item.links : [{label:"当前地址",url:new URL(item.path,window.location.origin).href}];
+      const copyButtons = item.active ? links.map(link => `<button class="btn btn-sm btn-share managed-copy" data-link="${escapeHtml(link.url)}">复制${escapeHtml(link.label)}</button>`).join("") : "";
+      return `<div class="share-record"><div><div>${names}</div><small class="muted">${state}</small></div><div class="toolbar">${copyButtons}${item.active ? `<button class="btn btn-sm btn-danger" onclick="revokeShare('${item.id}')">撤销</button>` : ""}</div></div>`;
+    }).join("") : "暂无分享记录。";
+    records.querySelectorAll(".managed-copy").forEach(button => button.addEventListener("click", async () => {
+      if (await copyManagedShare(button.dataset.link)) {
+        const original = button.textContent;
+        button.textContent = "✓ 已复制";
+        setTimeout(() => { button.textContent = original; }, 1600);
+      }
+    }));
+  }
+
+  function escapeHtml(value) {
+    const element = document.createElement("div");
+    element.textContent = value;
+    return element.innerHTML;
+  }
+
+  async function revokeShare(id) {
+    if (!confirm("确定撤销这个分享链接吗？")) return;
+    const response = await fetch(`/api/cloud/shares/${id}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || "撤销失败");
+    loadShareRecords();
+  }
+
+  function copyWithExecCommand(text) {
+    // Keep this synchronous: browsers only allow legacy clipboard writes while
+    // the original click is still an active user gesture.
+    let copied = false;
+    const onCopy = event => {
+      if (!event.clipboardData) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", text);
+      copied = true;
+    };
+    document.addEventListener("copy", onCopy, { once: true });
+    try {
+      copied = document.execCommand("copy") && copied;
+    } catch (_) {
+      copied = false;
+    }
+    document.removeEventListener("copy", onCopy);
+    if (copied) return true;
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.setAttribute("aria-hidden", "true");
+    Object.assign(textarea.style, {
+      position: "fixed", left: "0", top: "0", opacity: "0.01",
+      width: "2px", height: "2px", padding: "0", border: "0"
+    });
+    document.body.appendChild(textarea);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    try {
+      copied = document.execCommand("copy");
+    } catch (_) {
+      copied = false;
+    }
+    textarea.remove();
+    return copied;
+  }
+
+  async function copyManagedShare(path) {
+    const link = new URL(path, window.location.origin).href;
+    let copied = copyWithExecCommand(link);
+    if (!copied && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(link);
+        copied = true;
+      } catch (_) {
+        copied = false;
+      }
+    }
+    if (copied) {
+      statusDiv.textContent = `🔗 分享链接已复制：${link}`;
+    } else {
+      statusDiv.textContent = "❌ 浏览器阻止了剪贴板访问，请允许此网站使用剪贴板后重试。";
+    }
+    return copied;
+  }
+
+  document.getElementById("manageSharesBtn").addEventListener("click", loadShareRecords);
+
+  function dragContainsFiles(event) {
+    return Array.from(event.dataTransfer && event.dataTransfer.types || []).includes("Files");
+  }
+
+  let fileDragDepth = 0;
+  window.addEventListener("dragenter", event => {
+    if (!dragContainsFiles(event)) return;
+    event.preventDefault();
+    fileDragDepth += 1;
+    dropOverlay.classList.add("visible");
+    dropOverlay.setAttribute("aria-hidden", "false");
+  });
+  window.addEventListener("dragover", event => {
+    if (!dragContainsFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("dragleave", event => {
+    if (!fileDragDepth) return;
+    fileDragDepth = Math.max(0, fileDragDepth - 1);
+    if (!fileDragDepth) {
+      dropOverlay.classList.remove("visible");
+      dropOverlay.setAttribute("aria-hidden", "true");
+    }
+  });
+  window.addEventListener("drop", event => {
+    event.preventDefault();
+    fileDragDepth = 0;
+    dropOverlay.classList.remove("visible");
+    dropOverlay.setAttribute("aria-hidden", "true");
+    const files = Array.from(event.dataTransfer && event.dataTransfer.files || []);
+    if (!files.length) return;
+    if (activeUploadXhr) {
+      statusDiv.textContent = "⚠️ 当前已有上传任务，请等待完成或先取消。";
+      return;
+    }
+    statusDiv.textContent = `已拖入 ${files.length} 个文件，开始上传。`;
+    uploadFile(files);
+  });
+
   // --- 修改删除单个文件函数 ---
   async function deleteFile(name, displayName) {
-    if (!authManager.requireLogin()) return;
+    if (!authManager.requirePermission('cloud:delete', '只有专属用户或管理员可以删除云盘文件')) return;
     
     const shown = displayName || name;
     if (!confirm(`确定删除 ${shown} 吗？`)) return;
@@ -734,9 +1048,9 @@
       const res = await fetch(`/api/cloud/delete/${encodeURIComponent(name)}`, { method: "POST" });
       const data = await res.json();
       
-      if (res.status === 403 && data.require_login) {
-        alert('需要登录后才能删除文件');
-        authManager.showLoginModal();
+      if (res.status === 403) {
+        alert(data.error || '当前账户没有删除权限');
+        if (data.require_login) authManager.showLoginModal();
         return;
       }
       

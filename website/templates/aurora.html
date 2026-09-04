@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>🍀 极光中心</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     .placeholder {
@@ -94,14 +96,12 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <div class="container">
       <div class="page-header">
         <h1>🍀 极光中心</h1>
         <p>整合实时状态、KP 预报与社交媒体检索。</p>
-        <div style="margin-top: 10px;">
-          <a class="btn btn-ghost" href="/">🏠 Back</a>
-        </div>
       </div>
 
       <div class="card">

@@ -1,0 +1,129 @@
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}账户管理{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/auth-pages.css?v=20260904-2">
+{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+    <div class="auth-eyebrow">Account settings</div>
+    <h1>账户管理</h1>
+    <p class="auth-lead">修改账户资料时只需验证当前密码，不会发送验证邮件。</p>
+
+    <div class="auth-profile" aria-label="账户资料">
+      <div class="auth-profile__item"><span>用户名</span><strong>{{ account_username }}</strong></div>
+      <div class="auth-profile__item"><span>邮箱</span><strong>{{ account_email or '未绑定' }}</strong></div>
+      <div class="auth-profile__item"><span>账户类型</span><strong>{{ '专属用户' if account_role == 'member' else '游客' }}</strong></div>
+    </div>
+
+    <section class="auth-section">
+      <h2>修改用户名</h2>
+      <p class="auth-section__lead">聊天大厅中的固定身份和历史消息会继续保留。</p>
+      <form id="usernameForm" class="auth-form">
+        <div class="auth-field">
+          <label for="newUsername">新用户名</label>
+          <input id="newUsername" autocomplete="username" minlength="3" maxlength="32" value="{{ account_username }}" required>
+        </div>
+        <div class="auth-field">
+          <label for="usernameCurrentPassword">当前密码</label>
+          <input id="usernameCurrentPassword" type="password" autocomplete="current-password" required>
+        </div>
+        <button id="usernameSubmit" class="btn btn-primary auth-submit" type="submit">保存用户名</button>
+        <div id="usernameStatus" class="auth-status" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section class="auth-section">
+      <h2>修改密码</h2>
+      <p class="auth-section__lead">输入当前密码后即可设置新密码。</p>
+      <form id="passwordForm" class="auth-form">
+        <div class="auth-field">
+          <label for="passwordCurrentPassword">当前密码</label>
+          <input id="passwordCurrentPassword" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="auth-field">
+          <label for="newPassword">新密码</label>
+          <input id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        </div>
+        <div class="auth-field">
+          <label for="newPasswordConfirm">确认新密码</label>
+          <input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        </div>
+        <button id="passwordSubmit" class="btn btn-primary auth-submit" type="submit">更新密码</button>
+        <div id="passwordStatus" class="auth-status" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function showAccountStatus(id, message, type='') {
+    const element = document.getElementById(id);
+    element.textContent = message;
+    element.className = `auth-status${type ? ` is-${type}` : ''}`;
+  }
+
+  function setAccountBusy(button, busy, busyText, normalText) {
+    button.disabled = busy;
+    button.textContent = busy ? busyText : normalText;
+  }
+
+  document.getElementById('usernameForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('usernameSubmit');
+    setAccountBusy(button, true, '正在保存…', '保存用户名');
+    showAccountStatus('usernameStatus', '');
+    try {
+      const response = await fetch('/api/auth/account/username', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          new_username: document.getElementById('newUsername').value.trim(),
+          current_password: document.getElementById('usernameCurrentPassword').value
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '修改失败');
+      showAccountStatus('usernameStatus', '用户名已更新，正在刷新…', 'success');
+      window.setTimeout(() => window.location.reload(), 450);
+    } catch (error) {
+      showAccountStatus('usernameStatus', error.message, 'error');
+      setAccountBusy(button, false, '正在保存…', '保存用户名');
+    }
+  });
+
+  document.getElementById('passwordForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('passwordSubmit');
+    setAccountBusy(button, true, '正在更新…', '更新密码');
+    showAccountStatus('passwordStatus', '');
+    try {
+      const response = await fetch('/api/auth/account/password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          current_password: document.getElementById('passwordCurrentPassword').value,
+          new_password: document.getElementById('newPassword').value,
+          new_password_confirm: document.getElementById('newPasswordConfirm').value
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '修改失败');
+      document.getElementById('passwordForm').reset();
+      showAccountStatus('passwordStatus', '密码已更新', 'success');
+    } catch (error) {
+      showAccountStatus('passwordStatus', error.message, 'error');
+    } finally {
+      setAccountBusy(button, false, '正在更新…', '更新密码');
+    }
+  });
+</script>
+{% endblock %}

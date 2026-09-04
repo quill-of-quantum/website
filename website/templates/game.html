@@ -1,9 +1,11 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>实时游戏大厅</title>
+    <link rel="stylesheet" href="/static/css/site-shell.css">
     <style>
       :root {
         --bg: #0f172a;
@@ -196,7 +198,12 @@
       }
     </style>
   </head>
-  <body>
+  <body class="site-full-height">
+    {% if room_id %}
+      {{ site_shell('/game/', '返回游戏大厅', 'parent') }}
+    {% else %}
+      {{ site_shell('/', '返回首页', 'home') }}
+    {% endif %}
     <header>
       <h1>实时游戏大厅</h1>
       <p>房间即状态来源。加入房间或创建新房间。</p>

@@ -1,14 +1,16 @@
 from functools import wraps
+import hashlib
 import shutil
 import subprocess
 import time
 from datetime import datetime, timedelta
 
 import requests
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session, url_for
 
 from modules.auth.user_store import is_admin_user, user_exists
 from modules.weather.db import activate_period, create_period, update_period_location
+from modules.weather.background import current_weather, resolve_coordinates
 from modules.weather.store import get_config, latest_run, set_homepage_visible, start_analysis
 
 
@@ -158,3 +160,29 @@ def check_apis():
 def display_settings():
     config = get_config()
     return jsonify({"homepage_visible": config["homepage_visible"]})
+
+
+@bp.get("/api/weather/background")
+def background_weather():
+    forwarded = str(request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
+    client_ip = forwarded or str(request.remote_addr or "")
+    secret = str(current_app.secret_key or "website").encode("utf-8")[:32]
+    network_key = hashlib.blake2s(client_ip.encode("utf-8"), key=secret, digest_size=8).hexdigest()
+    location = resolve_coordinates(request.args.get("lat"), request.args.get("lon"), client_ip)
+    try:
+        weather = current_weather(location["latitude"], location["longitude"])
+    except (requests.RequestException, ValueError):
+        return jsonify({
+            "ok": False,
+            "source": location["source"],
+            "network_key": network_key,
+            "location_name": location["location_name"],
+            "error": "暂时无法获取实时天气",
+        }), 502
+    return jsonify({
+        "ok": True,
+        "source": location["source"],
+        "network_key": network_key,
+        "location_name": location["location_name"],
+        **weather,
+    })

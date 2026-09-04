@@ -1,0 +1,206 @@
+:root {
+  --site-shell-height: 56px;
+  --site-shell-bg: var(--surface, #ffffff);
+  --site-shell-text: var(--text, #1f2937);
+  --site-shell-border: var(--border, #e5e7eb);
+  --site-shell-accent: var(--primary, #2563eb);
+  --site-shell-accent-text: #ffffff;
+  --site-auth-bg: #ffffff;
+  --site-auth-text: #1f2937;
+}
+
+.site-shell {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3000;
+  height: calc(var(--site-shell-height) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+  background: transparent;
+  color: var(--site-shell-text);
+  border: 0;
+  pointer-events: none;
+}
+
+.site-shell__inner {
+  width: 100%;
+  height: var(--site-shell-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.site-shell__nav,
+.site-shell__auth {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.site-shell__nav {
+  flex: 1 1 auto;
+}
+
+.site-shell__auth {
+  position: static;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.site-shell__back {
+  min-height: 38px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--site-shell-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--site-shell-text);
+  font: 600 14px/1.2 system-ui, sans-serif;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.site-shell__back:hover {
+  border-color: var(--site-shell-accent);
+  color: var(--site-shell-accent);
+  text-decoration: none;
+}
+
+.site-shell__back--home {
+  background: var(--site-shell-accent);
+  border-color: var(--site-shell-accent);
+  color: var(--site-shell-accent-text);
+}
+
+.site-shell__back--home:hover {
+  filter: brightness(.96);
+  color: var(--site-shell-accent-text);
+}
+
+.site-shell-spacer {
+  flex: 0 0 calc(var(--site-shell-height) + env(safe-area-inset-top));
+  width: 100%;
+  height: calc(var(--site-shell-height) + env(safe-area-inset-top));
+}
+
+.site-shell__auth .login-status {
+  position: static !important;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 4px 3px 9px;
+  background: var(--site-auth-bg);
+  border: 1px solid var(--site-shell-border);
+  border-radius: 10px;
+  box-shadow: none;
+  color: var(--site-auth-text);
+  font: 500 13px/1.2 system-ui, sans-serif;
+}
+
+.site-shell__auth #loginText {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-shell__auth #loginBtn,
+.site-shell__auth #adminLink {
+  width: auto;
+  min-height: 36px;
+  margin-left: 8px !important;
+  margin-top: 0 !important;
+  padding: 6px 10px;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  border-color: var(--site-shell-accent);
+  background: var(--site-shell-accent);
+  color: var(--site-shell-accent-text);
+}
+
+.site-shell__auth #adminLink {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  border-color: var(--site-shell-border);
+  background: transparent;
+  color: var(--site-auth-text);
+}
+
+.site-shell__auth #adminLink[hidden] {
+  display: none;
+}
+
+.site-shell__auth #loginBtn:hover,
+.site-shell__auth #adminLink:hover {
+  filter: brightness(.96);
+}
+
+.site-shell__back:focus-visible,
+.site-shell__auth #loginBtn:focus-visible,
+.site-shell__auth #adminLink:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--site-shell-accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.site-shell-spacer + .search-page,
+.site-shell-spacer + .map-page {
+  height: calc(100vh - var(--site-shell-height) - env(safe-area-inset-top));
+  min-height: 0;
+}
+
+body.site-full-height {
+  height: 100vh;
+  min-height: 0;
+}
+
+body.site-full-height > .page {
+  height: calc(100vh - var(--site-shell-height) - env(safe-area-inset-top));
+  min-height: 0;
+}
+
+@media (max-width: 520px) {
+  :root {
+    --site-shell-height: 50px;
+  }
+
+  .site-shell {
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+
+  .site-shell__inner {
+    gap: 8px;
+  }
+
+  .site-shell__back {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .site-shell__auth #loginText {
+    max-width: 72px;
+  }
+
+  .site-shell__auth .login-status[data-logged-in="false"] #loginText {
+    display: none;
+  }
+
+  .site-shell__auth #loginBtn,
+  .site-shell__auth #adminLink {
+    min-height: 34px;
+    margin-left: 6px !important;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+}

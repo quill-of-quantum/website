@@ -1,8 +1,9 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>天气与用量分析</title><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <title>天气与用量分析</title><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/css/site-shell.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
   <style>
     .status{white-space:pre-wrap;word-break:break-word}.ok{color:#166534}.error{color:#991b1b}.running{color:#b45309}
     .period{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
@@ -12,8 +13,8 @@
     .weather-map-marker{width:24px;height:24px;border:3px solid #fff;border-radius:50%;background:#2563eb;box-shadow:0 1px 6px rgba(0,0,0,.55)}
   </style>
 </head>
-<body><div class="page"><div class="container">
-  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center"><div><h1>天气与用量分析</h1><p>管理主页图表、分析任务、天气 API 与非自然年周期</p></div><a class="btn" href="/1/">返回管理面板</a></div>
+<body>{{ site_shell('/1/', '返回管理员面板', 'parent') }}<div class="page"><div class="container">
+  <div class="page-header"><h1>天气与用量分析</h1><p>管理主页图表、分析任务、天气 API 与非自然年周期</p></div>
   <div class="card"><h2 class="card-title">显示与运行</h2>
     <label><input id="homepageVisible" type="checkbox"> 在主页显示 Usage Charts</label>
     <div class="toolbar" style="margin-top:14px"><button class="btn btn-primary" onclick="saveSettings()">保存显示设置</button><button class="btn" onclick="runNow()">手动运行一次分析</button><button class="btn" onclick="checkApis()">检查所有天气 API</button></div>
@@ -29,7 +30,7 @@
   </div>
   <div class="card"><h2 class="card-title">天气 API 检查</h2><div id="checks" class="checks muted">尚未检查</div></div>
   <div class="card"><h2 class="card-title">最近分析日志</h2><div id="log" class="log">尚无运行记录</div></div>
-</div></div><script src="/static/js/auth.js"></script><script src="/static/vendor/leaflet/leaflet.js"></script><script>
+</div></div><script src="/static/vendor/leaflet/leaflet.js"></script><script>
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function note(text,error=false){const n=document.getElementById('note');n.textContent=text;n.style.color=error?'#991b1b':'#6b7280'}
 async function api(url,method='GET',body=null){const response=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):null});const data=await response.json();if(!data.ok)throw Object.assign(new Error(data.error||'操作失败'),{data});return data}

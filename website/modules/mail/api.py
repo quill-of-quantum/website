@@ -69,7 +69,6 @@ def _send_payload(source, include_account=False):
 
 
 @bp.route("/mail")
-@_require_login()
 def mail_page():
     return render_template("mail.html")
 
@@ -81,22 +80,28 @@ def admin_mail_page():
 
 
 @bp.route("/api/mail/accounts")
-@_require_login()
 def mail_accounts():
     payload, error = _service_request("GET", "/api/mail/accounts")
     if error:
         return error
-    if not is_admin_user(session.get("user")):
-        for account in (payload.get("accounts") or {}).values():
-            account["address"] = _mask_email(account.get("address"))
-            account.pop("lastError", None)
+    if not (session.get("logged_in") and is_admin_user(session.get("user"))):
+        default_id = payload.get("defaultAccountId")
+        default = (payload.get("accounts") or {}).get(default_id)
+        if default:
+            default = {
+                "id": default.get("id"),
+                "displayName": default.get("displayName"),
+                "address": _mask_email(default.get("address")),
+                "enabled": default.get("enabled"),
+                "configured": default.get("configured"),
+            }
+        payload["accounts"] = {default_id: default} if default_id and default else {}
         payload.pop("forwardingRules", None)
         payload.pop("forwardingExecutions", None)
     return jsonify({"success": True, **payload})
 
 
 @bp.route("/api/mail/send", methods=["POST"])
-@_require_login()
 def send_mail():
     source = request.get_json(silent=True) or {}
     payload = _send_payload(source)

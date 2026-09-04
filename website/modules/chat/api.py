@@ -7,10 +7,11 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, session
 from flask_socketio import emit, join_room
 
 from modules.realtime import socketio
+from modules.auth.user_store import get_user_id, user_exists
 
 
 bp = Blueprint("chat", __name__)
@@ -69,9 +70,16 @@ def _now_iso():
 
 def _normalize_device_id(value):
     text = str(value or "").strip()
-    if re.match(r"^[a-zA-Z0-9._:-]{8,120}$", text):
+    if not text.startswith("account:") and re.match(r"^[a-zA-Z0-9._:-]{8,120}$", text):
         return text
     return uuid.uuid4().hex
+
+
+def _resolve_chat_identity(value):
+    username = session.get("user") if session.get("logged_in") else None
+    if username and user_exists(username):
+        return f"account:{get_user_id(username)}", None
+    return _normalize_device_id(value), None
 
 
 def _default_state():
@@ -120,13 +128,15 @@ def _random_profile(existing_names=None):
     }
 
 
-def _ensure_profile_unlocked(state, device_id):
+def _ensure_profile_unlocked(state, device_id, account_name=None):
     profiles = state.setdefault("profiles", {})
     profile = profiles.get(device_id)
     if profile and profile.get("name") and profile.get("avatar"):
         return profile
     existing_names = {p.get("name") for p in profiles.values() if isinstance(p, dict)}
     profile = _random_profile(existing_names)
+    if account_name:
+        profile["name"] = account_name
     profile["created_at"] = _now_iso()
     profiles[device_id] = profile
     return profile
@@ -223,10 +233,10 @@ def chat_page():
 
 @bp.route("/api/chat/state")
 def chat_state_api():
-    device_id = _normalize_device_id(request.args.get("device_id"))
+    device_id, account_name = _resolve_chat_identity(request.args.get("device_id"))
     with STATE_LOCK:
         state = _load_state_unlocked()
-        _ensure_profile_unlocked(state, device_id)
+        _ensure_profile_unlocked(state, device_id, account_name)
         _save_state_unlocked(state)
         payload = _public_state_unlocked(state, device_id=device_id)
     return jsonify(payload)
@@ -235,10 +245,10 @@ def chat_state_api():
 @bp.route("/api/chat/sync")
 def chat_sync_api():
     since = str(request.args.get("since") or "").strip()
-    device_id = _normalize_device_id(request.args.get("device_id"))
+    device_id, account_name = _resolve_chat_identity(request.args.get("device_id"))
     with STATE_LOCK:
         state = _load_state_unlocked()
-        _ensure_profile_unlocked(state, device_id)
+        _ensure_profile_unlocked(state, device_id, account_name)
         _save_state_unlocked(state)
         payload = {
             "messages": _messages_since_unlocked(state, since),
@@ -252,10 +262,10 @@ def chat_sync_api():
 @socketio.on("chat_join")
 def chat_join(data):
     data = data or {}
-    device_id = _normalize_device_id(data.get("device_id"))
+    device_id, account_name = _resolve_chat_identity(data.get("device_id"))
     with STATE_LOCK:
         state = _load_state_unlocked()
-        _ensure_profile_unlocked(state, device_id)
+        _ensure_profile_unlocked(state, device_id, account_name)
         _save_state_unlocked(state)
         payload = _public_state_unlocked(state, device_id=device_id)
     join_room(CHAT_ROOM)
@@ -269,7 +279,7 @@ def chat_join(data):
 @socketio.on("chat_send")
 def chat_send(data):
     data = data or {}
-    device_id = _normalize_device_id(data.get("device_id"))
+    device_id, account_name = _resolve_chat_identity(data.get("device_id"))
     text = str(data.get("text") or "").strip()
     text = re.sub(r"\s+", " ", text)
     if not text:
@@ -280,7 +290,7 @@ def chat_send(data):
 
     with STATE_LOCK:
         state = _load_state_unlocked()
-        _ensure_profile_unlocked(state, device_id)
+        _ensure_profile_unlocked(state, device_id, account_name)
         message = {
             "id": uuid.uuid4().hex,
             "device_id": device_id,
@@ -295,7 +305,7 @@ def chat_send(data):
 @socketio.on("chat_shuffle_profile")
 def chat_shuffle_profile(data):
     data = data or {}
-    device_id = _normalize_device_id(data.get("device_id"))
+    device_id, account_name = _resolve_chat_identity(data.get("device_id"))
     with STATE_LOCK:
         state = _load_state_unlocked()
         profiles = state.setdefault("profiles", {})
@@ -306,6 +316,8 @@ def chat_shuffle_profile(data):
         }
         old_created_at = (profiles.get(device_id) or {}).get("created_at") or _now_iso()
         profile = _random_profile(existing_names)
+        if account_name:
+            profile["name"] = account_name
         profile["created_at"] = old_created_at
         profiles[device_id] = profile
         _save_state_unlocked(state)

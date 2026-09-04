@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>换汇预判</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .hero { background:linear-gradient(135deg,#172554,#1d4ed8);color:#fff }
     .hero .muted { color:#bfdbfe }
@@ -41,10 +43,10 @@
   </style>
 </head>
 <body>
+{{ site_shell('/', '返回首页', 'home') }}
 <main class="page"><div class="container">
   <header class="page-header">
     <h1>💱 一年期动态换汇优化</h1>
-    <div style="margin-top:10px"><a class="btn btn-ghost" href="/">🏠 返回首页</a></div>
   </header>
 
   <section class="card hero">

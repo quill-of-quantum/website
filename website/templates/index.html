@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>🏠 树莓派控制面板</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     /* 图表区域 */
@@ -179,6 +181,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell(show_auth=true) }}
 
   <div class="page">
     <div class="container">
@@ -218,11 +221,11 @@
         <div class="tool-group">
           <div class="tool-group-title">地图类🗺️</div>
           <div class="tool-buttons">
-            <a href="/map" class="btn tool-btn">
+            <a href="/map/1/" class="btn tool-btn">
               <span>🗺️</span>
               <span>路线规划计价器</span>
             </a>
-            <a href="/map/aggregate-search" class="btn tool-btn">
+            <a href="/map/2/" class="btn tool-btn">
               <span>📍</span>
               <span>聚合搜索</span>
             </a>
@@ -285,7 +288,7 @@
       </div>
 
       <!-- Situation -->
-      <a class="card card-link auth-only" href="/situation" hidden>
+      <a class="card card-link" data-permission="situation:view" href="/situation" hidden>
         <h2 class="card-title">🪑 Situation</h2>
         <div id="situationSummary" class="muted">加载中...</div>
         <div class="situation-map-tools" onclick="event.preventDefault(); event.stopPropagation();">
@@ -388,7 +391,7 @@
       {% endif %}
 
       <!-- 系统状态 -->
-      <div class="card auth-only" hidden>
+      <div class="card" data-permission="system:view" hidden>
         <h2 class="card-title">⚙️ 系统状态</h2>
         <div id="sysinfo">
           <p>CPU 使用率: <span id="cpu_val">--</span>%</p>
@@ -396,18 +399,13 @@
           <p id="temp_row" style="display:none;">温度: <span id="temp_val">--</span> °C</p>
           <p id="wifi_row" style="display:none;">WiFi 信号: <span id="wifi_val">--</span></p>
           <p>运行时间: <span id="uptime_val">--</span></p>
-          <p>eCO2: <span id="sgp30_eco2">--</span> ppm</p>
-          <p>TVOC: <span id="sgp30_tvoc">--</span> ppb</p>
-          <p id="sgp30_error_row" style="display:none;">Error: <span id="sgp30_error">--</span></p>
         </div>
         <canvas id="sysChart" height="140"></canvas>
-        <canvas id="sgp30Chart" height="140"></canvas>
       </div>
     </div>
   </div>
 
   <!-- 引入统一的认证模块 -->
-  <script src="/static/js/auth.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/static/js/situation/maps.js"></script>
 
@@ -425,9 +423,9 @@
       loadMotivationQuote();
       document.getElementById('situationMapSource').value = selectedSituationMapSource;
       if (window.authManager) {
-        authManager.createLoginStatusWidget();
-        authManager.onAuthChange(function(isLoggedIn) {
-          if (!isLoggedIn) {
+        authManager.onAuthChange(function() {
+          const canViewSituation = authManager.hasPermission('situation:view');
+          if (!canViewSituation) {
             const situationMap = document.getElementById('situationMap');
             if (situationMap) {
               if (situationLeafletMap) {
@@ -440,13 +438,7 @@
               situationMap.innerHTML = '';
             }
           }
-          document.querySelectorAll('.auth-only').forEach(el => {
-            el.hidden = !isLoggedIn;
-          });
-          document.querySelectorAll('.guest-only').forEach(el => {
-            el.hidden = isLoggedIn;
-          });
-          if (isLoggedIn) loadSituationLatest();
+          if (canViewSituation) loadSituationLatest();
         });
         authManager.checkLoginStatus();
       }
@@ -520,18 +512,21 @@
     function parseSituationTime(value) {
       if (!value) return '--';
       const text = String(value).trim();
-      let match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
-      if (match) {
+      const chineseMatch = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
+      const englishMatch = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s*,\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s+GMT([+-]\d{1,2})(?::?(\d{2}))?$/i);
+      if (chineseMatch || englishMatch) {
+        const match = chineseMatch || englishMatch;
         const year = Number(match[1]);
         const month = Number(match[2]);
         const day = Number(match[3]);
-        const offsetHours = Number(match[4]);
-        const offsetMinutes = Number(match[5] || 0);
-        const hour = Number(match[6]);
-        const minute = Number(match[7]);
-        const second = Number(match[8] || 0);
-        const sign = offsetHours >= 0 ? 1 : -1;
-        const offsetTotalMinutes = offsetHours * 60 + sign * offsetMinutes;
+        const offsetText = chineseMatch ? chineseMatch[4] : englishMatch[7];
+        const offsetHours = Number(offsetText);
+        const offsetMinutes = Number(chineseMatch ? (chineseMatch[5] || 0) : (englishMatch[8] || 0));
+        const hour = Number(chineseMatch ? chineseMatch[6] : englishMatch[4]);
+        const minute = Number(chineseMatch ? chineseMatch[7] : englishMatch[5]);
+        const second = Number(chineseMatch ? (chineseMatch[8] || 0) : (englishMatch[6] || 0));
+        const sign = offsetText.startsWith('-') ? -1 : 1;
+        const offsetTotalMinutes = sign * (Math.abs(offsetHours) * 60 + offsetMinutes);
         const utcMs = Date.UTC(year, month - 1, day, hour, minute, second) - offsetTotalMinutes * 60 * 1000;
         return new Date(utcMs);
       }
@@ -732,100 +727,12 @@
       updateDisplayValues(data);
     }
 
-    function updateSensorValues(data) {
-      document.getElementById('sgp30_eco2').textContent = data.eco2 ?? '--';
-      document.getElementById('sgp30_tvoc').textContent = data.tvoc ?? '--';
-
-      if (data.error) {
-        document.getElementById('sgp30_error').textContent = data.error;
-        document.getElementById('sgp30_error_row').style.display = '';
-      } else {
-        document.getElementById('sgp30_error_row').style.display = 'none';
-      }
-    }
-
-    async function updateSensorInfo() {
-      try {
-        const res = await fetch('/api/sensor/latest');
-        const data = await res.json();
-        updateSensorValues(data);
-      } catch (err) {
-        document.getElementById('sgp30_error').textContent = err.toString();
-        document.getElementById('sgp30_error_row').style.display = '';
-      }
-    }
-
     // 页面加载时初始化历史数据
     initSystemInfo();
     
     // 之后每3秒更新一次
     setInterval(updateSystemInfo, 3000);
 
-    const sgpCtx = document.getElementById('sgp30Chart').getContext('2d');
-    const sgpData = {
-      labels: [],
-      datasets: [
-        { label: 'eCO2 (ppm)', borderColor: 'rgb(75, 192, 192)', data: [], fill: false, tension: 0.3, yAxisID: 'y_co2' },
-        { label: 'TVOC (ppb)', borderColor: 'rgb(153, 102, 255)', data: [], fill: false, tension: 0.3, yAxisID: 'y_tvoc' }
-      ]
-    };
-
-    const sgpChart = new Chart(sgpCtx, {
-      type: 'line',
-      data: sgpData,
-      options: {
-        scales: {
-          y_co2: { type: 'linear', position: 'left', beginAtZero: true },
-          y_tvoc: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } },
-          x: { ticks: { maxRotation: 0, autoSkip: true } }
-        },
-        plugins: { legend: { position: 'bottom' } }
-      }
-    });
-
-    function formatTsNoYear(ts) {
-      if (!ts) return "";
-      // Expects "YYYY-MM-DD HH:MM:SS"
-      return ts.slice(5, 10);
-    }
-
-    async function loadSgp30Chart() {
-      try {
-        const res = await fetch('/api/sensor/log?limit=300');
-        const payload = await res.json();
-        if (!payload.ok) {
-          throw new Error(payload.error || 'log load failed');
-        }
-        const rows = payload.rows || [];
-        sgpData.labels = rows.map(r => formatTsNoYear(r.ts));
-        const eco2Vals = rows.map(r => r.eco2);
-        const tvocVals = rows.map(r => r.tvoc);
-        sgpData.datasets[0].data = eco2Vals;
-        sgpData.datasets[1].data = tvocVals;
-
-        function applyMiddleRangeScaling(axisKey, values) {
-          if (!values.length) return;
-          const minVal = Math.min(...values);
-          const maxVal = Math.max(...values);
-          const range = Math.max(maxVal - minVal, 1);
-          const pad = range / 4;
-          sgpChart.options.scales[axisKey].min = minVal - pad;
-          sgpChart.options.scales[axisKey].max = maxVal + pad;
-        }
-
-        applyMiddleRangeScaling('y_co2', eco2Vals);
-        applyMiddleRangeScaling('y_tvoc', tvocVals);
-        sgpChart.update();
-      } catch (err) {
-        document.getElementById('sgp30_error').textContent = err.toString();
-        document.getElementById('sgp30_error_row').style.display = '';
-      }
-    }
-
-    // SGP30 每3秒更新一次（数值）; 图表按需加载
-    updateSensorInfo();
-    setInterval(updateSensorInfo, 3000);
-    loadSgp30Chart();
   </script>
 
   <script>

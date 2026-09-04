@@ -1,12 +1,13 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>租房信息</title><link rel="stylesheet" href="/static/css/base.css">
+  <title>租房信息</title><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/css/site-shell.css">
   <style>.choices{display:flex;gap:18px;flex-wrap:wrap}.status{white-space:pre-wrap;word-break:break-word}.changes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}.change{padding:10px;border:1px solid #d1d5db;border-radius:6px;background:#fff}.live-log{height:300px;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px;font:12px/1.55 ui-monospace,monospace;white-space:pre-wrap}.running{color:#b45309}.ok{color:#166534}.error{color:#991b1b}.notify-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.result-card{padding:0;overflow:hidden}.result-heading{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}.result-heading .card-title{margin:0}.result-frame{display:block;width:100%;height:980px;border:0;background:#fff}@media(max-width:700px){.notify-grid{grid-template-columns:1fr}.result-frame{height:900px}}</style>
 </head>
-<body><div class="page"><div class="container">
-  <div class="page-header" style="display:flex;justify-content:space-between;align-items:center"><div><h1>租房信息</h1><p>SW-KA 私人房源后台追踪</p></div><a class="btn" href="/1/">返回管理面板</a></div>
+<body>{{ site_shell('/1/', '返回管理员面板', 'parent') }}<div class="page"><div class="container">
+  <div class="page-header"><h1>租房信息</h1><p>SW-KA 私人房源后台追踪</p></div>
   <div class="card"><h2 class="card-title">最近变化</h2><div id="changes" class="changes muted">暂无</div></div>
   <div class="card result-card"><div class="result-heading"><div><h2 class="card-title">SW-KA 房源地图与完整表</h2><div class="muted">地图、全文搜索、房型与上下架筛选均直接使用房源结果文件。</div></div><button class="btn" onclick="refreshResult()">刷新结果</button></div><iframe id="resultFrame" class="result-frame" src="/1/housing/result"></iframe></div>
   <div class="card"><h2 class="card-title">运行状态与实时进度</h2><div id="serviceState" class="muted">正在读取进程状态...</div><div id="state" class="status muted" style="margin-top:10px">加载中...</div><div id="liveLog" class="live-log" style="margin-top:12px">尚无运行日志</div></div>
@@ -19,7 +20,7 @@
     <div class="notify-grid" style="margin-top:16px"><div><strong>新上架通知</strong><div class="choices" style="margin-top:8px"><label><input type="checkbox" name="addedType" value="wg"> WG</label><label><input type="checkbox" name="addedType" value="einzelzimmer"> Einzelzimmer</label><label><input type="checkbox" name="addedType" value="xzimmer"> xZimmer</label></div></div><div><strong>新下架通知</strong><div class="choices" style="margin-top:8px"><label><input type="checkbox" name="delistedType" value="wg"> WG</label><label><input type="checkbox" name="delistedType" value="einzelzimmer"> Einzelzimmer</label><label><input type="checkbox" name="delistedType" value="xzimmer"> xZimmer</label></div></div></div>
     <div class="toolbar" style="margin-top:16px"><button class="btn btn-primary" onclick="save()">保存设置</button><button class="btn" onclick="runNow('incremental')">运行一次增量搜索</button><button class="btn" onclick="runNow('full')">运行一次全量搜索</button><button id="resendButton" class="btn" onclick="resendNotification()">发送上一次通知邮件</button><button id="initializeButton" class="btn" style="color:#991b1b;border-color:#fca5a5" onclick="initializeHousing()">初始化房源数据库</button></div><div id="note" class="muted" style="margin-top:10px"></div>
   </div>
-</div></div><script src="/static/js/auth.js"></script><script>
+</div></div><script>
 const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const PASSWORD_MASK='••••••••••••';let passwordConfigured=false;
 function note(t,e=false){const n=document.getElementById('note');n.textContent=t;n.style.color=e?'#991b1b':'#6b7280'}

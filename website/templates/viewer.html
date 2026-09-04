@@ -1,9 +1,11 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🧠 NIfTI Viewer</title>
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <!-- 使用稳定的库：pako (解压) + Three.js (渲染) -->
   <!-- 本地加载 js 库 -->
 <script src="/static/js/three.min.js"></script>
@@ -191,7 +193,8 @@
     }
   </style>
 </head>
-<body>
+<body class="site-full-height">
+  {{ site_shell('/', '返回首页', 'home') }}
   <header>
     <h1>🧠 NIfTI 医学影像查看器</h1>
     <p class="subtitle">基于 Three.js 的切片查看器</p>

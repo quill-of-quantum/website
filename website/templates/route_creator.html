@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🧭 路线创作</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -267,6 +269,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page-wrap">
     <div class="page-header">
       <div>
@@ -278,7 +281,6 @@
           <div class="chip" id="matchChip">匹配: 未开始</div>
         </div>
       </div>
-      <a class="btn" href="/">返回首页</a>
     </div>
 
     <div class="creator-grid">

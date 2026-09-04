@@ -1,0 +1,26 @@
+{% from "_site_shell.html" import site_shell %}
+<!DOCTYPE html>
+<html lang="{{ page_lang|default('zh-CN') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}网站页面{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {{ site_shell(
+    back_href|default('/'),
+    back_label|default('返回首页'),
+    back_kind|default('home'),
+    show_auth|default(true)
+  ) }}
+  <main class="page">
+    <div class="container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

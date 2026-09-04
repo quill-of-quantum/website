@@ -1,0 +1,74 @@
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}设置新密码{% endblock %}
+
+{% block head %}<link rel="stylesheet" href="/static/css/auth-pages.css?v=20260904-1">{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+    <div class="auth-eyebrow">Reset password</div>
+    {% if reset_valid %}
+    <h1>设置新密码</h1>
+    <p class="auth-lead">确认账户后输入新密码。提交成功后，这个链接将立即失效。</p>
+    <div class="auth-account-name"><span>用户名</span>{{ reset_username }}</div>
+    <form id="resetForm" class="auth-form">
+      <div class="auth-field">
+        <label for="resetPassword">新密码</label>
+        <input id="resetPassword" type="password" autocomplete="new-password" minlength="8" maxlength="256" required autofocus>
+      </div>
+      <div class="auth-field">
+        <label for="resetPasswordConfirm">确认新密码</label>
+        <input id="resetPasswordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+      </div>
+      <button id="resetSubmit" class="btn btn-primary auth-submit" type="submit">更新密码</button>
+      <div id="resetStatus" class="auth-status" role="status" aria-live="polite"></div>
+    </form>
+    {% else %}
+    <h1>链接已失效</h1>
+    <p class="auth-lead">这个找回链接不存在、已经使用或超过了有效期。请重新申请一封找回邮件。</p>
+    <a class="btn btn-primary auth-submit" href="/forgot-password">重新找回</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if reset_valid %}
+<script>
+  const resetToken = {{ reset_token|tojson }};
+  document.getElementById('resetForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('resetSubmit');
+    const status = document.getElementById('resetStatus');
+    button.disabled = true;
+    button.textContent = '正在更新…';
+    status.className = 'auth-status';
+    status.textContent = '';
+    try {
+      const response = await fetch('/api/auth/password/reset', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          token: resetToken,
+          password: document.getElementById('resetPassword').value,
+          password_confirm: document.getElementById('resetPasswordConfirm').value
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '更新失败');
+      status.className = 'auth-status is-success';
+      status.textContent = `${payload.message}，正在返回首页…`;
+      window.setTimeout(() => window.location.replace('/'), 800);
+    } catch (error) {
+      status.className = 'auth-status is-error';
+      status.textContent = error.message;
+      button.disabled = false;
+      button.textContent = '更新密码';
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}

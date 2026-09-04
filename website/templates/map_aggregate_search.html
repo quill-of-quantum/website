@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>📍 聚合搜索</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     html, body { height: 100%; }
@@ -66,10 +68,9 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="search-page">
     <header class="topbar">
-      <a class="btn" href="/">← 工具区</a>
-      <a class="btn" href="/map">🗺️ 路线规划</a>
       <h1>📍 聚合搜索</h1>
       <span id="status" class="muted">先定位，再搜索</span>
     </header>

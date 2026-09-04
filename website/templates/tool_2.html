@@ -1,9 +1,11 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🌐 互联网集散剪贴板</title>
+    <link rel="stylesheet" href="/static/css/site-shell.css">
     <style>
         :root {
             --bg: #f8fafc;
@@ -109,7 +111,8 @@
         }
     </style>
 </head>
-<body>
+<body class="clipboard-page">
+    {{ site_shell('/', '返回首页', 'home') }}
     <div class="header">
         <div class="title">📋 剪贴板</div>
         <div class="status">
@@ -125,7 +128,6 @@
     <div class="btn-group">
         <button class="btn btn-primary" onclick="copyAll()">一键复制</button>
         <button class="btn" onclick="clearContent()">快速清空</button>
-        <button class="btn" onclick="location.href='/'">返回主页</button>
     </div>
 
     <div id="copyMsg">已复制到剪贴板</div>

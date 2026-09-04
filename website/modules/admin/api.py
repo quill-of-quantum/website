@@ -17,7 +17,16 @@ import geoip2.errors
 
 from modules.admin.token_store import create_token, delete_token, enable_token, list_tokens, revoke_token
 from modules.auth.api import verify_user_password
-from modules.auth.user_store import create_user, delete_user, is_admin_user, list_users, update_user_password, user_exists
+from modules.auth.user_store import (
+    create_user,
+    delete_user,
+    is_admin_user,
+    list_users,
+    update_user_password,
+    update_user_role,
+    user_has_permission,
+    user_exists,
+)
 
 bp = Blueprint("admin", __name__)
 
@@ -977,7 +986,7 @@ def admin_user_list():
 @login_required
 def admin_user_create():
     data = request.get_json(silent=True) or {}
-    ok, error = create_user(data.get("username"), data.get("password"), "user")
+    ok, error = create_user(data.get("username"), data.get("password"), data.get("role") or "guest")
     if not ok:
         return _json_error(error)
     return _json_ok({"users": list_users()})
@@ -988,6 +997,16 @@ def admin_user_create():
 def admin_user_password():
     data = request.get_json(silent=True) or {}
     ok, error = update_user_password(data.get("username"), data.get("password"))
+    if not ok:
+        return _json_error(error)
+    return _json_ok({"users": list_users()})
+
+
+@bp.route(ADMIN_PREFIX + "/api/users/role", methods=["POST"])
+@login_required
+def admin_user_role():
+    data = request.get_json(silent=True) or {}
+    ok, error = update_user_role(data.get("username"), data.get("role"))
     if not ok:
         return _json_error(error)
     return _json_ok({"users": list_users()})
@@ -1010,6 +1029,12 @@ def app_login():
     password = data.get("password")
     if not verify_user_password(username, password):
         return jsonify({"success": False, "status": "error", "error": "用户名或密码错误"}), 401
+    if not user_has_permission(username, "situation:view"):
+        return jsonify({
+            "success": False,
+            "status": "error",
+            "error": "当前账户没有 Situation 权限",
+        }), 403
 
     label = data.get("device_name") or data.get("label") or "Android App"
     token, record = create_token(label, username, ["situation:read"])

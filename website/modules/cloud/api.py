@@ -2,8 +2,9 @@ import os
 import shutil
 import time
 
-from flask import Blueprint, jsonify, request, send_from_directory, session
+from flask import Blueprint, jsonify, render_template, request, send_from_directory, session, url_for
 
+from modules.auth.user_store import user_has_permission
 from modules.cloud.service import (
     clean_file_type,
     cleanup_orphan_thumbnails,
@@ -20,11 +21,27 @@ from modules.cloud.storage import (
     resolve_stored_name,
     save_meta,
 )
+from modules.cloud.sharing import ShareTokenError, create_share, list_shares, resolve_share, revoke_share
+from modules.cloud.endpoints import load_public_origins, share_links
 
 
 bp = Blueprint("cloud", __name__)
 MIN_FREE_BYTES = 5 * 1024**3
 LEGACY_UPLOAD_LIMIT = 500 * 1024**2
+
+
+def _cloud_delete_denied():
+    logged_in = bool(session.get("logged_in"))
+    return jsonify({
+        "success": False,
+        "error": "需要专属用户或管理员权限才能管理云盘文件",
+        "require_login": not logged_in,
+        "required_permission": "cloud:delete",
+    }), 403
+
+
+def _can_delete_cloud():
+    return session.get("logged_in") and user_has_permission(session.get("user"), "cloud:delete")
 
 
 def _raw_upload_filename():
@@ -175,8 +192,8 @@ def list_files():
 
 @bp.route("/api/cloud/delete/<path:name>", methods=["POST"])
 def delete_file(name):
-    if not session.get("logged_in"):
-        return jsonify({"success": False, "error": "需要登录后才能删除文件", "require_login": True}), 403
+    if not _can_delete_cloud():
+        return _cloud_delete_denied()
 
     try:
         meta = load_meta()
@@ -214,6 +231,107 @@ def download_file(filename):
     return send_from_directory(UPLOAD_FOLDER, stored_name, as_attachment=True, download_name=download_name)
 
 
+@bp.route("/api/cloud/share/<path:filename>", methods=["POST"])
+def create_file_share(filename):
+    payload = request.get_json(silent=True) or {}
+    payload["files"] = [filename]
+    return _create_share_response(payload)
+
+
+@bp.route("/api/cloud/share", methods=["POST"])
+def create_batch_share():
+    return _create_share_response(request.get_json(silent=True) or {})
+
+
+def _create_share_response(payload):
+    requested = payload.get("files") or []
+    if not isinstance(requested, list) or not requested or len(requested) > 100:
+        return jsonify({"success": False, "error": "请选择1至100个文件"}), 400
+    meta = load_meta()
+    files, seen = [], set()
+    for filename in requested:
+        stored_name = resolve_stored_name(str(filename), meta)
+        if not stored_name or stored_name in seen:
+            continue
+        seen.add(stored_name)
+        files.append({"stored_name": stored_name,
+                      "display_name": meta.get(stored_name, {}).get("original_name") or stored_name})
+    if not files:
+        return jsonify({"success": False, "error": "未找到可分享的文件"}), 404
+    token, record = create_share(files, payload.get("expires_in", 7 * 24 * 60 * 60))
+    path = url_for("cloud.download_shared_file", token=token)
+    return jsonify({
+        "success": True,
+        "message": "临时分享链接已生成",
+        "data": {
+            "path": path,
+            "links": share_links(path),
+            "expires_at": record["expires_at"],
+            "file_count": len(files),
+        },
+    })
+
+
+@bp.route("/s/cloud/<token>")
+def download_shared_file(token):
+    try:
+        record = resolve_share(token)
+    except ShareTokenError as error:
+        return jsonify({"success": False, "error": str(error)}), 410
+    files = record.get("files", [])
+    return render_template("cloud_share.html", files=files, token=token, expires_at=record["expires_at"])
+
+
+@bp.route("/s/cloud/<token>/<int:file_index>")
+def download_shared_file_item(token, file_index):
+    try:
+        files = resolve_share(token).get("files", [])
+    except ShareTokenError as error:
+        return jsonify({"success": False, "error": str(error)}), 410
+    if file_index < 0 or file_index >= len(files):
+        return jsonify({"success": False, "error": "分享的文件不存在"}), 404
+    return _send_shared_file(files[file_index])
+
+
+def _send_shared_file(file_info):
+    if not file_info:
+        return jsonify({"success": False, "error": "分享的文件不存在"}), 404
+    meta = load_meta()
+    stored_name = resolve_stored_name(file_info.get("stored_name"), meta)
+    if not stored_name:
+        return jsonify({"success": False, "error": "分享的文件不存在"}), 404
+    info = meta.get(stored_name, {})
+    download_name = info.get("original_name") or stored_name
+    return send_from_directory(
+        UPLOAD_FOLDER,
+        stored_name,
+        as_attachment=True,
+        download_name=download_name,
+    )
+
+
+@bp.route("/api/cloud/shares")
+def manage_file_shares():
+    if not _can_delete_cloud():
+        return _cloud_delete_denied()
+    shares = list_shares()
+    origins = load_public_origins()
+    for share in shares:
+        token = share.pop("token", None)
+        share["path"] = url_for("cloud.download_shared_file", token=token) if token else None
+        share["links"] = share_links(share["path"], origins) if share["path"] else []
+    return jsonify({"success": True, "data": {"shares": shares}})
+
+
+@bp.route("/api/cloud/shares/<share_id>", methods=["DELETE"])
+def delete_file_share(share_id):
+    if not _can_delete_cloud():
+        return _cloud_delete_denied()
+    if not revoke_share(share_id):
+        return jsonify({"success": False, "error": "未找到分享记录"}), 404
+    return jsonify({"success": True, "message": "分享链接已撤销"})
+
+
 @bp.route("/uploads/<path:filename>")
 def serve_upload(filename):
     meta = load_meta()
@@ -242,8 +360,8 @@ def serve_thumbnail(filename):
 
 @bp.route("/api/cloud/clean_thumbnails", methods=["POST"])
 def clean_thumbnails():
-    if not session.get("logged_in"):
-        return jsonify({"success": False, "error": "需要登录后才能清理缩略图", "require_login": True}), 403
+    if not _can_delete_cloud():
+        return _cloud_delete_denied()
 
     removed = cleanup_orphan_thumbnails()
     return jsonify({

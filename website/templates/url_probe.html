@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>URL</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .probe-form { display: grid; gap: 16px; }
     .field { display: grid; gap: 6px; }
@@ -35,6 +37,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <main class="page">
     <div class="container">
       <header class="page-header">
@@ -75,7 +78,6 @@
           <div class="toolbar">
             <button id="pathRunButton" class="btn btn-primary" type="submit">开始探测</button>
             <button id="pathStopButton" class="btn btn-danger" type="button" hidden>结束探测</button>
-            <a class="btn" href="/">返回主页</a>
             <span class="muted">一次最多 50 个；5 秒为每个 URL 的超时</span>
           </div>
         </form>

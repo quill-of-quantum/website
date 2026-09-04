@@ -1,0 +1,53 @@
+{% macro site_shell(back_href=None, back_label=None, back_kind="parent", show_auth=True) -%}
+<header class="site-shell" aria-label="全站导航">
+  <div class="site-shell__inner">
+    <nav class="site-shell__nav" aria-label="页面层级导航">
+      {% if back_href and back_label %}
+      <a class="site-shell__back site-shell__back--{{ back_kind }}" href="{{ back_href }}">
+        <span aria-hidden="true">{% if back_kind == "home" %}🏠{% else %}←{% endif %}</span>
+        <span>{{ back_label }}</span>
+      </a>
+      {% endif %}
+    </nav>
+    {% if show_auth %}<div class="site-shell__auth" data-site-auth-slot></div>{% endif %}
+  </div>
+</header>
+<div class="site-shell-spacer" aria-hidden="true"></div>
+<script>
+  (function scheduleWeatherBackground() {
+    function loadWeatherBackground() {
+      if (document.getElementById('weatherBackgroundLoader')) return;
+      var stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = '/static/css/weather-background.css?v=20260904-5';
+      function loadRenderer() {
+        if (document.getElementById('weatherBackgroundLoader')) return;
+        var script = document.createElement('script');
+        script.id = 'weatherBackgroundLoader';
+        script.src = '/static/js/weather-background.js?v=20260904-5';
+        script.async = true;
+        document.body.appendChild(script);
+      }
+      stylesheet.onload = loadRenderer;
+      stylesheet.onerror = loadRenderer;
+      document.head.appendChild(stylesheet);
+    }
+    function afterPageLoad() {
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(loadWeatherBackground, { timeout: 1800 });
+      } else {
+        window.setTimeout(loadWeatherBackground, 120);
+      }
+    }
+    if (document.readyState === 'complete') afterPageLoad();
+    else window.addEventListener('load', afterPageLoad, { once: true });
+  })();
+</script>
+{% if show_auth %}
+<script src="/static/js/auth.js?v=20260904-2"></script>
+<script>
+  authManager.createLoginStatusWidget();
+  authManager.checkLoginStatus();
+</script>
+{% endif %}
+{%- endmacro %}

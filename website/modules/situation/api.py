@@ -1,11 +1,11 @@
 import os
 import re
-import hashlib
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
 
 from modules.admin.token_store import record_token_exchange, verify_authorization_header
+from modules.auth.user_store import user_has_permission
 
 
 bp = Blueprint("situation", __name__)
@@ -178,24 +178,32 @@ def load_recent_situation_events(days=7, limit=500):
 
 
 def _parse_event_time(value):
-    match = re.match(
-        r"^(\d{4})/(\d{1,2})/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$",
-        str(value or "").strip(),
-        re.IGNORECASE
+    text = str(value or "").strip()
+    patterns = (
+        # Chinese-style iOS output: 2026/9/2 GMT+8 11:01:46
+        r"^(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\s+"
+        r"GMT(?P<offset>[+-]\d{1,2})(?::?(?P<offset_minutes>\d{2}))?\s+"
+        r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?$",
+        # English-style iOS output: 2026/9/2, 11:01:46 GMT+8
+        r"^(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\s*,\s*"
+        r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?\s+"
+        r"GMT(?P<offset>[+-]\d{1,2})(?::?(?P<offset_minutes>\d{2}))?$",
     )
+    match = next(filter(None, (re.match(pattern, text, re.IGNORECASE) for pattern in patterns)), None)
     if not match:
         return None
 
-    year = int(match.group(1))
-    month = int(match.group(2))
-    day = int(match.group(3))
-    offset_hours = int(match.group(4))
-    offset_minutes = int(match.group(5) or 0)
-    hour = int(match.group(6))
-    minute = int(match.group(7))
-    second = int(match.group(8) or 0)
-    offset_sign = 1 if offset_hours >= 0 else -1
-    offset = timezone(timedelta(hours=offset_hours, minutes=offset_sign * offset_minutes))
+    year = int(match.group("year"))
+    month = int(match.group("month"))
+    day = int(match.group("day"))
+    offset_text = match.group("offset")
+    offset_hours = abs(int(offset_text))
+    offset_minutes = int(match.group("offset_minutes") or 0)
+    offset_sign = -1 if offset_text.startswith("-") else 1
+    offset = timezone(timedelta(minutes=offset_sign * (offset_hours * 60 + offset_minutes)))
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute"))
+    second = int(match.group("second") or 0)
     return datetime(year, month, day, hour, minute, second, tzinfo=offset)
 
 
@@ -284,14 +292,6 @@ def load_track_points(start_time, end_time, limit=5000):
     return list(reversed(points))
 
 
-def _page_unlocked():
-    return session.get("situation_password_hash") == _password_hash(_get_page_password())
-
-
-def _password_hash(password):
-    return hashlib.sha256(str(password or "").encode("utf-8")).hexdigest()
-
-
 def _load_site_config():
     config = {}
     current_key = None
@@ -313,25 +313,17 @@ def _load_site_config():
     return config
 
 
-def _get_page_password():
-    env_password = os.environ.get("SITUATION_PASSWORD")
-    if env_password:
-        return env_password
-    passwords = _load_site_config().get("password") or []
-    if passwords:
-        return passwords[0]
-    return "situation"
-
-
 def _unauthorized_api():
-    return jsonify({"success": False, "status": "error", "error": "未授权"}), 401
+    return jsonify({
+        "success": False,
+        "status": "error",
+        "error": "需要专属用户或管理员权限",
+        "required_permission": "situation:view",
+    }), 403
 
 
 def _situation_read_authorized():
-    if session.get("logged_in"):
-        g.situation_token_record = None
-        return True
-    if _page_unlocked():
+    if session.get("logged_in") and user_has_permission(session.get("user"), "situation:view"):
         g.situation_token_record = None
         return True
     token_record = verify_authorization_header(request.headers.get("Authorization"), required_scope="situation:read")
@@ -355,26 +347,18 @@ def _token_json_response(payload, status_code=200):
     return jsonify(payload), status_code
 
 
-@bp.route("/situation", methods=["GET", "POST"])
+@bp.route("/situation")
 def situation_page():
-    error = ""
-    if request.method == "POST":
-        password = request.form.get("password") or ""
-        if password == _get_page_password():
-            session["situation_password_hash"] = _password_hash(password)
-            return redirect(url_for("situation.situation_page"))
-        error = "密码错误"
-
     return render_template(
         "situation.html",
-        unlocked=_page_unlocked(),
-        error=error
+        unlocked=session.get("logged_in")
+        and user_has_permission(session.get("user"), "situation:view"),
     )
 
 
 @bp.route("/situation/map")
 def situation_map_page():
-    if not _page_unlocked():
+    if not session.get("logged_in") or not user_has_permission(session.get("user"), "situation:view"):
         return redirect(url_for("situation.situation_page"))
     return render_template("situation_map.html")
 

@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>状态记录</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .info-tile {
       padding: 12px;
@@ -200,6 +202,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <div class="container">
       <div class="page-header">
@@ -208,18 +211,12 @@
 
       {% if not unlocked %}
       <div class="card auth-card">
-        <h2 class="card-title">访问密码</h2>
-        <form class="auth-form" method="post" action="/situation">
-          <input type="password" name="password" placeholder="输入密码" autocomplete="current-password" autofocus>
-          {% if error %}
-          <div class="error-line">{{ error }}</div>
-          {% endif %}
-          <button class="btn btn-primary" type="submit">进入</button>
-        </form>
+        <h2 class="card-title">需要访问权限</h2>
+        <p class="muted-line">请在右上角登录专属用户或管理员账户。游客账户不能查看 Situation。</p>
+        <button class="btn btn-primary" type="button" onclick="authManager.showLoginModal()">登录账户</button>
       </div>
       {% else %}
       <div class="toolbar">
-        <a class="btn btn-ghost" href="/">🏠 返回首页</a>
       </div>
 
       <div class="card">
@@ -260,18 +257,21 @@
 
     function parseShortcutTime(value) {
       const text = String(value || '').trim();
-      const match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
-      if (!match) return null;
+      const chineseMatch = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+GMT([+-]\d{1,2})(?::?(\d{2}))?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/i);
+      const englishMatch = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s*,\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s+GMT([+-]\d{1,2})(?::?(\d{2}))?$/i);
+      if (!chineseMatch && !englishMatch) return null;
 
-      const year = Number(match[1]);
-      const month = Number(match[2]) - 1;
-      const day = Number(match[3]);
-      const offsetHours = Number(match[4]);
-      const offsetMinutes = Number(match[5] || 0);
-      const hour = Number(match[6]);
-      const minute = Number(match[7]);
-      const second = Number(match[8] || 0);
-      const offsetMs = (offsetHours * 60 + Math.sign(offsetHours || 1) * offsetMinutes) * 60 * 1000;
+      const year = Number((chineseMatch || englishMatch)[1]);
+      const month = Number((chineseMatch || englishMatch)[2]) - 1;
+      const day = Number((chineseMatch || englishMatch)[3]);
+      const offsetText = chineseMatch ? chineseMatch[4] : englishMatch[7];
+      const offsetHours = Number(offsetText);
+      const offsetMinutes = Number(chineseMatch ? (chineseMatch[5] || 0) : (englishMatch[8] || 0));
+      const hour = Number(chineseMatch ? chineseMatch[6] : englishMatch[4]);
+      const minute = Number(chineseMatch ? chineseMatch[7] : englishMatch[5]);
+      const second = Number(chineseMatch ? (chineseMatch[8] || 0) : (englishMatch[6] || 0));
+      const offsetSign = offsetText.startsWith('-') ? -1 : 1;
+      const offsetMs = offsetSign * (Math.abs(offsetHours) * 60 + offsetMinutes) * 60 * 1000;
       return new Date(Date.UTC(year, month, day, hour, minute, second) - offsetMs);
     }
 

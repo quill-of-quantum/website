@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>👁️ 智能视觉检测</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     /* 视觉专属样式补充 */
     .preview-container {
@@ -105,6 +107,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/', '返回首页', 'home') }}
   <div class="page">
     <div class="container">
       <div class="page-header">
@@ -115,7 +118,6 @@
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <h2 class="card-title">📷 图像输入</h2>
-          <a class="btn btn-ghost" href="/">🏠 返回首页</a>
         </div>
         
         <div class="preview-container" id="previewBox">

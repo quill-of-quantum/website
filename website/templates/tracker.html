@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
 <title>物流任务管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/site-shell.css">
 <style>
   /* === 设计变量 === */
   :root {
@@ -465,9 +467,9 @@
 </style>
 </head>
 <body>
+{{ site_shell('/', '返回首页', 'home') }}
 
 <div class="page-header">
-  <a href="/" class="nav-link">🏠 返回首页</a>
   <h1>📦 物流追踪任务</h1>
 </div>
 
@@ -487,7 +489,6 @@
 <div id="statusMessage" style="display:none; color:var(--c-success); font-weight:500; margin-top:16px;"></div>
 
 <!-- 引入统一的认证模块 -->
-<script src="/static/js/auth.js"></script>
 
 <script>
 const $ = sel => document.querySelector(sel);
@@ -812,9 +813,6 @@ $('#btnAdd').onclick = async () => {
 $('#btnReload').onclick = loadTasks;
 
 // 初次加载 & 周期刷新
-if (window.authManager) {
-  authManager.createLoginStatusWidget();
-}
 checkLoginStatus();
 const savedInterval = parseInt(localStorage.getItem('tracker.interval'), 10);
 if (savedInterval >= 5) $('#interval').value = savedInterval;

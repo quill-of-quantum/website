@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!-- /home/bbdwz/projects/website/templates/map.html -->
 <!DOCTYPE html>
 <html lang="zh">
@@ -6,6 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🗺️ 路线规划计价器</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     * {
       margin: 0;
@@ -27,35 +29,11 @@
       position: relative;
     }
 
-    /* 返回首页按钮 */
-    .home-nav {
-      position: absolute;
-      top: 10px;
-      left: 0;
-      z-index: 10;
-    }
-
-    .home-nav .btn {
-      background: rgba(255,255,255,0.95);
-      color: #667eea;
-      border: 2px solid rgba(255,255,255,0.7);
-      backdrop-filter: blur(10px);
-      font-weight: 600;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-
-    .home-nav .btn:hover {
-      background: white;
-      border-color: #667eea;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-    }
-
     /* 页面标题 */
     .page-header {
       text-align: center;
       margin-bottom: 40px;
-      margin-top: 60px;
+      margin-top: 20px;
     }
 
     .page-header h1 {
@@ -734,14 +712,6 @@
         overflow-x: hidden;
       }
       
-      .home-nav {
-        position: relative;
-        top: auto;
-        left: auto;
-        margin-bottom: 20px;
-        text-align: left;
-      }
-      
       .page-header {
         margin-top: 0;
         margin-bottom: 20px;
@@ -945,11 +915,6 @@
         overflow-x: hidden;
       }
 
-      .home-nav .btn {
-        font-size: 0.75em;
-        padding: 6px 10px;
-      }
-      
       .page-header h1 {
         font-size: 1.5em;
       }
@@ -1096,12 +1061,9 @@
 </head>
 <body>
 
-<div class="container">
-  <!-- 返回首页导航 -->
-  <div class="home-nav">
-    <a href="/" class="btn btn-small">🏠 返回首页</a>
-  </div>
+{{ site_shell('/', '返回首页', 'home') }}
 
+<div class="container">
   <!-- 页面标题 -->
   <div class="page-header">
     <h1>🗺️ 路线规划计价器</h1>
@@ -1420,7 +1382,6 @@
   </div>
   </div>
 
-<script src="/static/js/auth.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
@@ -3234,9 +3195,6 @@ async function clearHistory() {
 }
 
 // 初始化
-if (window.authManager) {
-  authManager.createLoginStatusWidget();
-}
 checkLoginStatus();
 loadFormData();
 </script>

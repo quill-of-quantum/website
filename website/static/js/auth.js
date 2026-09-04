@@ -2,6 +2,9 @@ class AuthManager {
   constructor() {
     this.currentUser = null;
     this.isLoggedIn = false;
+    this.role = null;
+    this.permissions = new Set();
+    this.authStatus = null;
     this.callbacks = [];
     this.statusWidget = null;
   }
@@ -13,7 +16,27 @@ class AuthManager {
 
   // 通知所有监听器
   notifyAuthChange() {
-    this.callbacks.forEach(cb => cb(this.isLoggedIn, this.currentUser));
+    this.callbacks.forEach(cb => cb(this.isLoggedIn, this.currentUser, this.authStatus));
+  }
+
+  applyAuthStatus(data) {
+    this.authStatus = data || null;
+    this.isLoggedIn = Boolean(data && data.logged_in);
+    this.currentUser = this.isLoggedIn ? data.user : null;
+    this.role = this.isLoggedIn ? data.role : null;
+    this.permissions = new Set(
+      this.isLoggedIn && Array.isArray(data.permissions) ? data.permissions : []
+    );
+  }
+
+  hasPermission(permission) {
+    return this.permissions.has(permission);
+  }
+
+  updatePermissionUI() {
+    document.querySelectorAll('[data-permission]').forEach(element => {
+      element.hidden = !this.hasPermission(element.dataset.permission);
+    });
   }
 
   // 检查登录状态
@@ -21,8 +44,7 @@ class AuthManager {
     try {
       const res = await fetch('/api/auth/status');
       const data = await res.json();
-      this.isLoggedIn = data.logged_in;
-      this.currentUser = data.user;
+      this.applyAuthStatus(data);
       this.updateLoginUI();
       this.notifyAuthChange();
       return data;
@@ -40,6 +62,8 @@ class AuthManager {
       modal = document.getElementById('loginModal');
     }
     modal.style.display = 'block';
+    const usernameInput = document.getElementById('loginUsername');
+    if (usernameInput) usernameInput.focus();
   }
 
   // 创建登录模态框
@@ -52,7 +76,7 @@ class AuthManager {
         .auth-modal {
           display: none;
           position: fixed;
-          z-index: 1000;
+          z-index: 4000;
           left: 0;
           top: 0;
           width: 100%;
@@ -61,11 +85,13 @@ class AuthManager {
         }
         .auth-modal-content {
           background-color: #fefefe;
-          margin: 15% auto;
-          padding: 20px;
-          border-radius: 12px;
-          width: 300px;
+          margin: min(15vh, 120px) auto;
+          padding: 26px;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          width: min(340px, calc(100% - 32px));
           text-align: center;
+          box-shadow: 0 24px 60px rgba(15,23,42,.18);
         }
         .auth-modal input {
           width: 100%;
@@ -74,6 +100,21 @@ class AuthManager {
           border: 1px solid #ddd;
           border-radius: 6px;
           box-sizing: border-box;
+        }
+        .auth-modal-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: center;
+          margin-top: 16px;
+        }
+        .auth-modal-links {
+          display: flex;
+          justify-content: center;
+          gap: 16px;
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px solid #e5e7eb;
+          font-size: 14px;
         }
         .login-status {
           background: rgba(255,255,255,0.9);
@@ -89,12 +130,18 @@ class AuthManager {
     const modalHtml = `
       <div id="loginModal" class="auth-modal">
         <div class="auth-modal-content">
-          <h3>管理员登录</h3>
-          <input type="text" id="loginUsername" placeholder="用户名">
-          <input type="password" id="loginPassword" placeholder="密码">
-          <div style="margin-top:16px;">
-            <button onclick="authManager.doLogin()">登录</button>
-            <button onclick="authManager.closeLoginModal()">取消</button>
+          <h3>账户登录</h3>
+          <form onsubmit="event.preventDefault(); authManager.doLogin();">
+            <input type="text" id="loginUsername" placeholder="用户名" autocomplete="username">
+            <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
+            <div class="auth-modal-actions">
+              <button class="btn btn-primary" type="submit">登录</button>
+              <button class="btn" type="button" onclick="authManager.closeLoginModal()">取消</button>
+            </div>
+          </form>
+          <div class="auth-modal-links">
+            <a href="/register">注册账户</a>
+            <a href="/forgot-password">忘记用户/密码</a>
           </div>
         </div>
       </div>
@@ -127,12 +174,11 @@ class AuthManager {
       
       const data = await res.json();
       if (data.status === 'success') {
-        this.isLoggedIn = true;
-        this.currentUser = data.user;
+        this.applyAuthStatus(data);
         this.closeLoginModal();
         this.updateLoginUI();
         this.notifyAuthChange();
-        this.showMessage('✅ 登录成功');
+        window.location.reload();
       } else {
         alert('登录失败: ' + data.message);
       }
@@ -145,11 +191,10 @@ class AuthManager {
   async doLogout() {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      this.isLoggedIn = false;
-      this.currentUser = null;
+      this.applyAuthStatus(null);
       this.updateLoginUI();
       this.notifyAuthChange();
-      this.showMessage('✅ 已退出登录');
+      window.location.reload();
     } catch (e) {
       alert('退出失败: ' + e.message);
     }
@@ -166,12 +211,27 @@ class AuthManager {
     return true;
   }
 
+  requirePermission(permission, message='当前账户没有执行此操作的权限') {
+    if (!this.requireLogin()) return false;
+    if (!this.hasPermission(permission)) {
+      alert(message);
+      return false;
+    }
+    return true;
+  }
+
   // 创建登录状态显示组件
   createLoginStatusWidget() {
-    // 移除可能存在的旧组件
+    const mount = document.querySelector('[data-site-auth-slot]');
     const existing = document.getElementById('loginStatus');
     if (existing) {
-      existing.remove();
+      this.statusWidget = existing;
+      if (mount && existing.parentElement !== mount) {
+        mount.appendChild(existing);
+      }
+      existing.style.position = 'static';
+      this.updateLoginUI();
+      return existing;
     }
 
     this.statusWidget = document.createElement('div');
@@ -179,9 +239,13 @@ class AuthManager {
     this.statusWidget.className = 'login-status';
     this.statusWidget.innerHTML = `
       <span id="loginText">检查登录状态...</span>
+      <a id="adminLink" class="btn btn-sm" href="/1/" hidden style="display:none;">管理</a>
       <button id="loginBtn" class="btn btn-sm" style="margin-left:8px;">登录</button>
     `;
-    document.body.appendChild(this.statusWidget);
+    (mount || document.body).appendChild(this.statusWidget);
+    if (mount) {
+      this.statusWidget.style.position = 'static';
+    }
 
     // 绑定事件
     this.updateLoginUI();
@@ -193,8 +257,13 @@ class AuthManager {
   updateLoginUI() {
     const loginText = document.getElementById('loginText');
     const loginBtn = document.getElementById('loginBtn');
+    const adminLink = document.getElementById('adminLink');
     
     if (loginText && loginBtn) {
+      if (this.statusWidget) {
+        this.statusWidget.dataset.loggedIn = String(this.isLoggedIn);
+        this.statusWidget.dataset.role = this.role || '';
+      }
       if (this.isLoggedIn) {
         loginText.textContent = `👤 ${this.currentUser}`;
         loginBtn.textContent = '退出';
@@ -205,6 +274,12 @@ class AuthManager {
         loginBtn.onclick = () => this.showLoginModal();
       }
     }
+    if (adminLink) {
+      adminLink.href = this.role === 'admin' ? '/1/' : '/account';
+      adminLink.hidden = !this.isLoggedIn;
+      adminLink.style.display = this.isLoggedIn ? 'inline-flex' : 'none';
+    }
+    this.updatePermissionUI();
   }
 
   // 显示消息

@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>局域网文件共享</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <style>
     .hero {
       display: flex;
@@ -59,6 +61,7 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/1/', '返回管理员面板', 'parent') }}
   <div class="page">
     <div class="container">
       <div class="page-header hero">
@@ -66,7 +69,6 @@
           <h1>局域网文件共享</h1>
           <p>插入 USB 硬盘，选择设备，一键开放为局域网共享。</p>
         </div>
-        <a class="btn" href="/1/">返回管理面板</a>
       </div>
 
       <div class="card">
@@ -122,7 +124,6 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js"></script>
   <script>
     let selectedDevice = '';
     let latestState = null;
@@ -254,7 +255,6 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-      authManager.createLoginStatusWidget();
       authManager.checkLoginStatus();
       document.getElementById('enableBtn').addEventListener('click', enableShare);
       document.getElementById('disableBtn').addEventListener('click', disableShare);

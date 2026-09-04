@@ -1,0 +1,131 @@
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}注册账户{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/auth-pages.css?v=20260904-1">
+{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+  <div class="auth-card">
+    <div class="auth-eyebrow">Create account</div>
+    <div id="registerDetails">
+      <h1>创建你的账户</h1>
+      <p class="auth-lead">注册后将获得游客账户。邮箱仅用于验证身份和找回账户。</p>
+      <form id="registerForm" class="auth-form">
+        <div class="auth-field">
+          <label for="registerUsername">用户名</label>
+          <input id="registerUsername" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus>
+        </div>
+        <div class="auth-field">
+          <label for="registerEmail">邮箱</label>
+          <input id="registerEmail" name="email" type="email" autocomplete="email" maxlength="254" required>
+        </div>
+        <div class="auth-field">
+          <label for="registerPassword">密码</label>
+          <input id="registerPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        </div>
+        <div class="auth-field">
+          <label for="registerPasswordConfirm">确认密码</label>
+          <input id="registerPasswordConfirm" name="password_confirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>
+        </div>
+        <button id="registerSubmit" class="btn btn-primary auth-submit" type="submit">发送验证码</button>
+        <div id="registerStatus" class="auth-status" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+
+    <div id="registerVerification" hidden>
+      <h1>验证邮箱</h1>
+      <p id="verificationLead" class="auth-lead"></p>
+      <form id="verificationForm" class="auth-form">
+        <div class="auth-field">
+          <label for="verificationCode">6 位验证码</label>
+          <input id="verificationCode" class="auth-code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        </div>
+        <button id="verificationSubmit" class="btn btn-primary auth-submit" type="submit">完成注册</button>
+        <button id="changeDetails" class="btn" type="button">返回修改资料</button>
+        <div id="verificationStatus" class="auth-status" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+    <div class="auth-links"><a href="/forgot-password">忘记用户或密码</a></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let registrationFlowId = '';
+
+  function setAuthStatus(id, message, type='') {
+    const element = document.getElementById(id);
+    element.textContent = message;
+    element.className = `auth-status${type ? ` is-${type}` : ''}`;
+  }
+
+  function setBusy(button, busy, busyText, normalText) {
+    button.disabled = busy;
+    button.textContent = busy ? busyText : normalText;
+  }
+
+  document.getElementById('registerForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('registerSubmit');
+    const body = {
+      username: document.getElementById('registerUsername').value.trim(),
+      email: document.getElementById('registerEmail').value.trim(),
+      password: document.getElementById('registerPassword').value,
+      password_confirm: document.getElementById('registerPasswordConfirm').value
+    };
+    setBusy(button, true, '正在发送…', '发送验证码');
+    setAuthStatus('registerStatus', '');
+    try {
+      const response = await fetch('/api/auth/register/start', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '发送失败');
+      registrationFlowId = payload.flow_id;
+      document.getElementById('registerDetails').hidden = true;
+      document.getElementById('registerVerification').hidden = false;
+      document.getElementById('verificationLead').textContent = `验证码已发送至 ${payload.email}，10 分钟内有效。`;
+      document.getElementById('verificationCode').focus();
+    } catch (error) {
+      setAuthStatus('registerStatus', error.message, 'error');
+    } finally {
+      setBusy(button, false, '正在发送…', '发送验证码');
+    }
+  });
+
+  document.getElementById('verificationForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('verificationSubmit');
+    setBusy(button, true, '正在验证…', '完成注册');
+    setAuthStatus('verificationStatus', '');
+    try {
+      const response = await fetch('/api/auth/register/verify', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({flow_id: registrationFlowId, code: document.getElementById('verificationCode').value})
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '验证失败');
+      setAuthStatus('verificationStatus', '注册成功，正在进入首页…', 'success');
+      window.setTimeout(() => window.location.replace('/'), 500);
+    } catch (error) {
+      setAuthStatus('verificationStatus', error.message, 'error');
+      document.getElementById('verificationCode').select();
+      setBusy(button, false, '正在验证…', '完成注册');
+    }
+  });
+
+  document.getElementById('changeDetails').addEventListener('click', () => {
+    registrationFlowId = '';
+    document.getElementById('registerVerification').hidden = true;
+    document.getElementById('registerDetails').hidden = false;
+    document.getElementById('registerUsername').focus();
+  });
+</script>
+{% endblock %}

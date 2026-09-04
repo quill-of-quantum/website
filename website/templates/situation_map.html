@@ -1,3 +1,4 @@
+{% from "_site_shell.html" import site_shell %}
 <!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -5,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>状态地图</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/site-shell.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     html,
@@ -72,9 +74,9 @@
   </style>
 </head>
 <body>
+  {{ site_shell('/situation', '返回状态记录', 'parent') }}
   <div class="map-page">
     <div class="map-toolbar">
-      <a class="btn btn-ghost" href="/situation">返回记录</a>
       <div class="field">
         <label for="startTime">开始时间</label>
         <input id="startTime" type="datetime-local">
