@@ -1,0 +1,73 @@
+{% extends "page_base.html" %}
+{% set back_href = "/" %}
+{% set back_label = "返回首页" %}
+{% set back_kind = "home" %}
+
+{% block title %}安全实时通信{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/rtc.css?v=20260904-3">
+{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>安全实时通信</h1>
+    <p>媒体由浏览器通过 WebRTC 加密传输，服务器只负责身份验证与连接协商。</p>
+  </header>
+
+  <div id="authNotice" class="card" hidden>
+    <h2 class="card-title">需要登录</h2>
+    <p>请先使用页面右上角登录。邀请链接会保留在地址栏中，登录后刷新即可继续。</p>
+  </div>
+
+  <div id="rtcControls" class="rtc-layout" hidden>
+    <section class="rtc-stage">
+      <div class="rtc-videos">
+        <div class="rtc-video-wrap">
+          <video id="localVideo" autoplay muted playsinline></video>
+          <span class="rtc-video-label">本机</span>
+        </div>
+        <div class="rtc-video-wrap">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <span class="rtc-video-label">对方</span>
+        </div>
+      </div>
+      <div id="rtcStatus" class="rtc-status" role="status" aria-live="polite">准备建立连接</div>
+      <div class="rtc-actions">
+        <button id="createCall" class="btn btn-primary" type="button">创建安全测试通话</button>
+        <button id="joinCall" class="btn btn-primary" type="button" hidden>接受邀请并打开摄像头</button>
+        <button id="toggleMute" class="btn" type="button" disabled>静音</button>
+        <button id="toggleCamera" class="btn" type="button" disabled>关闭摄像头</button>
+        <button id="hangup" class="btn btn-danger" type="button" disabled>结束通话</button>
+      </div>
+    </section>
+
+    <aside class="rtc-side">
+      <section id="inviteWrap" class="card" hidden>
+        <h2 class="card-title">一次性邀请</h2>
+        <p class="card-subtitle">链接十分钟内有效，成功领取后立即失效。</p>
+        <div class="rtc-invite">
+          <input id="inviteUrl" class="input" readonly aria-label="邀请链接">
+          <button id="copyInvite" class="btn" type="button">复制</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">连接诊断</h2>
+        <p id="rtcDiagnostics" class="rtc-diagnostics">尚未建立媒体连接</p>
+        <p id="turnWarning" class="rtc-note">当前只有 STUN 打洞，没有 TURN 回退；严格 NAT 下连接可能失败。</p>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">测试方法</h2>
+        <p class="rtc-note">创建通话后，把邀请链接发给另一个已登录账户。建议使用另一台设备或无痕窗口，并分别连接家庭网络与手机网络测试。</p>
+      </section>
+    </aside>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/socket.io.min.js"></script>
+  <script src="/static/js/rtc-client.js?v=20260904-4"></script>
+  <script src="/static/js/rtc-page.js?v=20260904-4"></script>
+{% endblock %}

@@ -49,6 +49,7 @@ Nginx 反代：
 - `/cloud`：云盘页（上传/文件浏览/缩略图）（`templates/cloud.html`）
 - `/clipboard`：网页剪贴板（`templates/tool_2.html`）
 - `/chat`：聊天大厅（`templates/chat.html`）
+- `/rtc`：可复用的 WebRTC 双端通信与打洞诊断页（`templates/rtc.html`）
 - `/tracker`：物流追踪面板（`templates/tracker.html`）
 - `/map/1/`：路线规划页面（`templates/map.html`）
 - `/map/2/`：地图多关键词聚合搜索（`templates/map_aggregate_search.html`）
@@ -208,6 +209,7 @@ BLE 优先通信协议见 `docs/device-ble-protocol-v1.md`。
 │   │   └── models/               # 视觉模型文件（如 yolov8n.pt）
 │   ├── game/api.py               # Socket.IO 房间/座位/悔棋逻辑
 │   ├── chat/api.py               # Socket.IO 聊天大厅
+│   ├── rtc/                       # 通用 RTC 会话、一次性凭据、ICE 与信令
 │   ├── letter_league/api.py      # 字母棋识别/推荐
 │   ├── aurora/api.py             # 极光信息
 │   ├── weather/analyze.py        # 天气/能耗分析脚本
@@ -469,6 +471,41 @@ success 是 true
 - `switch_seat`：切换白方/黑方（仅空位可切换）
 - `request_undo`：申请悔棋
 - `approve_undo` / `reject_undo`：同意/拒绝悔棋
+
+### 通用实时通信（WebRTC）
+
+- `POST /api/rtc/sessions`：登录用户创建短期 RTC 会话并取得一次性加入凭据
+- `GET /api/rtc/sessions/<session_id>`：会话成员读取状态
+- `POST /api/rtc/sessions/<session_id>/invites`：创建一次性邀请；邀请放在 URL fragment 中，不进入 HTTP 访问日志
+- `POST /api/rtc/invites/redeem`：另一登录账户领取邀请并绑定为会话成员
+- `POST /api/rtc/sessions/<session_id>/join-token`：已绑定成员取得 60 秒有效的一次性 Socket 加入凭据
+- `GET /api/rtc/sessions/<session_id>/ice-config`：取得 STUN 与可选的 coturn 短期凭据
+- `DELETE /api/rtc/sessions/<session_id>`：任一会话成员结束该会话
+- Socket.IO namespace `/rtc`：仅转发同一会话成员之间经过大小和频率限制的 SDP/ICE 信令
+
+`static/js/rtc-client.js` 是与具体页面无关的浏览器客户端。每个实例管理一个 RTC
+会话；同一服务可以同时存在多个实例和多个独立会话。媒体使用浏览器 WebRTC
+DTLS-SRTP，不经过 Flask、Socket.IO 或 FRP。会话和一次性凭据当前只保存在单个
+Gunicorn worker 内存中，服务重启后自动失效；以后扩展多个信令进程时需使用 Redis
+共享会话状态和 Socket.IO message queue。
+
+当前未部署 TURN 时默认使用 Cloudflare 公共 STUN，仅用于打洞测试：
+
+```text
+RTC_STUN_URLS=stun:stun.cloudflare.com:3478
+```
+
+可用逗号配置多个 STUN；设置为空字符串可禁用。后续部署 coturn 时保留以下接口：
+
+```text
+RTC_TURN_URLS=turn:turn.xiaociwei.cc:3478?transport=udp,turns:turn.xiaociwei.cc:5349
+RTC_TURN_SHARED_SECRET=<与 coturn use-auth-secret 相同的随机密钥>
+RTC_TURN_TTL_SECONDS=600
+```
+
+后端按 coturn REST 约定生成 HMAC-SHA1 短期凭据，永久 TURN 密钥不会发送到浏览器。
+`SOCKETIO_ALLOWED_ORIGINS` 可用逗号显式列出允许的跨域 Origin；未设置时保持安全的
+同源默认，不再接受任意 Origin。
 
 ---
 

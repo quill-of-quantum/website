@@ -132,6 +132,11 @@ app.register_blueprint(housing_bp)
 from modules.devices.api import bp as devices_bp
 app.register_blueprint(devices_bp)
 
+from modules.rtc.api import bp as rtc_bp
+app.register_blueprint(rtc_bp)
+# Import registers the isolated /rtc Socket.IO namespace.
+from modules.rtc import signaling as rtc_signaling  # noqa: F401,E402
+
 from modules.weather.api import bp as weather_bp
 app.register_blueprint(weather_bp)
 # ===============================
